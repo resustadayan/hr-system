@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../firebase';
+import logoLeft from '../assets/pagbilogo.jpg';
+import logoRight from '../assets/hrmo logo.jpg';
 
 function Login() {
   const [email, setEmail] = useState('');
@@ -39,8 +41,14 @@ function Login() {
     <div className="login-container">
       <div className="login-card">
         <div className="login-header">
-          <h1>🏛️ HR System</h1>
-          <p>Pagbilao, Quezon LGU</p>
+          <div className="login-logos">
+            <img src={logoLeft} alt="LGU Logo" className="login-logo" />
+            <div className="login-title">
+              <h1>HR System</h1>
+              <p>Pagbilao, Quezon LGU</p>
+            </div>
+            <img src={logoRight} alt="Pagbilao Logo" className="login-logo" />
+          </div>
         </div>
         <form onSubmit={handleLogin}>
           <div className="input-group">

@@ -1,7 +1,7 @@
-// src/components/Navbar.js
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { logout } from '../firebase';
+import logo from '../assets/hrmo logo.jpg';
 
 function Navbar() {
   const navigate = useNavigate();
@@ -17,27 +17,29 @@ function Navbar() {
   };
 
   return (
-    <nav className="navbar">
-      <div className="nav-brand">
-        <Link to="/dashboard">
-          <span className="brand-icon">🏛️</span>
-          HR System - Pagbilao LGU
-        </Link>
+    <div className="sidebar">
+
+      <div className="sidebar-top">
+        <img src={logo} alt="LGU Logo" className="sidebar-logo" />
+        <h3>HR System</h3>
+        <p>Pagbilao LGU</p>
       </div>
-      
-      <div className="nav-menu">
-        <Link to="/dashboard" className="nav-link">Dashboard</Link>
-        <Link to="/employees" className="nav-link">Employees</Link>
-        <Link to="/attendance" className="nav-link">Attendance</Link>
-        <Link to="/leave" className="nav-link">Leave</Link>
-        <Link to="/compliance" className="nav-link">Compliance</Link>
-        <Link to="/payroll" className="nav-link">Payroll</Link>
-        <Link to="/analytics" className="nav-link">Analytics</Link>
-        <Link to="/interventions" className="nav-link">Interventions</Link>
-        <Link to="/users" className="nav-link">Users</Link>
+
+      <div className="sidebar-menu">
+        <Link to="/dashboard" className="sidebar-link">Dashboard</Link>
+        <Link to="/employees" className="sidebar-link">Employees</Link>
+        <Link to="/attendance" className="sidebar-link">Attendance</Link>
+        <Link to="/leave" className="sidebar-link">Leave Request</Link>
+        <Link to="/compliance" className="sidebar-link">Compliance</Link>
+        <Link to="/payroll" className="sidebar-link">Payroll</Link>
+        <Link to="/analytics" className="sidebar-link">Analytics</Link>
+        <Link to="/interventions" className="sidebar-link">Interventions</Link>
+        <Link to="/users" className="sidebar-link">Users</Link>
+
         <button onClick={handleLogout} className="logout-btn">Logout</button>
       </div>
-    </nav>
+
+    </div>
   );
 }
 
