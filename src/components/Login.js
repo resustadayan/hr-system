@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../firebase';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import logoLeft from '../assets/pagbilogo.jpg';
 import logoRight from '../assets/hrmo logo.jpg';
 
@@ -10,6 +12,7 @@ function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -23,18 +26,14 @@ function Login() {
       navigate('/dashboard');
     } catch (err) {
       console.error('Login error:', err);
-      if (err.code === 'auth/invalid-credential') {
-        setError('Invalid email or password');
-      } else if (err.code === 'auth/user-not-found') {
-        setError('User not found');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Wrong password');
-      } else {
-        setError('Login failed. Please try again.');
-      }
+      setError('Invalid Username or Password');
     } finally {
       setLoading(false);
     }
+  };
+
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
   };
 
   return (
@@ -50,6 +49,7 @@ function Login() {
             <img src={logoRight} alt="Pagbilao Logo" className="login-logo" />
           </div>
         </div>
+
         <form onSubmit={handleLogin}>
           <div className="input-group">
             <label>Email Address</label>
@@ -61,23 +61,41 @@ function Login() {
               required
             />
           </div>
-          <div className="input-group">
+
+          <div className="input-group password-group">
             <label>Password</label>
-            <input
-              type="password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="password-wrapper">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button 
+                type="button" 
+                className="password-toggle"
+                onClick={togglePasswordVisibility}
+                aria-label="Toggle password visibility"
+              >
+                {showPassword ? (
+                  <VisibilityOffIcon sx={{ color: '#888', fontSize: 24 }} />
+                ) : (
+                  <VisibilityIcon sx={{ color: '#888', fontSize: 24 }} />
+                )}
+              </button>
+            </div>
           </div>
-          {error && <div className="error-message">{error}</div>}
+
+          {error && <div className="error-message">❌ {error}</div>}
+
           <button type="submit" disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+
         <div className="demo-credentials">
-          <p>Demo Credentials:</p>
+          <p>📋 Demo Credentials:</p>
           <p>Email: admin@pagbilao.gov.ph</p>
           <p>Password: admin123</p>
         </div>

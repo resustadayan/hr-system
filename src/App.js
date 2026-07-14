@@ -1,5 +1,6 @@
+// src/App.js
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import EmployeeRecords from './components/EmployeeRecords';
@@ -10,6 +11,7 @@ import Payroll from './components/Payroll';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import Interventions from './components/Interventions';
 import UserManagement from './components/UserManagement';
+
 import AuditLogs from './components/AuditLogs';
 import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
@@ -29,10 +31,16 @@ function App() {
 }
 
 function AppContent() {
+  const location = useLocation();
+  
+  // Check if current route is login page
+  const isLoginPage = location.pathname === '/login';
+
   return (
     <>
-      <Navbar />
-      <div className="main-content">
+      {/* Only render Navbar if NOT on login page */}
+      {!isLoginPage && <Navbar />}
+      <div className={isLoginPage ? 'full-width-content' : 'main-content'}>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<Login />} />
