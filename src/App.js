@@ -17,8 +17,12 @@ import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
 import { AuthProvider } from './components/contexts/AuthContext';
 
+import MGDHDashboard from './other file for dashboard/MGDHPDashboard';
+import EmployeePortal from './other file for dashboard/EmployeePortal';
+
 // Import styles
 import './styles.css';
+import '../src/other file for dashboard/portal.css';
 
 function App() {
   return (
@@ -59,6 +63,9 @@ function AppContent() {
           <Route path="/interventions" element={<PrivateRoute><Interventions /></PrivateRoute>} />
           <Route path="/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />
           <Route path="/audit" element={<PrivateRoute><AuditLogs /></PrivateRoute>} />
+
+          <Route path="/mgdh-dashboard" element={<PrivateRoute><MGDHDashboard /></PrivateRoute>} />
+          <Route path="/employee-portal" element={<PrivateRoute><EmployeePortal /></PrivateRoute>} />
           
           {/* Fallback Route */}
           <Route path="*" element={<Navigate to="/dashboard" />} />

@@ -15,7 +15,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import InboxIcon from '@mui/icons-material/Inbox';
 
-function Payroll() {
+function Payroll({ refreshTrigger }) {
   const [payrollRecords, setPayrollRecords] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [filterDepartment, setFilterDepartment] = useState('all');
@@ -28,10 +28,6 @@ function Payroll() {
     totalEmployees: 0
   });
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -53,6 +49,17 @@ function Payroll() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Refresh when triggered by EmployeeRecords
+  useEffect(() => {
+    if (refreshTrigger) {
+      fetchData();
+    }
+  }, [refreshTrigger]);
 
   const calculateSummary = (records, empList) => {
     const totalPayroll = records.reduce((sum, record) => sum + (record.netPay || 0), 0);

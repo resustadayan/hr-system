@@ -23,7 +23,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import WorkIcon from '@mui/icons-material/Work';
 
-function EmployeeRecords() {
+function EmployeeRecords({ onEmployeeChange }) {
   const [employees, setEmployees] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -51,22 +51,61 @@ function EmployeeRecords() {
     setDepartments(deptList);
   };
 
-  // Function to auto-create user account
-  const createUserAccount = async (email, name, role = 'Employee') => {
+  // Function to auto-create payroll record
+  const createPayrollRecord = async (employeeId, salary, fullName, department) => {
+    try {
+      const currentDate = new Date();
+      const month = currentDate.toLocaleString('default', { month: 'long' });
+      const year = currentDate.getFullYear();
+      
+      // Calculate deductions (example: 5% for SSS, 2% for PhilHealth, 1% for Pag-IBIG)
+      const sss = salary * 0.05;
+      const philhealth = salary * 0.02;
+      const pagibig = salary * 0.01;
+      const totalDeductions = sss + philhealth + pagibig;
+      const netPay = salary - totalDeductions;
+
+      const periodStart = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+      const periodEnd = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(new Date(year, currentDate.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+
+      await addDoc(collection(db, 'payroll'), {
+        employeeId: employeeId,
+        employeeName: fullName,
+        department: department,
+        periodStart: periodStart,
+        periodEnd: periodEnd,
+        basicSalary: salary,
+        deductions: totalDeductions,
+        netPay: netPay,
+        status: 'Pending',
+        createdAt: new Date().toISOString()
+      });
+
+      console.log('✅ Payroll record created successfully for: ' + fullName);
+      return true;
+    } catch (error) {
+      console.error('❌ Error creating payroll record:', error);
+      return false;
+    }
+  };
+
+  // Function to auto-create user account with department as role
+  const createUserAccount = async (email, name, department) => {
     try {
       const defaultPassword = 'Password123!';
-      
       const userCredential = await createUserWithEmailAndPassword(auth, email, defaultPassword);
       
       await addDoc(collection(db, 'users'), {
         name: name,
         email: email,
-        role: role,
+        role: department,
+        department: department,
+        position: formData.position || '',
         uid: userCredential.user.uid,
         createdAt: new Date().toISOString()
       });
       
-      console.log('✅ User account created successfully');
+      console.log('✅ User account created successfully with department: ' + department);
       return true;
     } catch (error) {
       console.error('❌ Error creating user account:', error);
@@ -81,25 +120,42 @@ function EmployeeRecords() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      let employeeId;
+      
       if (editingId) {
         await updateEmployee(editingId, formData);
         alert('✅ Employee updated successfully!');
       } else {
-        await addEmployee(formData);
+        // Add employee first
+        const docRef = await addEmployee(formData);
+        employeeId = docRef.id;
         
-        const role = 'Employee';
+        // Create user account with department as role
         await createUserAccount(
           formData.email,
           formData.fullName,
-          role
+          formData.department
         );
         
-        alert('✅ Employee added with user account!');
+        // Create payroll record if salary is provided
+        if (formData.salary && formData.salary > 0) {
+          await createPayrollRecord(
+            employeeId,
+            parseFloat(formData.salary),
+            formData.fullName,
+            formData.department
+          );
+        }
+        
+        alert('✅ Employee added with user account and payroll record!');
       }
+      
+      // Refresh list and notify parent
+      await loadEmployees();
+      if (onEmployeeChange) onEmployeeChange();
       setShowForm(false);
       setEditingId(null);
       resetForm();
-      await loadEmployees();
     } catch (error) {
       console.error('Error saving employee:', error);
       alert('❌ Failed to save employee. Please check all fields.');
@@ -118,6 +174,7 @@ function EmployeeRecords() {
       try {
         await deleteEmployee(id);
         await loadEmployees();
+        if (onEmployeeChange) onEmployeeChange();
         alert('✅ Employee deleted successfully');
       } catch (error) {
         console.error('Error deleting employee:', error);
@@ -157,7 +214,7 @@ function EmployeeRecords() {
             <PeopleIcon style={{ fontSize: 28, marginRight: 10, verticalAlign: 'middle' }} />
             Employee Records
           </h2>
-          <p className="header-subtitle">Manage employee information - Auto-creates user accounts</p>
+          <p className="header-subtitle">Manage employee information - Auto-creates user accounts & payroll</p>
         </div>
         <button 
           onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} 
@@ -341,13 +398,17 @@ function EmployeeRecords() {
                   />
                 </div>
                 <div className="form-group">
-                  <label><AttachMoneyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} /> Salary</label>
+                  <label><AttachMoneyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} /> Salary *</label>
                   <input 
                     type="number" 
                     placeholder="Enter salary" 
                     value={formData.salary} 
                     onChange={(e) => setFormData({...formData, salary: e.target.value})} 
+                    required 
                   />
+                  <small style={{ color: '#8a9bb5', fontSize: 11 }}>
+                    This will automatically create a payroll record
+                  </small>
                 </div>
               </div>
               <div className="form-actions">

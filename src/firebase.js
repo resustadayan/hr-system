@@ -18,7 +18,9 @@ import {
   query, 
   where,
   orderBy,
-  limit
+  limit,
+  arrayUnion,
+  arrayRemove
 } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -73,6 +75,12 @@ export const getUserById = async (userId) => {
   return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
 };
 
+export const getUserByEmail = async (email) => {
+  const q = query(collection(db, "users"), where("email", "==", email));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))[0] || null;
+};
+
 export const updateUser = async (id, data) => {
   return await updateDoc(doc(db, "users", id), data);
 };
@@ -104,6 +112,12 @@ export const getEmployeesByDepartment = async (department) => {
   const q = query(collection(db, "employees"), where("department", "==", department));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const getEmployeeByEmail = async (email) => {
+  const q = query(collection(db, "employees"), where("email", "==", email));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))[0] || null;
 };
 
 export const updateEmployee = async (id, data) => {
@@ -139,6 +153,15 @@ export const getAttendanceByDate = async (date) => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const getAttendanceByDepartment = async (department) => {
+  const employees = await getEmployeesByDepartment(department);
+  const employeeIds = employees.map(emp => emp.id);
+  if (employeeIds.length === 0) return [];
+  const q = query(collection(db, "attendance"), where("employeeId", "in", employeeIds));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
 export const updateAttendance = async (id, data) => {
   return await updateDoc(doc(db, "attendance", id), data);
 };
@@ -168,6 +191,15 @@ export const getLeaveRequestsByEmployee = async (employeeId) => {
 
 export const getLeaveRequestsByStatus = async (status) => {
   const q = query(collection(db, "leaveRequests"), where("status", "==", status));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const getLeaveRequestsByDepartment = async (department) => {
+  const employees = await getEmployeesByDepartment(department);
+  const employeeIds = employees.map(emp => emp.id);
+  if (employeeIds.length === 0) return [];
+  const q = query(collection(db, "leaveRequests"), where("employeeId", "in", employeeIds));
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -234,6 +266,15 @@ export const getDocumentsByStatus = async (status) => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const getDocumentsByDepartment = async (department) => {
+  const employees = await getEmployeesByDepartment(department);
+  const employeeIds = employees.map(emp => emp.id);
+  if (employeeIds.length === 0) return [];
+  const q = query(collection(db, "documents"), where("employeeId", "in", employeeIds));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
 export const updateDocument = async (id, data) => {
   return await updateDoc(doc(db, "documents", id), data);
 };
@@ -271,6 +312,15 @@ export const getPayrollByPeriod = async (periodStart, periodEnd) => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const getPayrollByDepartment = async (department) => {
+  const employees = await getEmployeesByDepartment(department);
+  const employeeIds = employees.map(emp => emp.id);
+  if (employeeIds.length === 0) return [];
+  const q = query(collection(db, "payroll"), where("employeeId", "in", employeeIds));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
 export const updatePayroll = async (id, data) => {
   return await updateDoc(doc(db, "payroll", id), data);
 };
@@ -304,12 +354,80 @@ export const getInterventionsByStatus = async (status) => {
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
 
+export const getInterventionsByDepartment = async (department) => {
+  const employees = await getEmployeesByDepartment(department);
+  const employeeIds = employees.map(emp => emp.id);
+  if (employeeIds.length === 0) return [];
+  const q = query(collection(db, "interventions"), where("employeeId", "in", employeeIds));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
 export const updateIntervention = async (id, data) => {
   return await updateDoc(doc(db, "interventions", id), data);
 };
 
 export const deleteIntervention = async (id) => {
   return await deleteDoc(doc(db, "interventions", id));
+};
+
+// ============================================
+// NOTIFICATIONS COLLECTION (NEW)
+// ============================================
+
+export const addNotification = async (notificationData) => {
+  return await addDoc(collection(db, "notifications"), {
+    ...notificationData,
+    read: false,
+    createdAt: new Date().toISOString()
+  });
+};
+
+export const getNotifications = async () => {
+  const q = query(collection(db, "notifications"), orderBy("createdAt", "desc"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const getNotificationsByEmployee = async (employeeId) => {
+  const q = query(
+    collection(db, "notifications"), 
+    where("employeeId", "==", employeeId),
+    orderBy("createdAt", "desc")
+  );
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const getNotificationsByDepartment = async (department) => {
+  const q = query(
+    collection(db, "notifications"), 
+    where("department", "==", department),
+    orderBy("createdAt", "desc")
+  );
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+export const markNotificationAsRead = async (id) => {
+  return await updateDoc(doc(db, "notifications", id), { read: true });
+};
+
+export const markAllNotificationsAsRead = async (employeeId) => {
+  const q = query(
+    collection(db, "notifications"), 
+    where("employeeId", "==", employeeId),
+    where("read", "==", false)
+  );
+  const querySnapshot = await getDocs(q);
+  const promises = querySnapshot.docs.map(doc => 
+    updateDoc(doc.ref, { read: true })
+  );
+  return await Promise.all(promises);
+};
+
+export const deleteNotification = async (id) => {
+  return await deleteDoc(doc(db, "notifications", id));
 };
 
 // ============================================

@@ -36,6 +36,9 @@ function Navbar() {
 
         <Link to="/users" className="sidebar-link">Users</Link>
 
+        
+
+
         <button onClick={handleLogout} className="logout-btn">Logout</button>
       </div>
 
