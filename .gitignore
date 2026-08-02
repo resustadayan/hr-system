@@ -21,3 +21,9 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+
+# In your .gitignore file
+.env
+.env.local
+.env.*.local

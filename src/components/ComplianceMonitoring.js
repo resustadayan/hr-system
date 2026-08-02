@@ -1,7 +1,7 @@
 // src/components/ComplianceMonitoring.js
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, addDoc, getDocs, updateDoc, doc, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, updateDoc, doc, query, where, onSnapshot, addDoc } from 'firebase/firestore';
 import { useLocation } from 'react-router-dom';
 
 // Material-UI Icons
@@ -27,23 +27,24 @@ function ComplianceMonitoring() {
   const [loading, setLoading] = useState(false);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [pendingCount, setPendingCount] = useState(0);
   const notificationRef = useRef(null);
 
   // Check for navigation state from EmployeePortal
   useEffect(() => {
     if (location.state) {
-      const { notification, employeeId } = location.state;
+      const { notification, employeeId, timestamp } = location.state;
       if (notification && employeeId) {
         setToastMessage(notification);
         setHighlightedEmployeeId(employeeId);
-        setFilter('missing'); // Auto-filter to show pending/missing documents
+        setFilter('all');
         
         // Auto-dismiss toast after 8 seconds
         setTimeout(() => {
           setToastMessage(null);
         }, 8000);
         
-        // Clear location state to prevent showing again on refresh
+        // Clear location state
         window.history.replaceState({}, document.title);
       }
     }
@@ -55,16 +56,41 @@ function ComplianceMonitoring() {
     setupRealtimeListeners();
   }, []);
 
+  // ====== REAL-TIME LISTENER FOR NEW UPLOADS ======
   const setupRealtimeListeners = () => {
     // Listen for new documents in real-time
     const unsubscribe = onSnapshot(collection(db, 'documents'), (snapshot) => {
       const docList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDocuments(docList);
       
-      // Check for new pending documents and show notification
+      // Count pending documents
+      const pending = docList.filter(d => d.status === 'Pending Review').length;
+      setPendingCount(pending);
+      
+      // Check for new pending documents
       const newPending = docList.filter(d => d.status === 'Pending Review');
-      if (newPending.length > 0 && toastMessage) {
-        // Play notification sound or show alert if needed
+      if (newPending.length > 0 && !toastMessage) {
+        // Check if there's a recent upload (within last 10 seconds)
+        const recentUpload = newPending.some(d => {
+          const uploadTime = new Date(d.uploadedAt).getTime();
+          const now = Date.now();
+          return (now - uploadTime) < 10000;
+        });
+        
+        if (recentUpload) {
+          const latestDoc = newPending.sort((a, b) => 
+            new Date(b.uploadedAt) - new Date(a.uploadedAt)
+          )[0];
+          
+          if (latestDoc) {
+            setToastMessage(`${latestDoc.employeeName} uploaded ${latestDoc.documentType}`);
+            setHighlightedEmployeeId(latestDoc.employeeId);
+            
+            setTimeout(() => {
+              setToastMessage(null);
+            }, 8000);
+          }
+        }
       }
     });
 
@@ -81,25 +107,28 @@ function ComplianceMonitoring() {
     const querySnapshot = await getDocs(collection(db, 'documents'));
     const docList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setDocuments(docList);
+    const pending = docList.filter(d => d.status === 'Pending Review').length;
+    setPendingCount(pending);
   };
 
+  // ====== UPDATE DOCUMENT STATUS WITH NOTIFICATION ======
   const updateDocumentStatus = async (docId, newStatus) => {
     setLoading(true);
     try {
+      const docData = documents.find(d => d.id === docId);
+      
       await updateDoc(doc(db, 'documents', docId), { 
         status: newStatus,
         reviewedAt: new Date().toISOString()
       });
-      await fetchDocuments();
       
-      // Find the document to get employee info
-      const doc = documents.find(d => d.id === docId);
-      if (doc) {
-        // Notify employee of status change
+      if (docData) {
+        // Notify the employee
         await addDoc(collection(db, 'notifications'), {
-          employeeId: doc.employeeId,
+          employeeId: docData.employeeId,
+          employeeName: docData.employeeName,
           type: 'compliance_status_updated',
-          message: `Your ${doc.documentType} has been marked as ${newStatus}`,
+          message: `Your ${docData.documentType} has been marked as ${newStatus}`,
           read: false,
           forEmployee: true,
           forAdmin: false,
@@ -107,6 +136,7 @@ function ComplianceMonitoring() {
         });
       }
       
+      await fetchDocuments();
       alert('✅ Document status updated successfully');
     } catch (error) {
       console.error('Error updating document:', error);
@@ -123,13 +153,13 @@ function ComplianceMonitoring() {
     const pending = employeeDocs.filter(doc => doc.status === 'Pending Review').length;
     return { 
       total, 
-      complete, 
+      complete,
       pending,
       percentage: total === 0 ? 0 : Math.round((complete / total) * 100) 
     };
   };
 
-  const getMissingDocuments = (employeeId) => {
+  const getPendingDocuments = (employeeId) => {
     return documents.filter(doc => doc.employeeId === employeeId && doc.status === 'Pending Review');
   };
 
@@ -143,16 +173,15 @@ function ComplianceMonitoring() {
 
   const filteredEmployees = employees.filter(emp => {
     const status = getComplianceStatus(emp.id);
+    if (filter === 'pending') return status.pending > 0;
     if (filter === 'missing') return status.pending > 0 || status.percentage < 100;
     if (filter === 'complete') return status.percentage === 100;
-    if (filter === 'pending') return status.pending > 0;
     return true;
   });
 
   const totalEmployees = employees.length;
   const fullyCompliant = employees.filter(emp => getComplianceStatus(emp.id).percentage === 100).length;
   const missingDocs = employees.filter(emp => getComplianceStatus(emp.id).pending > 0).length;
-  const pendingReview = documents.filter(doc => doc.status === 'Pending Review').length;
 
   return (
     <div className="compliance-container">
@@ -171,7 +200,8 @@ function ComplianceMonitoring() {
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          animation: 'slideIn 0.5s ease-out'
+          animation: 'slideIn 0.5s ease-out',
+          maxWidth: '400px'
         }}>
           <NotificationImportantIcon style={{ fontSize: 28 }} />
           <div>
@@ -204,12 +234,25 @@ function ComplianceMonitoring() {
           <p className="header-subtitle">Track and manage employee document compliance</p>
         </div>
         <div className="stats-badge" style={{
-          background: pendingReview > 0 ? '#e74c3c' : '#27ae60',
+          background: pendingCount > 0 ? '#e74c3c' : '#27ae60',
           padding: '8px 16px',
           borderRadius: '20px',
-          color: 'white'
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
         }}>
-          {pendingReview > 0 ? `⚠️ ${pendingReview} Pending` : '✅ All Reviewed'}
+          {pendingCount > 0 ? (
+            <>
+              <WarningIcon style={{ fontSize: 18 }} />
+              {pendingCount} Pending Review
+            </>
+          ) : (
+            <>
+              <CheckCircleIcon style={{ fontSize: 18 }} />
+              All Reviewed
+            </>
+          )}
         </div>
       </div>
 
@@ -239,7 +282,7 @@ function ComplianceMonitoring() {
           </div>
           <div className="stat-info">
             <h3>Pending Review</h3>
-            <p>{pendingReview}</p>
+            <p>{pendingCount}</p>
           </div>
         </div>
         <div className="stat-card red">
@@ -268,7 +311,7 @@ function ComplianceMonitoring() {
           style={filter === 'pending' ? { background: '#e67e22', color: 'white' } : {}}
         >
           <WarningIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
-          Pending Review ({documents.filter(d => d.status === 'Pending Review').length})
+          Pending Review ({pendingCount})
         </button>
         <button 
           onClick={() => setFilter('missing')} 
@@ -302,7 +345,7 @@ function ComplianceMonitoring() {
           <tbody>
             {filteredEmployees.map(emp => {
               const status = getComplianceStatus(emp.id);
-              const pendingDocs = getMissingDocuments(emp.id);
+              const pendingDocs = getPendingDocuments(emp.id);
               const isCompliant = status.percentage === 100;
               const isHighlighted = emp.id === highlightedEmployeeId;
               
@@ -532,8 +575,8 @@ function ComplianceMonitoring() {
         </div>
       )}
 
-      {/* Add CSS animations */}
-      <style jsx>{`
+      {/* CSS Animations */}
+      <style>{`
         @keyframes slideIn {
           from {
             transform: translateX(100%);

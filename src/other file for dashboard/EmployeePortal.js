@@ -1,13 +1,13 @@
 // src/other file for dashboard/EmployeePortal.js
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, storage } from '../firebase';
+import { db, auth } from '../firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot, Timestamp } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
+import { put } from '@vercel/blob'; 
 
-// Material-UI Icons
+// Material-UI Icons (all remain the same)
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -832,7 +832,50 @@ function EmployeePortal() {
     setUploadProgress(0);
   };
 
-  // ====== FIXED: handleDocumentUpload moved to component level ======
+  // ====== UPLOAD TO VERCEL BLOB ======
+  const uploadToVercelBlob = async (file, employeeId, documentType, employeeName) => {
+    try {
+      // Get the Vercel Blob token from environment variables
+      const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
+      
+      if (!token) {
+        throw new Error('Vercel Blob token not found. Please set REACT_APP_BLOB_READ_WRITE_TOKEN in your .env file.');
+      }
+
+      // Create a unique path for the file
+      const timestamp = Date.now();
+      const fileName = `${employeeId}_${documentType}_${timestamp}_${file.name}`;
+      const blobPath = `compliance/${employeeId}/${documentType}/${fileName}`;
+
+      console.log('Uploading to Vercel Blob...');
+      console.log('File:', file.name, file.size, 'bytes');
+      console.log('Path:', blobPath);
+
+      // Upload to Vercel Blob
+      const blob = await put(blobPath, file, {
+        access: 'public',
+        token: token,
+        addRandomSuffix: false,
+      });
+
+      console.log('Upload successful! URL:', blob.url);
+
+      return {
+        success: true,
+        url: blob.url,
+        path: blobPath,
+        downloadUrl: blob.downloadUrl || blob.url,
+      };
+    } catch (error) {
+      console.error('Vercel Blob upload error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  };
+
+  // ====== FIXED: handleDocumentUpload with Vercel Blob ======
   const handleDocumentUpload = async () => {
     if (!selectedFile || !selectedDocType) {
       alert('Please select a document type and a file');
@@ -841,7 +884,7 @@ function EmployeePortal() {
 
     setUploading(true);
     setUploadProgress(0);
-    setUploadStatus('Uploading...');
+    setUploadStatus('Uploading to Vercel Blob...');
 
     try {
       const user = auth.currentUser;
@@ -851,103 +894,97 @@ function EmployeePortal() {
         return;
       }
 
-      const fileName = `${employee.id}_${selectedDocType}_${Date.now()}`;
-      const storageRef = ref(storage, `documents/${employee.id}/${fileName}`);
+      if (!employee || !employee.id) {
+        alert('Employee data not found. Please refresh and try again.');
+        setUploading(false);
+        return;
+      }
+
+      // Upload to Vercel Blob
+      const uploadResult = await uploadToVercelBlob(
+        selectedFile,
+        employee.id,
+        selectedDocType,
+        employee.fullName
+      );
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload to Vercel Blob failed');
+      }
+
+      setUploadProgress(50);
+      setUploadStatus('Saving to database...');
+
+      // Save document info to Firestore
+      await addDoc(collection(db, 'documents'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: selectedDocType,
+        status: 'Pending Review',
+        fileUrl: uploadResult.url,
+        downloadUrl: uploadResult.downloadUrl,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        storagePath: uploadResult.path,
+        storageProvider: 'vercel-blob',
+        uploadedAt: new Date().toISOString()
+      });
+
+      setUploadProgress(75);
+      setUploadStatus('Creating notifications...');
+
+      // Notification for admin with employee info
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload',
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: selectedDocType,
+        message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded ${selectedDocType} for compliance review`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      // Confirmation for employee
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload_confirmation',
+        employeeId: employee.id,
+        message: `Your ${selectedDocType} has been uploaded and is pending review by HR`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setUploadProgress(100);
+      setUploadStatus('Document uploaded successfully! HR has been notified.');
+      setSelectedFile(null);
+      setSelectedDocType('');
+      setShowUploadForm(false);
       
-      const uploadTask = uploadBytesResumable(storageRef, selectedFile, {
-        contentType: selectedFile.type || 'application/octet-stream',
-        customMetadata: {
-          uploadedBy: employee.id,
-          documentType: selectedDocType,
-          employeeName: employee.fullName
+      // AUTO-REDIRECT TO COMPLIANCE MONITORING PAGE
+      navigate('/compliance', { 
+        state: { 
+          notification: `${employee.fullName} uploaded ${selectedDocType}`,
+          employeeId: employee.id,
+          timestamp: new Date().toISOString()
         }
       });
       
-      uploadTask.on('state_changed',
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          setUploadProgress(Math.round(progress));
-          setUploadStatus(`Uploading... ${Math.round(progress)}%`);
-        },
-        (error) => {
-          console.error('Upload error:', error);
-          setUploadStatus(`Upload failed: ${error.message}`);
-          setUploading(false);
-        },
-        async () => {
-          try {
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            
-            // Save document with employee info
-            await addDoc(collection(db, 'documents'), {
-              employeeId: employee.id,
-              employeeName: employee.fullName,
-              department: employee.department || 'N/A',
-              documentType: selectedDocType,
-              status: 'Pending Review',
-              fileUrl: downloadURL,
-              fileName: selectedFile.name,
-              fileSize: selectedFile.size,
-              uploadedAt: new Date().toISOString()
-            });
-
-            // Notification for admin with employee info
-            await addDoc(collection(db, 'notifications'), {
-              type: 'compliance_upload',
-              employeeId: employee.id,
-              employeeName: employee.fullName,
-              department: employee.department || 'N/A',
-              documentType: selectedDocType,
-              message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded ${selectedDocType} for compliance review`,
-              read: false,
-              forAdmin: true,
-              forEmployee: false,
-              createdAt: new Date().toISOString()
-            });
-
-            // Confirmation for employee
-            await addDoc(collection(db, 'notifications'), {
-              type: 'compliance_upload_confirmation',
-              employeeId: employee.id,
-              message: `Your ${selectedDocType} has been uploaded and is pending review by HR`,
-              read: false,
-              forEmployee: true,
-              forAdmin: false,
-              createdAt: new Date().toISOString()
-            });
-
-            setUploadProgress(100);
-            setUploadStatus('Document uploaded successfully! HR has been notified.');
-            setSelectedFile(null);
-            setSelectedDocType('');
-            setShowUploadForm(false);
-            
-            // ✅ AUTO-REDIRECT TO COMPLIANCE MONITORING PAGE
-            navigate('/compliance-monitoring', { 
-              state: { 
-                notification: `${employee.fullName} uploaded ${selectedDocType}`,
-                employeeId: employee.id,
-                timestamp: new Date().toISOString()
-              }
-            });
-            
-            fetchEmployeeData();
-            setUploading(false);
-          } catch (err) {
-            console.error('Error saving to Firestore:', err);
-            setUploadStatus(`Failed to save: ${err.message}`);
-            setUploading(false);
-          }
-        }
-      );
+      fetchEmployeeData();
+      setUploading(false);
     } catch (error) {
       console.error('Error uploading document:', error);
       setUploadStatus(`Upload failed: ${error.message}`);
       setUploading(false);
+      alert(`Upload failed: ${error.message}`);
     }
   };
 
-  // ====== END OF FIXED handleDocumentUpload ======
+  // ====== END OF handleDocumentUpload ======
 
   const getStatusBadge = (status) => {
     switch(status) {
@@ -1673,7 +1710,7 @@ function EmployeePortal() {
                 className="btn-save" 
                 disabled={uploading || !selectedFile || !selectedDocType}
               >
-                {uploading ? 'Uploading...' : 'Upload'}
+                {uploading ? 'Uploading...' : 'Upload to Vercel Blob'}
               </button>
               <button 
                 type="button" 
@@ -1685,6 +1722,23 @@ function EmployeePortal() {
               </button>
             </div>
             {uploadStatus && <p className="upload-status">{uploadStatus}</p>}
+            {uploading && uploadProgress > 0 && (
+              <div className="progress-bar" style={{ marginTop: '10px' }}>
+                <div 
+                  className="progress-fill" 
+                  style={{ 
+                    width: `${uploadProgress}%`,
+                    height: '6px',
+                    background: '#4a6fa5',
+                    borderRadius: '3px',
+                    transition: 'width 0.3s ease'
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
+                  {uploadProgress}% uploaded
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
