@@ -1,7 +1,7 @@
 // src/components/UserManagement.js
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../firebase';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 
 // Material-UI Icons
@@ -21,24 +21,29 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import BusinessIcon from '@mui/icons-material/Business';
 import WorkIcon from '@mui/icons-material/Work';
 import FolderIcon from '@mui/icons-material/Folder';
-import LockIcon from '@mui/icons-material/Lock';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
-import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined'; // ✅ Fixed import
+import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined';
+import EditIcon from '@mui/icons-material/Edit';
+import PhoneIcon from '@mui/icons-material/Phone';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 
 function UserManagement({ refreshTrigger }) {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '', 
     department: '',
     position: '',
     role: 'Employee',
-    password: '' 
+    phone: '',
+    dateHired: '',
+    salary: ''
   });
-  // ✅ Removed unused 'editingId' - can be re-added later if needed
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -86,30 +91,147 @@ function UserManagement({ refreshTrigger }) {
     }
   }, [refreshTrigger]);
 
+  // Function to calculate deductions
+  const calculateDeductions = (salary) => {
+    // SSS Contribution (simplified - actual rates vary)
+    const sss = salary * 0.045;
+    
+    // PhilHealth Contribution (simplified - actual rates vary)
+    const philhealth = salary * 0.025;
+    
+    // Pag-IBIG Contribution (fixed rate for now)
+    const pagibig = Math.min(salary * 0.01, 100);
+    
+    // Total deductions
+    const totalDeductions = sss + philhealth + pagibig;
+    const netPay = salary - totalDeductions;
+    
+    return {
+      sss: Math.round(sss * 100) / 100,
+      philhealth: Math.round(philhealth * 100) / 100,
+      pagibig: Math.round(pagibig * 100) / 100,
+      totalDeductions: Math.round(totalDeductions * 100) / 100,
+      netPay: Math.round(netPay * 100) / 100
+    };
+  };
+
+  // Function to create payroll record
+  const createPayrollRecord = async (userId, userName, department, salary) => {
+    try {
+      const currentDate = new Date();
+      const month = currentDate.toLocaleString('default', { month: 'long' });
+      const year = currentDate.getFullYear();
+      
+      // Calculate deductions
+      const deductions = calculateDeductions(parseFloat(salary));
+      
+      const periodStart = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
+      const periodEnd = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(new Date(year, currentDate.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+
+      // Check if payroll record already exists for this employee this month
+      const payrollQuery = query(
+        collection(db, 'payroll'), 
+        where('employeeId', '==', userId),
+        where('periodStart', '==', periodStart)
+      );
+      const existingPayroll = await getDocs(payrollQuery);
+      
+      if (!existingPayroll.empty) {
+        // Update existing payroll record
+        const payrollDoc = existingPayroll.docs[0];
+        await updateDoc(doc(db, 'payroll', payrollDoc.id), {
+          basicSalary: parseFloat(salary),
+          sss: deductions.sss,
+          philhealth: deductions.philhealth,
+          pagibig: deductions.pagibig,
+          deductions: deductions.totalDeductions,
+          netPay: deductions.netPay,
+          updatedAt: new Date().toISOString()
+        });
+        console.log('✅ Payroll record updated for: ' + userName);
+      } else {
+        // Create new payroll record
+        await addDoc(collection(db, 'payroll'), {
+          employeeId: userId,
+          employeeName: userName,
+          department: department,
+          periodStart: periodStart,
+          periodEnd: periodEnd,
+          basicSalary: parseFloat(salary),
+          sss: deductions.sss,
+          philhealth: deductions.philhealth,
+          pagibig: deductions.pagibig,
+          deductions: deductions.totalDeductions,
+          netPay: deductions.netPay,
+          status: 'Pending',
+          createdAt: new Date().toISOString()
+        });
+        console.log('✅ Payroll record created for: ' + userName);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Error creating/updating payroll record:', error);
+      return false;
+    }
+  };
+
+  const handleEdit = (user) => {
+    setEditingId(user.id);
+    setFormData({
+      name: user.name || '',
+      email: user.email || '',
+      department: user.department || '',
+      position: user.position || '',
+      role: user.role || 'Employee',
+      phone: user.phone || '',
+      dateHired: user.dateHired || '',
+      salary: user.salary || ''
+    });
+    setShowForm(true);
+  };
+
   const addUser = async () => {
-    if (!formData.name || !formData.email || !formData.department || !formData.password || !formData.role) {
+    if (!formData.name || !formData.email || !formData.department || !formData.role) {
       alert('Please fill all required fields');
       return;
     }
 
     setLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      // Generate a default password
+      const defaultPassword = 'Password123!';
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, defaultPassword);
       
-      await addDoc(collection(db, 'users'), {
+      const userData = {
         name: formData.name,
         email: formData.email,
         role: formData.role,
         department: formData.department,
         position: formData.position || '',
+        phone: formData.phone || '',
+        dateHired: formData.dateHired || '',
+        salary: formData.salary || '',
         uid: userCredential.user.uid,
         createdAt: new Date().toISOString()
-      });
+      };
+      
+      const docRef = await addDoc(collection(db, 'users'), userData);
+      
+      // Create payroll record if salary is provided
+      if (formData.salary && formData.salary > 0) {
+        await createPayrollRecord(
+          docRef.id,
+          formData.name,
+          formData.department,
+          formData.salary
+        );
+      }
       
       await fetchUsers();
       resetForm();
       setShowForm(false);
-      alert('✅ User added successfully');
+      alert('✅ User added successfully with payroll record!');
     } catch (error) {
       console.error('Error adding user:', error);
       alert('❌ Failed to add user: ' + error.message);
@@ -118,25 +240,64 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
-  const updateUserRole = async (id, newRole) => {
+  const updateUser = async () => {
+    if (!formData.name || !formData.email || !formData.department || !formData.role) {
+      alert('Please fill all required fields');
+      return;
+    }
+
+    setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', id), { 
-        role: newRole
-      });
+      const userRef = doc(db, 'users', editingId);
+      const updateData = {
+        name: formData.name,
+        email: formData.email,
+        role: formData.role,
+        department: formData.department,
+        position: formData.position || '',
+        phone: formData.phone || '',
+        dateHired: formData.dateHired || '',
+        salary: formData.salary || ''
+      };
+      
+      await updateDoc(userRef, updateData);
+      
+      // Update payroll record if salary is provided
+      if (formData.salary && formData.salary > 0) {
+        await createPayrollRecord(
+          editingId,
+          formData.name,
+          formData.department,
+          formData.salary
+        );
+      }
+      
       await fetchUsers();
-      alert('✅ User role updated successfully');
+      resetForm();
+      setShowForm(false);
+      setEditingId(null);
+      alert('✅ User and payroll record updated successfully!');
     } catch (error) {
-      console.error('Error updating role:', error);
-      alert('❌ Failed to update user role');
+      console.error('Error updating user:', error);
+      alert('❌ Failed to update user: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
   const deleteUser = async (id, name) => {
-    if (window.confirm(`Are you sure you want to delete user "${name}"?`)) {
+    if (window.confirm(`Are you sure you want to delete user "${name}"? This will also remove their payroll records.`)) {
       try {
+        // Delete payroll records for this user
+        const payrollQuery = query(collection(db, 'payroll'), where('employeeId', '==', id));
+        const payrollSnapshot = await getDocs(payrollQuery);
+        payrollSnapshot.docs.forEach(async (doc) => {
+          await deleteDoc(doc.ref);
+        });
+        
         await deleteDoc(doc(db, 'users', id));
         await fetchUsers();
-        alert('✅ User deleted successfully');
+        alert('✅ User and associated payroll records deleted successfully');
       } catch (error) {
         console.error('Error deleting user:', error);
         alert('❌ Failed to delete user');
@@ -151,8 +312,11 @@ function UserManagement({ refreshTrigger }) {
       department: '', 
       position: '', 
       role: 'Employee',
-      password: '' 
+      phone: '',
+      dateHired: '',
+      salary: ''
     });
+    setEditingId(null);
   };
 
   const getRoleBadge = (role) => {
@@ -184,7 +348,6 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
-  // ✅ Keep this function - it's used in the stats cards
   const getDepartmentCount = (department) => {
     return users.filter(user => user.department === department).length;
   };
@@ -195,13 +358,16 @@ function UserManagement({ refreshTrigger }) {
 
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ['Name', 'Email', 'Department', 'Position', 'Role', 'Created At'];
+    const headers = ['Name', 'Email', 'Department', 'Position', 'Role', 'Salary', 'Phone', 'Date Hired', 'Created At'];
     const rows = filteredUsers.map(user => [
       user.name || 'N/A',
       user.email || 'N/A',
       user.department || 'N/A',
       user.position || 'N/A',
       user.role || 'N/A',
+      user.salary || 'N/A',
+      user.phone || 'N/A',
+      user.dateHired || 'N/A',
       user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'
     ]);
 
@@ -243,6 +409,16 @@ function UserManagement({ refreshTrigger }) {
   const totalMGDH = getRoleCount('MGDH');
   const totalEmployees = getRoleCount('Employee');
 
+  const formatSalary = (salary) => {
+    if (!salary) return '—';
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(salary);
+  };
+
   return (
     <div className="user-management">
 
@@ -255,7 +431,7 @@ function UserManagement({ refreshTrigger }) {
           </h2>
           <p className="header-subtitle">Manage system users and their roles (HR Admin, MGDH, Employee)</p>
         </div>
-        <button onClick={() => setShowForm(true)} className="btn-add-modern">
+        <button onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} className="btn-add-modern">
           <AddIcon style={{ fontSize: 20, marginRight: 6, verticalAlign: 'middle' }} />
           Add New User
         </button>
@@ -368,6 +544,7 @@ function UserManagement({ refreshTrigger }) {
               <th>Department</th>
               <th>Position</th>
               <th>Role</th>
+              <th>Salary</th>
               <th>Created At</th>
               <th>Actions</th>
             </tr>
@@ -391,29 +568,56 @@ function UserManagement({ refreshTrigger }) {
                 <td>{user.department || '—'}</td>
                 <td>{user.position || '—'}</td>
                 <td>{getRoleBadge(user.role)}</td>
+                <td className="salary-cell">{formatSalary(user.salary)}</td>
                 <td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</td>
                 <td>
-                  <select 
-                    value={user.role || 'Employee'} 
-                    onChange={(e) => updateUserRole(user.id, e.target.value)}
-                    className="role-select-modern"
+                  <button 
+                    onClick={() => handleEdit(user)} 
+                    className="btn-action edit"
+                    style={{ 
+                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                      color: 'white',
+                      border: 'none',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      marginRight: '6px'
+                    }}
                   >
-                    <option value="Employee">👤 Employee</option>
-                    <option value="MGDH">👔 MGDH</option>
-                    <option value="HR Admin">👑 HR Admin</option>
-                  </select>
+                    <EditIcon style={{ fontSize: 14 }} />
+                    Edit
+                  </button>
                   <button 
                     onClick={() => deleteUser(user.id, user.name)} 
                     className="btn-action delete"
+                    style={{
+                      background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                      color: 'white',
+                      border: 'none',
+                      padding: '6px 12px',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '500',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
                   >
-                    <DeleteIcon style={{ fontSize: 16 }} />
+                    <DeleteIcon style={{ fontSize: 14 }} />
+                    Delete
                   </button>
                 </td>
               </tr>
             ))}
             {filteredUsers.length === 0 && (
               <tr>
-                <td colSpan="8" className="empty-state">
+                <td colSpan="9" className="empty-state">
                   <FolderIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 10px' }} />
                   <p>No users found</p>
                   <span>Try adjusting your search or filters</span>
@@ -424,110 +628,158 @@ function UserManagement({ refreshTrigger }) {
         </table>
       </div>
 
-      {/* Add User Modal */}
+      {/* Add/Edit User Modal - Matches EmployeeRecords style */}
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+        <div className="modal-overlay" onClick={() => { setShowForm(false); resetForm(); }}>
           <div className="modal-form" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                <AddIcon style={{ fontSize: 22, marginRight: 10, verticalAlign: 'middle' }} />
-                Add New User
+                {editingId ? (
+                  <EditIcon style={{ fontSize: 22, marginRight: 10, verticalAlign: 'middle' }} />
+                ) : (
+                  <AddIcon style={{ fontSize: 22, marginRight: 10, verticalAlign: 'middle' }} />
+                )}
+                {editingId ? 'Edit User' : 'Add New User'}
               </h3>
-              <button className="modal-close" onClick={() => setShowForm(false)}>
+              <button className="modal-close" onClick={() => { setShowForm(false); resetForm(); }}>
                 <CloseIcon />
               </button>
             </div>
-            <div className="form-grid">
-              <div className="form-group">
-                <label>
-                  <PersonIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                  Full Name *
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="Enter full name" 
-                  value={formData.name} 
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
-                  required
-                />
+            <div className="employee-form">
+              <div className="form-grid">
+                <div className="form-group">
+                  <label>
+                    <PersonIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Full Name *
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter full name" 
+                    value={formData.name} 
+                    onChange={(e) => setFormData({...formData, name: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    <BusinessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Department *
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter department" 
+                    value={formData.department} 
+                    onChange={(e) => setFormData({...formData, department: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    <WorkIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Position
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter position" 
+                    value={formData.position} 
+                    onChange={(e) => setFormData({...formData, position: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    <EmailIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Email *
+                  </label>
+                  <input 
+                    type="email" 
+                    placeholder="Enter email" 
+                    value={formData.email} 
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    <PhoneIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Phone
+                  </label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter phone number" 
+                    value={formData.phone} 
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    <CalendarTodayIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Date Hired
+                  </label>
+                  <input 
+                    type="date" 
+                    value={formData.dateHired} 
+                    onChange={(e) => setFormData({...formData, dateHired: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>
+                    <AdminPanelSettingsIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Role *
+                  </label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({...formData, role: e.target.value})}
+                    className="role-select-modern"
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '2px solid #e2e8f0',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    <option value="Employee">Employee</option>
+                    <option value="MGDH">MGDH (Department Head)</option>
+                    <option value="HR Admin">HR Admin</option>
+                  </select>
+                </div>
+                {/* Salary field - shows when adding or editing */}
+                <div className="form-group">
+                  <label>
+                    <AttachMoneyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+                    Salary
+                  </label>
+                  <input 
+                    type="number" 
+                    placeholder="Enter salary amount" 
+                    value={formData.salary} 
+                    onChange={(e) => setFormData({...formData, salary: e.target.value})}
+                  />
+                  <small style={{ color: '#8a9bb5', fontSize: 11 }}>
+                    Auto-creates payroll record with deductions (SSS, PhilHealth, Pag-IBIG)
+                  </small>
+                </div>
               </div>
-              <div className="form-group">
-                <label>
-                  <BusinessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                  Department *
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="Enter department" 
-                  value={formData.department} 
-                  onChange={(e) => setFormData({...formData, department: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  <WorkIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                  Position
-                </label>
-                <input 
-                  type="text" 
-                  placeholder="Enter position" 
-                  value={formData.position} 
-                  onChange={(e) => setFormData({...formData, position: e.target.value})}
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  <EmailIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                  Email *
-                </label>
-                <input 
-                  type="email" 
-                  placeholder="Enter email" 
-                  value={formData.email} 
-                  onChange={(e) => setFormData({...formData, email: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  <LockIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                  Password *
-                </label>
-                <input 
-                  type="password" 
-                  placeholder="Enter password (min 6 characters)" 
-                  value={formData.password} 
-                  onChange={(e) => setFormData({...formData, password: e.target.value})}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>
-                  <AdminPanelSettingsIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                  Role *
-                </label>
-                <select
-                  value={formData.role}
-                  onChange={(e) => setFormData({...formData, role: e.target.value})}
-                  className="role-select-modern"
-                  required
+              
+              <div className="form-actions">
+                <button 
+                  onClick={editingId ? updateUser : addUser} 
+                  className="btn-save" 
+                  disabled={loading}
                 >
-                  <option value="Employee">Employee</option>
-                  <option value="MGDH">MGDH (Department Head)</option>
-                  <option value="HR Admin">HR Admin</option>
-                </select>
+                  <SaveIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  {loading ? 'Saving...' : (editingId ? 'Update User' : 'Save User')}
+                </button>
+                <button 
+                  onClick={() => { setShowForm(false); resetForm(); }} 
+                  className="btn-cancel"
+                >
+                  <CancelIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  Cancel
+                </button>
               </div>
-            </div>
-            <div className="form-actions">
-              <button onClick={addUser} className="btn-save" disabled={loading}>
-                <SaveIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-                {loading ? 'Adding...' : 'Add User'}
-              </button>
-              <button onClick={() => setShowForm(false)} className="btn-cancel">
-                <CancelIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-                Cancel
-              </button>
             </div>
           </div>
         </div>

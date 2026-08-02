@@ -1,8 +1,9 @@
 // src/components/Dashboard.js
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getEmployees, getLeaveRequests, db } from "../firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { getEmployees, getLeaveRequests, db, auth } from "../firebase";
+import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
+import MGDHDashboard from "../other file for dashboard/MGDHPDashboard";
 
 // Material-UI Icons
 import PeopleIcon from '@mui/icons-material/People';
@@ -21,6 +22,8 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 
 function Dashboard() {
   const navigate = useNavigate();
+  const [userRole, setUserRole] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     presentToday: 0,
@@ -31,24 +34,34 @@ function Dashboard() {
     missingDocuments: 0,
     users: 0
   });
-  const [loading, setLoading] = useState(true);
   const [recentActivities, setRecentActivities] = useState([]);
   const [userName, setUserName] = useState('');
 
   useEffect(() => {
-    // ✅ Get user name from localStorage
-    const name = localStorage.getItem('userName') || 'HR Administrator';
-    const role = localStorage.getItem('userRole') || 'Admin';
-    setUserName(name);
-    
-    // ✅ Check if user is authenticated
-    const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
+    // Check user role and authentication
+    const checkUserRole = async () => {
+      const isAuthenticated = localStorage.getItem('isAuthenticated') === 'true';
+      if (!isAuthenticated) {
+        navigate('/login');
+        return;
+      }
 
-    fetchDashboard();
+      const role = localStorage.getItem('userRole') || 'Admin';
+      const name = localStorage.getItem('userName') || 'HR Administrator';
+      setUserName(name);
+      setUserRole(role);
+
+      // If user is MGDH, redirect to MGDH dashboard content
+      if (role === 'MGDH') {
+        setLoading(false);
+        return;
+      }
+
+      // For Admin, fetch dashboard data
+      await fetchDashboard();
+    };
+
+    checkUserRole();
   }, [navigate]);
 
   const fetchDashboard = async () => {
@@ -72,7 +85,7 @@ function Dashboard() {
         leave => leave.status === "Pending"
       ).length;
 
-      // ✅ Filter valid employees (with names)
+      // Filter valid employees (with names)
       const validEmployees = (employees || []).filter(emp => 
         emp.fullName && emp.fullName.trim() !== '' && emp.fullName !== 'undefined'
       );
@@ -219,6 +232,12 @@ function Dashboard() {
     }
   };
 
+  // If user is MGDH, render the MGDH Dashboard
+  if (userRole === 'MGDH') {
+    return <MGDHDashboard />;
+  }
+
+  // If still loading, show loading spinner
   if (loading) {
     return <div className="loading">Loading Dashboard...</div>;
   }
