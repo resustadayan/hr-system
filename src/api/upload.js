@@ -1,51 +1,55 @@
-// src/api/upload.js
+// api/upload.js
 import { put } from '@vercel/blob';
 
-export async function POST(request) {
+export default async function handler(req, res) {
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
   try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    const employeeId = formData.get('employeeId');
-    const documentType = formData.get('documentType');
-    const employeeName = formData.get('employeeName');
+    // Get the file from the request
+    const { file, fileName, employeeId, documentType } = req.body;
 
     if (!file || !employeeId || !documentType) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields' }),
-        { status: 400 }
-      );
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Create file path
-    const fileName = `${employeeId}_${documentType}_${Date.now()}_${file.name}`;
-    const blobPath = `compliance/${employeeId}/${documentType}/${fileName}`;
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    if (!token) {
+      console.error('Token not found in server environment');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
 
-    // Upload to Vercel Blob
-    const blob = await put(blobPath, file, {
+    // Convert base64 back to buffer
+    const buffer = Buffer.from(file, 'base64');
+    
+    const timestamp = Date.now();
+    const blobPath = `compliance/${employeeId}/${documentType}/${timestamp}_${fileName}`;
+
+    console.log('Uploading to Vercel Blob...');
+    console.log('Path:', blobPath);
+    console.log('Size:', buffer.length, 'bytes');
+
+    const blob = await put(blobPath, buffer, {
       access: 'public',
-      token: process.env.BLOB_READ_WRITE_TOKEN,
-      addRandomSuffix: false,
+      token: token,
+      
     });
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        url: blob.url,
-        path: blobPath,
-        downloadUrl: blob.downloadUrl,
-        fileName: file.name,
-        fileSize: file.size,
-      }),
-      { status: 200 }
-    );
+    console.log('Upload successful:', blob.url);
+
+    res.status(200).json({
+      success: true,
+      url: blob.url,
+      path: blobPath,
+    });
+
   } catch (error) {
-    console.error('Upload error:', error);
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: error.message 
-      }),
-      { status: 500 }
-    );
+    console.error('❌ Upload error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
 }

@@ -5,9 +5,9 @@ import { collection, getDocs, query, where, addDoc, updateDoc, deleteDoc, doc, g
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
-import { put } from '@vercel/blob'; 
+//import { put } from '@vercel/blob';
 
-// Material-UI Icons (all remain the same)
+// Material-UI Icons
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -69,6 +69,9 @@ function EmployeePortal() {
   const [notificationSound, setNotificationSound] = useState(null);
   const [showNotificationAlert, setShowNotificationAlert] = useState(false);
   const [latestNotification, setLatestNotification] = useState(null);
+  const [previewFile, setPreviewFile] = useState(false);
+  const [previewFileUrl, setPreviewFileUrl] = useState('');
+  const [previewFileName, setPreviewFileName] = useState('');
 
   // ====== ATTENDANCE STATES ======
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -87,6 +90,98 @@ function EmployeePortal() {
     lateDays: 0,
     absentDays: 0
   });
+
+  // ====== SMART FILE VIEWER WITH IMAGE FIX ======
+  const openFileViewer = (fileUrl, fileName) => {
+    if (!fileUrl) return;
+    
+    const extension = fileName ? fileName.split('.').pop().toLowerCase() : '';
+    
+    // For images - fetch and display as blob URL (prevents download)
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+    if (imageExtensions.includes(extension)) {
+      fetch(fileUrl)
+        .then(response => response.blob())
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          const newWindow = window.open('', '_blank');
+          if (newWindow) {
+            newWindow.document.write(`
+              <html>
+                <head>
+                  <title>${fileName || 'Image'}</title>
+                  <style>
+                    body { 
+                      margin: 0; 
+                      padding: 0; 
+                      height: 100vh; 
+                      display: flex; 
+                      justify-content: center; 
+                      align-items: center; 
+                      background: #f5f5f5; 
+                    }
+                    img { 
+                      max-width: 100%; 
+                      max-height: 100%; 
+                      object-fit: contain; 
+                      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                    }
+                  </style>
+                </head>
+                <body>
+                  <img src="${blobUrl}" alt="${fileName || 'Image'}" />
+                </body>
+              </html>
+            `);
+            newWindow.document.close();
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+          }
+        })
+        .catch(() => {
+          window.open(fileUrl, '_blank');
+        });
+      return;
+    }
+    
+    // PDF files - use Google Docs Viewer
+    if (extension === 'pdf') {
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+      window.open(viewerUrl, '_blank');
+      return;
+    }
+    
+    // Office files - use Google Docs Viewer
+    const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+    if (officeExtensions.includes(extension)) {
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+      window.open(viewerUrl, '_blank');
+      return;
+    }
+    
+    // Text files - open directly
+    const textExtensions = ['txt', 'csv', 'json', 'xml', 'log'];
+    if (textExtensions.includes(extension)) {
+      window.open(fileUrl, '_blank');
+      return;
+    }
+    
+    // Default - try Google Docs Viewer
+    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+    window.open(viewerUrl, '_blank');
+  };
+
+  // DEBUG: Check if token loads
+  useEffect(() => {
+    const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
+    console.log('TOKEN CHECK:');
+    console.log('Token exists:', !!token);
+    console.log('Token length:', token?.length || 0);
+    if (token) {
+      console.log('Token preview:', token.substring(0, 15) + '...');
+    } else {
+      console.error('TOKEN NOT FOUND! Check your .env file.');
+    }
+  }, []);
 
   // Handle mobile responsiveness
   useEffect(() => {
@@ -118,6 +213,7 @@ function EmployeePortal() {
     setupRealtimeListeners();
   }, []);
 
+  // ====== FETCH EMPLOYEE DATA ======
   const fetchEmployeeData = async () => {
     setLoading(true);
     try {
@@ -251,7 +347,6 @@ function EmployeePortal() {
     try {
       const today = new Date().toISOString().split('T')[0];
       
-      // Get today's attendance
       const todayQuery = query(
         collection(db, 'attendance'), 
         where('employeeId', '==', empId),
@@ -284,7 +379,6 @@ function EmployeePortal() {
         setAttendanceStatus('Not Timed In');
       }
 
-      // Get all attendance records for summary
       const allQuery = query(
         collection(db, 'attendance'), 
         where('employeeId', '==', empId)
@@ -293,7 +387,6 @@ function EmployeePortal() {
       const records = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAttendanceRecords(records);
 
-      // Calculate summary for the current month
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       const monthRecords = records.filter(record => {
@@ -326,7 +419,6 @@ function EmployeePortal() {
       const currentTime = new Date();
       const timeInStr = currentTime.toTimeString().slice(0, 5);
       
-      // Check if already timed in today
       const existingQuery = query(
         collection(db, 'attendance'),
         where('employeeId', '==', employee.id),
@@ -340,10 +432,8 @@ function EmployeePortal() {
         return;
       }
 
-      // Determine status based on office start time
       const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
 
-      // Add attendance record
       await addDoc(collection(db, 'attendance'), {
         employeeId: employee.id,
         employeeName: employee.fullName,
@@ -356,7 +446,6 @@ function EmployeePortal() {
         timestamp: Timestamp.now()
       });
 
-      // ====== NOTIFICATION FOR ADMIN ======
       await addDoc(collection(db, 'notifications'), {
         employeeId: employee.id,
         employeeName: employee.fullName,
@@ -369,7 +458,6 @@ function EmployeePortal() {
         createdAt: new Date().toISOString()
       });
 
-      // ====== NOTIFICATION FOR EMPLOYEE ======
       await addDoc(collection(db, 'notifications'), {
         employeeId: employee.id,
         type: 'attendance_confirmation',
@@ -384,7 +472,6 @@ function EmployeePortal() {
       setIsTimedIn(true);
       setAttendanceStatus('Timed In');
       
-      // Show success message with status
       const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
       alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}`);
       
@@ -406,13 +493,11 @@ function EmployeePortal() {
       const currentTime = new Date();
       const timeOutStr = currentTime.toTimeString().slice(0, 5);
       
-      // Update attendance record
       await updateDoc(doc(db, 'attendance', todayAttendance.id), {
         timeOut: timeOutStr,
         updatedAt: new Date().toISOString()
       });
 
-      // ====== NOTIFICATION FOR ADMIN ======
       await addDoc(collection(db, 'notifications'), {
         employeeId: employee.id,
         employeeName: employee.fullName,
@@ -425,7 +510,6 @@ function EmployeePortal() {
         createdAt: new Date().toISOString()
       });
 
-      // ====== NOTIFICATION FOR EMPLOYEE ======
       await addDoc(collection(db, 'notifications'), {
         employeeId: employee.id,
         type: 'attendance_confirmation',
@@ -487,7 +571,6 @@ function EmployeePortal() {
         setLeaveRequests(requests);
       });
 
-      // Listen for attendance changes
       const attendanceQuery = query(collection(db, 'attendance'), where('employeeId', '==', employee.id));
       onSnapshot(attendanceQuery, () => {
         fetchAttendanceData(employee.id);
@@ -724,8 +807,6 @@ function EmployeePortal() {
   };
 
   // ====== NOTIFICATION FUNCTIONS ======
-  
-  // Mark a single notification as read
   const markNotificationAsRead = async (notificationId) => {
     try {
       await updateDoc(doc(db, 'notifications', notificationId), {
@@ -739,7 +820,6 @@ function EmployeePortal() {
     }
   };
 
-  // Mark a single notification as unread
   const markNotificationAsUnread = async (notificationId) => {
     try {
       await updateDoc(doc(db, 'notifications', notificationId), {
@@ -753,7 +833,6 @@ function EmployeePortal() {
     }
   };
 
-  // Mark all notifications as read
   const markAllNotificationsAsRead = async () => {
     try {
       const unreadNotifs = notifications.filter(n => !n.read);
@@ -771,7 +850,6 @@ function EmployeePortal() {
     }
   };
 
-  // Mark all notifications as unread
   const markAllNotificationsAsUnread = async () => {
     try {
       for (const notif of notifications) {
@@ -833,41 +911,53 @@ function EmployeePortal() {
   };
 
   // ====== UPLOAD TO VERCEL BLOB ======
-  const uploadToVercelBlob = async (file, employeeId, documentType, employeeName) => {
+  const uploadToVercelBlob = async (file, employeeId, documentType) => {
     try {
-      // Get the Vercel Blob token from environment variables
       const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
       
       if (!token) {
-        throw new Error('Vercel Blob token not found. Please set REACT_APP_BLOB_READ_WRITE_TOKEN in your .env file.');
+        throw new Error('Vercel Blob token not found');
       }
 
-      // Create a unique path for the file
+      const storeId = 'store_ynMAP2Iw8PKPFAn8';
+      
       const timestamp = Date.now();
       const fileName = `${employeeId}_${documentType}_${timestamp}_${file.name}`;
-      const blobPath = `compliance/${employeeId}/${documentType}/${fileName}`;
+      const blobPath = `${employeeId}/${documentType}/${fileName}`;
 
-      console.log('Uploading to Vercel Blob...');
-      console.log('File:', file.name, file.size, 'bytes');
-      console.log('Path:', blobPath);
+      const url = `https://blob.vercel-storage.com/${storeId}/${blobPath}`;
 
-      // Upload to Vercel Blob
-      const blob = await put(blobPath, file, {
-        access: 'public',
-        token: token,
-        addRandomSuffix: false,
+      console.log('📤 Uploading to:', url);
+      console.log('📄 File:', file.name, file.size, 'bytes');
+
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
       });
 
-      console.log('Upload successful! URL:', blob.url);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Upload failed:', response.status, errorText);
+        throw new Error(`Upload failed (${response.status}): ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      const finalUrl = responseData.url || url;
+
+      console.log('✅ Upload successful! URL:', finalUrl);
 
       return {
         success: true,
-        url: blob.url,
+        url: finalUrl,
         path: blobPath,
-        downloadUrl: blob.downloadUrl || blob.url,
+        downloadUrl: finalUrl,
       };
     } catch (error) {
-      console.error('Vercel Blob upload error:', error);
+      console.error('❌ Upload error:', error);
       return {
         success: false,
         error: error.message
@@ -875,7 +965,43 @@ function EmployeePortal() {
     }
   };
 
-  // ====== FIXED: handleDocumentUpload with Vercel Blob ======
+  // ====== TEST FUNCTION ======
+  const testUpload = async () => {
+    try {
+      const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
+      if (!token) {
+        alert('❌ Token not found! Check .env file');
+        return;
+      }
+
+      console.log('🧪 Testing upload with token:', token.substring(0, 15) + '...');
+      
+      setUploadStatus('Testing Vercel Blob...');
+      setUploading(true);
+
+      const testContent = `Test file created at ${new Date().toISOString()}`;
+      const testFile = new File([testContent], `test_${Date.now()}.txt`, { type: 'text/plain' });
+      
+      const result = await uploadToVercelBlob(testFile, 'test', 'test');
+      
+      if (result.success) {
+        console.log('✅ Test successful:', result);
+        alert('✅ Test successful!\nURL: ' + result.url);
+        setUploadStatus('✅ Test successful!');
+      } else {
+        throw new Error(result.error);
+      }
+      
+      setUploading(false);
+    } catch (error) {
+      console.error('❌ Test failed:', error);
+      alert('❌ Test failed: ' + error.message);
+      setUploadStatus('❌ Test failed: ' + error.message);
+      setUploading(false);
+    }
+  };
+
+  // ====== handleDocumentUpload ======
   const handleDocumentUpload = async () => {
     if (!selectedFile || !selectedDocType) {
       alert('Please select a document type and a file');
@@ -900,12 +1026,10 @@ function EmployeePortal() {
         return;
       }
 
-      // Upload to Vercel Blob
       const uploadResult = await uploadToVercelBlob(
         selectedFile,
         employee.id,
-        selectedDocType,
-        employee.fullName
+        selectedDocType
       );
 
       if (!uploadResult.success) {
@@ -915,7 +1039,6 @@ function EmployeePortal() {
       setUploadProgress(50);
       setUploadStatus('Saving to database...');
 
-      // Save document info to Firestore
       await addDoc(collection(db, 'documents'), {
         employeeId: employee.id,
         employeeName: employee.fullName,
@@ -934,7 +1057,6 @@ function EmployeePortal() {
       setUploadProgress(75);
       setUploadStatus('Creating notifications...');
 
-      // Notification for admin with employee info
       await addDoc(collection(db, 'notifications'), {
         type: 'compliance_upload',
         employeeId: employee.id,
@@ -948,7 +1070,6 @@ function EmployeePortal() {
         createdAt: new Date().toISOString()
       });
 
-      // Confirmation for employee
       await addDoc(collection(db, 'notifications'), {
         type: 'compliance_upload_confirmation',
         employeeId: employee.id,
@@ -965,7 +1086,6 @@ function EmployeePortal() {
       setSelectedDocType('');
       setShowUploadForm(false);
       
-      // AUTO-REDIRECT TO COMPLIANCE MONITORING PAGE
       navigate('/compliance', { 
         state: { 
           notification: `${employee.fullName} uploaded ${selectedDocType}`,
@@ -983,8 +1103,6 @@ function EmployeePortal() {
       alert(`Upload failed: ${error.message}`);
     }
   };
-
-  // ====== END OF handleDocumentUpload ======
 
   const getStatusBadge = (status) => {
     switch(status) {
@@ -1046,6 +1164,48 @@ function EmployeePortal() {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     }).format(parseFloat(amount));
+  };
+
+  // ====== PREVIEW MODAL ======
+  const renderPreviewModal = () => {
+    if (!previewFile) return null;
+    
+    return (
+      <div className="modal-overlay" onClick={() => setPreviewFile(false)}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%', padding: '20px' }}>
+          <div className="modal-header">
+            <h3>{previewFileName || 'Document Preview'}</h3>
+            <button className="modal-close" onClick={() => setPreviewFile(false)}>✕</button>
+          </div>
+          <div style={{ width: '100%', height: '80vh', minHeight: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
+            {previewFileUrl && previewFileUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) ? (
+              <img 
+                src={previewFileUrl} 
+                alt={previewFileName}
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                onError={(e) => {
+                  fetch(previewFileUrl)
+                    .then(res => res.blob())
+                    .then(blob => {
+                      const blobUrl = URL.createObjectURL(blob);
+                      e.target.src = blobUrl;
+                    })
+                    .catch(() => {
+                      e.target.src = 'https://via.placeholder.com/400x300?text=Image+Not+Available';
+                    });
+                }}
+              />
+            ) : (
+              <iframe
+                src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewFileUrl)}&embedded=true`}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Document Preview"
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -1166,7 +1326,6 @@ function EmployeePortal() {
         </div>
       </div>
 
-      {/* Quick Attendance Status */}
       <div className="attendance-quick-status" style={{ 
         background: 'white', 
         borderRadius: '12px', 
@@ -1304,7 +1463,6 @@ function EmployeePortal() {
         <span className="stats-badge">{new Date().toLocaleDateString()}</span>
       </div>
 
-      {/* Attendance Summary Cards */}
       <div className="stats-row">
         <div className="stat-card">
           <div className="stat-icon blue"><EventNoteIcon /></div>
@@ -1336,7 +1494,6 @@ function EmployeePortal() {
         </div>
       </div>
 
-      {/* Today's Attendance */}
       <div className="form-card-modern">
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <AccessTimeIcon />
@@ -1427,7 +1584,6 @@ function EmployeePortal() {
         </div>
       </div>
 
-      {/* Attendance History */}
       <div className="form-card-modern">
         <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <TimelineIcon />
@@ -1648,10 +1804,25 @@ function EmployeePortal() {
             </div>
             <div className="doc-item-actions">
               {doc.fileUrl && (
-                <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="btn-view-doc">
-                  <VisibilityIcon style={{ fontSize: 16, marginRight: 4 }} />
+                <button
+                  onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
+                  className="btn-view-doc"
+                  style={{
+                    padding: '4px 12px',
+                    background: '#4a6fa5',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '13px'
+                  }}
+                >
+                  <VisibilityIcon style={{ fontSize: 16 }} />
                   View
-                </a>
+                </button>
               )}
             </div>
           </div>
@@ -1668,6 +1839,36 @@ function EmployeePortal() {
               <h3>Upload Document</h3>
               <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
             </div>
+            
+            <div style={{ 
+              background: '#e8f5e9', 
+              padding: '12px', 
+              borderRadius: '8px', 
+              marginBottom: '15px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontSize: '13px', color: '#2e7d32' }}>
+                🚀 Quick Upload Test
+              </span>
+              <button 
+                onClick={testUpload}
+                style={{
+                  padding: '8px 20px',
+                  background: '#4caf50',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontWeight: 'bold'
+                }}
+                disabled={uploading}
+              >
+                {uploading ? 'Testing...' : '🧪 Test Now'}
+              </button>
+            </div>
+            
             <div className="form-grid">
               <div className="form-group full-width">
                 <label>Document Type</label>
@@ -1745,7 +1946,7 @@ function EmployeePortal() {
     </div>
   );
 
-  // ====== NOTIFICATIONS TAB WITH MARK AS READ/UNREAD ======
+  // ====== NOTIFICATIONS TAB ======
   const renderNotifications = () => {
     const sortedNotifications = [...notifications].sort((a, b) => 
       new Date(b.createdAt) - new Date(a.createdAt)
@@ -1953,6 +2154,8 @@ function EmployeePortal() {
 
   return (
     <div className="employee-portal">
+      {renderPreviewModal()}
+
       {/* Notification Alert Banner */}
       {showNotificationAlert && latestNotification && (
         <div className={`notification-alert ${latestNotification.status === 'Approved' ? 'approved' : 'rejected'}`}>

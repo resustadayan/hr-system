@@ -28,7 +28,89 @@ function ComplianceMonitoring() {
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
+  const [previewFile, setPreviewFile] = useState(false);
+  const [previewFileUrl, setPreviewFileUrl] = useState('');
+  const [previewFileName, setPreviewFileName] = useState('');
   const notificationRef = useRef(null);
+
+  // ====== SMART FILE VIEWER ======
+  const openFileViewer = (fileUrl, fileName) => {
+    if (!fileUrl) return;
+    
+    const extension = fileName ? fileName.split('.').pop().toLowerCase() : '';
+    
+    // For images - fetch and display as blob URL (prevents download)
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
+    if (imageExtensions.includes(extension)) {
+      fetch(fileUrl)
+        .then(response => response.blob())
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          const newWindow = window.open('', '_blank');
+          if (newWindow) {
+            newWindow.document.write(`
+              <html>
+                <head>
+                  <title>${fileName || 'Image'}</title>
+                  <style>
+                    body { 
+                      margin: 0; 
+                      padding: 0; 
+                      height: 100vh; 
+                      display: flex; 
+                      justify-content: center; 
+                      align-items: center; 
+                      background: #f5f5f5; 
+                    }
+                    img { 
+                      max-width: 100%; 
+                      max-height: 100%; 
+                      object-fit: contain; 
+                      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+                    }
+                  </style>
+                </head>
+                <body>
+                  <img src="${blobUrl}" alt="${fileName || 'Image'}" />
+                </body>
+              </html>
+            `);
+            newWindow.document.close();
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+          }
+        })
+        .catch(() => {
+          window.open(fileUrl, '_blank');
+        });
+      return;
+    }
+    
+    // PDF files - use Google Docs Viewer
+    if (extension === 'pdf') {
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+      window.open(viewerUrl, '_blank');
+      return;
+    }
+    
+    // Office files - use Google Docs Viewer
+    const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+    if (officeExtensions.includes(extension)) {
+      const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+      window.open(viewerUrl, '_blank');
+      return;
+    }
+    
+    // Text files - open directly
+    const textExtensions = ['txt', 'csv', 'json', 'xml', 'log'];
+    if (textExtensions.includes(extension)) {
+      window.open(fileUrl, '_blank');
+      return;
+    }
+    
+    // Default - try Google Docs Viewer
+    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+    window.open(viewerUrl, '_blank');
+  };
 
   // Check for navigation state from EmployeePortal
   useEffect(() => {
@@ -39,12 +121,10 @@ function ComplianceMonitoring() {
         setHighlightedEmployeeId(employeeId);
         setFilter('all');
         
-        // Auto-dismiss toast after 8 seconds
         setTimeout(() => {
           setToastMessage(null);
         }, 8000);
         
-        // Clear location state
         window.history.replaceState({}, document.title);
       }
     }
@@ -58,19 +138,15 @@ function ComplianceMonitoring() {
 
   // ====== REAL-TIME LISTENER FOR NEW UPLOADS ======
   const setupRealtimeListeners = () => {
-    // Listen for new documents in real-time
     const unsubscribe = onSnapshot(collection(db, 'documents'), (snapshot) => {
       const docList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDocuments(docList);
       
-      // Count pending documents
       const pending = docList.filter(d => d.status === 'Pending Review').length;
       setPendingCount(pending);
       
-      // Check for new pending documents
       const newPending = docList.filter(d => d.status === 'Pending Review');
       if (newPending.length > 0 && !toastMessage) {
-        // Check if there's a recent upload (within last 10 seconds)
         const recentUpload = newPending.some(d => {
           const uploadTime = new Date(d.uploadedAt).getTime();
           const now = Date.now();
@@ -123,7 +199,6 @@ function ComplianceMonitoring() {
       });
       
       if (docData) {
-        // Notify the employee
         await addDoc(collection(db, 'notifications'), {
           employeeId: docData.employeeId,
           employeeName: docData.employeeName,
@@ -185,7 +260,7 @@ function ComplianceMonitoring() {
 
   return (
     <div className="compliance-container">
-      {/* Toast Notification for new upload */}
+      {/* Toast Notification */}
       {toastMessage && (
         <div className="toast-notification" style={{
           position: 'fixed',
@@ -259,71 +334,38 @@ function ComplianceMonitoring() {
       {/* Summary Cards */}
       <div className="stats-row">
         <div className="stat-card blue">
-          <div className="stat-icon">
-            <PeopleIcon style={{ fontSize: 30 }} />
-          </div>
-          <div className="stat-info">
-            <h3>Total Employees</h3>
-            <p>{totalEmployees}</p>
-          </div>
+          <div className="stat-icon"><PeopleIcon style={{ fontSize: 30 }} /></div>
+          <div className="stat-info"><h3>Total Employees</h3><p>{totalEmployees}</p></div>
         </div>
         <div className="stat-card green">
-          <div className="stat-icon">
-            <CheckCircleIcon style={{ fontSize: 30 }} />
-          </div>
-          <div className="stat-info">
-            <h3>Fully Compliant</h3>
-            <p>{fullyCompliant}</p>
-          </div>
+          <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 30 }} /></div>
+          <div className="stat-info"><h3>Fully Compliant</h3><p>{fullyCompliant}</p></div>
         </div>
         <div className="stat-card orange">
-          <div className="stat-icon">
-            <WarningIcon style={{ fontSize: 30 }} />
-          </div>
-          <div className="stat-info">
-            <h3>Pending Review</h3>
-            <p>{pendingCount}</p>
-          </div>
+          <div className="stat-icon"><WarningIcon style={{ fontSize: 30 }} /></div>
+          <div className="stat-info"><h3>Pending Review</h3><p>{pendingCount}</p></div>
         </div>
         <div className="stat-card red">
-          <div className="stat-icon">
-            <DescriptionIcon style={{ fontSize: 30 }} />
-          </div>
-          <div className="stat-info">
-            <h3>Need Attention</h3>
-            <p>{missingDocs}</p>
-          </div>
+          <div className="stat-icon"><DescriptionIcon style={{ fontSize: 30 }} /></div>
+          <div className="stat-info"><h3>Need Attention</h3><p>{missingDocs}</p></div>
         </div>
       </div>
 
       {/* Filter Controls */}
       <div className="filter-bar-modern">
-        <button 
-          onClick={() => setFilter('all')} 
-          className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-        >
+        <button onClick={() => setFilter('all')} className={`filter-btn ${filter === 'all' ? 'active' : ''}`}>
           <FolderIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
           All Employees ({filteredEmployees.length})
         </button>
-        <button 
-          onClick={() => setFilter('pending')} 
-          className={`filter-btn ${filter === 'pending' ? 'active' : ''}`}
-          style={filter === 'pending' ? { background: '#e67e22', color: 'white' } : {}}
-        >
+        <button onClick={() => setFilter('pending')} className={`filter-btn ${filter === 'pending' ? 'active' : ''}`} style={filter === 'pending' ? { background: '#e67e22', color: 'white' } : {}}>
           <WarningIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
           Pending Review ({pendingCount})
         </button>
-        <button 
-          onClick={() => setFilter('missing')} 
-          className={`filter-btn ${filter === 'missing' ? 'active' : ''}`}
-        >
+        <button onClick={() => setFilter('missing')} className={`filter-btn ${filter === 'missing' ? 'active' : ''}`}>
           <WarningIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
           Missing Documents ({missingDocs})
         </button>
-        <button 
-          onClick={() => setFilter('complete')} 
-          className={`filter-btn ${filter === 'complete' ? 'active' : ''}`}
-        >
+        <button onClick={() => setFilter('complete')} className={`filter-btn ${filter === 'complete' ? 'active' : ''}`}>
           <CheckCircleIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
           Fully Compliant ({fullyCompliant})
         </button>
@@ -352,71 +394,35 @@ function ComplianceMonitoring() {
               return (
                 <tr 
                   key={emp.id} 
-                  className={`
-                    ${isCompliant ? 'compliant-row' : 'non-compliant-row'}
-                    ${isHighlighted ? 'highlighted-row' : ''}
-                  `}
-                  style={isHighlighted ? {
-                    background: '#e8f4fd',
-                    borderLeft: '4px solid #4a6fa5',
-                    animation: 'highlightFade 2s ease-out'
-                  } : {}}
+                  className={`${isCompliant ? 'compliant-row' : 'non-compliant-row'} ${isHighlighted ? 'highlighted-row' : ''}`}
+                  style={isHighlighted ? { background: '#e8f4fd', borderLeft: '4px solid #4a6fa5', animation: 'highlightFade 2s ease-out' } : {}}
                 >
                   <td>
                     <div className="employee-info">
-                      <div className="employee-avatar small">
-                        {emp.fullName?.charAt(0) || '?'}
-                      </div>
+                      <div className="employee-avatar small">{emp.fullName?.charAt(0) || '?'}</div>
                       <span className="employee-name">{emp.fullName}</span>
-                      {isHighlighted && (
-                        <span style={{
-                          background: '#4a6fa5',
-                          color: 'white',
-                          fontSize: '10px',
-                          padding: '2px 8px',
-                          borderRadius: '10px',
-                          marginLeft: '8px'
-                        }}>
-                          NEW
-                        </span>
-                      )}
+                      {isHighlighted && <span style={{ background: '#4a6fa5', color: 'white', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', marginLeft: '8px' }}>NEW</span>}
                     </div>
                   </td>
                   <td><span className="dept-tag">{emp.department || 'N/A'}</span></td>
                   <td>
                     <div className="progress-bar-modern">
-                      <div 
-                        className={`progress-fill ${isCompliant ? 'complete' : 'partial'}`} 
-                        style={{ width: `${status.percentage}%` }}
-                      >
+                      <div className={`progress-fill ${isCompliant ? 'complete' : 'partial'}`} style={{ width: `${status.percentage}%` }}>
                         <span>{status.percentage}%</span>
                       </div>
                     </div>
                   </td>
                   <td>
                     {isCompliant ? 
-                      <span className="status-badge success">
-                        <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                        Complete
-                      </span> : 
-                      <span className="status-badge warning">
-                        <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                        {status.pending} Pending
-                      </span>
+                      <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} /> Complete</span> : 
+                      <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} /> {status.pending} Pending</span>
                     }
                   </td>
                   <td>
                     {pendingDocs.length > 0 ? (
                       <div className="missing-tags">
                         {pendingDocs.map(doc => (
-                          <span key={doc.id} className="missing-tag" style={{
-                            background: '#fff3cd',
-                            color: '#856404',
-                            padding: '2px 10px',
-                            borderRadius: '12px',
-                            fontSize: '12px',
-                            margin: '2px 4px'
-                          }}>
+                          <span key={doc.id} className="missing-tag" style={{ background: '#fff3cd', color: '#856404', padding: '2px 10px', borderRadius: '12px', fontSize: '12px', margin: '2px 4px' }}>
                             {doc.documentType}
                           </span>
                         ))}
@@ -429,18 +435,7 @@ function ComplianceMonitoring() {
                     <button 
                       onClick={() => setSelectedEmployee(emp)} 
                       className="btn-view-details"
-                      style={{
-                        padding: '6px 14px',
-                        background: '#4a6fa5',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '13px'
-                      }}
+                      style={{ padding: '6px 14px', background: '#4a6fa5', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
                     >
                       <VisibilityIcon style={{ fontSize: 16 }} />
                       Review Documents
@@ -468,24 +463,15 @@ function ComplianceMonitoring() {
           <div className="modal-form" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
-                <span className="employee-avatar small" style={{ marginRight: '12px' }}>
-                  {selectedEmployee.fullName?.charAt(0) || '?'}
-                </span>
+                <span className="employee-avatar small" style={{ marginRight: '12px' }}>{selectedEmployee.fullName?.charAt(0) || '?'}</span>
                 {selectedEmployee.fullName} - Document Status
               </h3>
-              <button 
-                className="modal-close" 
-                onClick={() => setSelectedEmployee(null)}
-              >
-                <CloseIcon />
-              </button>
+              <button className="modal-close" onClick={() => setSelectedEmployee(null)}><CloseIcon /></button>
             </div>
             
             <div className="doc-status-grid">
               {documents.filter(doc => doc.employeeId === selectedEmployee.id).map(doc => (
-                <div key={doc.id} className="doc-card" style={{
-                  border: doc.status === 'Pending Review' ? '2px solid #f39c12' : '1px solid #eee'
-                }}>
+                <div key={doc.id} className="doc-card" style={{ border: doc.status === 'Pending Review' ? '2px solid #f39c12' : '1px solid #eee' }}>
                   <div className="doc-info">
                     <span className="doc-type">{doc.documentType}</span>
                     <span className={`doc-status ${getStatusColor(doc.status)}`}>
@@ -499,41 +485,26 @@ function ComplianceMonitoring() {
                   <div className="doc-details">
                     <span className="doc-expiry">
                       {doc.uploadedAt ? (
-                        <>
-                          <EventIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                          Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}
-                        </>
+                        <><EventIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} /> Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</>
                       ) : 'No upload date'}
                     </span>
                     {doc.fileUrl && (
-                      <a 
-                        href={doc.fileUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        style={{
-                          color: '#4a6fa5',
-                          textDecoration: 'none',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '4px'
-                        }}
+                      <button
+                        onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
+                        style={{ color: '#4a6fa5', background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '4px', fontSize: '14px' }}
+                        onMouseEnter={(e) => e.target.style.background = '#e8f0fe'}
+                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
                       >
                         <VisibilityIcon style={{ fontSize: 14 }} />
                         View File
-                      </a>
+                      </button>
                     )}
                     <select 
                       value={doc.status} 
                       onChange={(e) => updateDocumentStatus(doc.id, e.target.value)}
                       className="doc-status-select"
                       disabled={loading}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '6px',
-                        border: '1px solid #ddd',
-                        marginTop: '8px',
-                        width: '100%'
-                      }}
+                      style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid #ddd', marginTop: '8px', width: '100%' }}
                     >
                       <option value="Pending Review">⏳ Pending Review</option>
                       <option value="Complete">✅ Complete</option>
@@ -552,21 +523,7 @@ function ComplianceMonitoring() {
             </div>
             
             <div className="form-actions" style={{ marginTop: '20px' }}>
-              <button 
-                className="btn-cancel" 
-                onClick={() => setSelectedEmployee(null)}
-                style={{
-                  padding: '10px 24px',
-                  background: '#6c757d',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
+              <button className="btn-cancel" onClick={() => setSelectedEmployee(null)} style={{ padding: '10px 24px', background: '#6c757d', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                 <CloseIcon style={{ fontSize: 18 }} />
                 Close
               </button>
@@ -575,41 +532,57 @@ function ComplianceMonitoring() {
         </div>
       )}
 
+      {/* Preview Modal */}
+      {previewFile && (
+        <div className="modal-overlay" onClick={() => setPreviewFile(false)}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%', padding: '20px' }}>
+            <div className="modal-header">
+              <h3>{previewFileName || 'Document Preview'}</h3>
+              <button className="modal-close" onClick={() => setPreviewFile(false)}>✕</button>
+            </div>
+            <div style={{ width: '100%', height: '80vh', minHeight: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
+              {previewFileUrl && previewFileUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) ? (
+                <img 
+                  src={previewFileUrl} 
+                  alt={previewFileName}
+                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                  onError={(e) => {
+                    fetch(previewFileUrl)
+                      .then(res => res.blob())
+                      .then(blob => {
+                        const blobUrl = URL.createObjectURL(blob);
+                        e.target.src = blobUrl;
+                      })
+                      .catch(() => {
+                        e.target.src = 'https://via.placeholder.com/400x300?text=Image+Not+Available';
+                      });
+                  }}
+                />
+              ) : (
+                <iframe
+                  src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewFileUrl)}&embedded=true`}
+                  style={{ width: '100%', height: '100%', border: 'none' }}
+                  title="Document Preview"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* CSS Animations */}
       <style>{`
         @keyframes slideIn {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
         }
-        
         @keyframes highlightFade {
-          0% {
-            background: #cce5ff;
-            transform: scale(1.02);
-          }
-          50% {
-            background: #e8f4fd;
-          }
-          100% {
-            background: #e8f4fd;
-            transform: scale(1);
-          }
+          0% { background: #cce5ff; transform: scale(1.02); }
+          50% { background: #e8f4fd; }
+          100% { background: #e8f4fd; transform: scale(1); }
         }
-        
-        .highlighted-row {
-          animation: highlightFade 2s ease-out;
-          border-left: 4px solid #4a6fa5;
-        }
-        
-        .toast-notification {
-          animation: slideIn 0.5s ease-out;
-        }
+        .highlighted-row { animation: highlightFade 2s ease-out; border-left: 4px solid #4a6fa5; }
+        .toast-notification { animation: slideIn 0.5s ease-out; }
       `}</style>
     </div>
   );
