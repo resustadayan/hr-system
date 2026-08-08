@@ -8,7 +8,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import logoLeft from '../assets/pagbilogo.jpg';
 import logoRight from '../assets/hrmo logo.jpg';
-import coverImage from '../assets/pagbi_bg.jpg';
+import coverImage from '../assets/pagbi_bg (1).jpg';
 
 function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -23,6 +23,7 @@ function Login() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -150,7 +151,8 @@ function Login() {
         department: department,
         position: position,
         uid: user.uid,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        status: 'Pending Approval' // Add status for HR to approve
       });
 
       await setDoc(doc(db, 'employees', user.uid), {
@@ -159,7 +161,7 @@ function Login() {
         department: department,
         position: position,
         contact: contact,
-        employmentStatus: 'Active',
+        employmentStatus: 'Pending Approval',
         dateHired: new Date().toISOString().split('T')[0],
         salary: 0,
         createdAt: new Date().toISOString()
@@ -171,17 +173,29 @@ function Login() {
         sickLeave: 15
       });
 
-      setSuccess('Account created successfully! Redirecting...');
+      // DON'T set localStorage - user should NOT be logged in yet
+      // DON'T navigate - stay on login page
 
-      localStorage.setItem('isAuthenticated', 'true');
-      localStorage.setItem('userRole', 'Employee');
-      localStorage.setItem('userName', fullName);
-      localStorage.setItem('userEmail', email);
-      localStorage.setItem('userId', user.uid);
+      setIsRegistered(true);
+      setSuccess('Registration successful! Your account is pending approval by HR. You will be notified once approved.');
 
+      // Clear form fields
+      setFullName('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      setContact('');
+      setDepartment('');
+      setPosition('');
+
+      // Switch back to login after 5 seconds
       setTimeout(() => {
-        navigate('/employee-portal');
-      }, 1500);
+        setIsRegistered(false);
+        setIsLogin(true);
+        setSuccess('');
+        // Pre-fill email for convenience
+        setEmail(email);
+      }, 5000);
 
     } catch (err) {
       console.error('Registration error:', err);
@@ -227,10 +241,39 @@ function Login() {
           </div>
 
           {error && <div className="error-message">{error}</div>}
-          {success && <div className="success-message">{success}</div>}
+          {success && <div className="success-message" style={{ 
+            background: isRegistered ? '#d4edda' : '#e4f5e9',
+            color: isRegistered ? '#155724' : '#27ae60',
+            border: isRegistered ? '1px solid #c3e6cb' : '1px solid #b8e6c9',
+            padding: '15px 20px',
+            borderRadius: '10px',
+            marginBottom: '20px',
+            textAlign: 'center'
+          }}>
+            {success}
+          </div>}
+
+          {/* Show a message if account is pending approval */}
+          {isRegistered && (
+            <div style={{
+              background: '#fff3cd',
+              color: '#856404',
+              padding: '15px 20px',
+              borderRadius: '10px',
+              marginBottom: '20px',
+              textAlign: 'center',
+              border: '1px solid #ffeaa7'
+            }}>
+              <p style={{ margin: 0, fontWeight: 'bold' }}>Account Pending Approval</p>
+              <p style={{ margin: '5px 0 0', fontSize: '14px' }}>
+                Your account has been created but is awaiting HR approval.
+                You will be able to login once approved.
+              </p>
+            </div>
+          )}
 
           <form onSubmit={isLogin ? handleLogin : handleRegister}>
-            {!isLogin && (
+            {!isLogin && !isRegistered && (
               <>
                 <div className="input-group">
                   <label>Full Name *</label>
@@ -278,83 +321,111 @@ function Login() {
               </>
             )}
 
-            <div className="input-group">
-              <label>Email Address *</label>
-              <input
-                type="email"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
+            {!isRegistered && (
+              <>
+                <div className="input-group">
+                  <label>Email Address *</label>
+                  <input
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={isRegistered}
+                  />
+                </div>
 
-            <div className="input-group password-group">
-              <label>Password *</label>
-              <div className="password-wrapper">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={isLogin ? 'Enter your password' : 'Create a password (min 6 characters)'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <button 
-                  type="button" 
-                  className="password-toggle"
-                  onClick={togglePasswordVisibility}
-                  aria-label="Toggle password visibility"
-                >
-                  {showPassword ? (
-                    <VisibilityOffIcon sx={{ color: '#888', fontSize: 24 }} />
-                  ) : (
-                    <VisibilityIcon sx={{ color: '#888', fontSize: 24 }} />
-                  )}
+                <div className="input-group password-group">
+                  <label>Password *</label>
+                  <div className="password-wrapper">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder={isLogin ? 'Enter your password' : 'Create a password (min 6 characters)'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={isRegistered}
+                    />
+                    <button 
+                      type="button" 
+                      className="password-toggle"
+                      onClick={togglePasswordVisibility}
+                      aria-label="Toggle password visibility"
+                      disabled={isRegistered}
+                    >
+                      {showPassword ? (
+                        <VisibilityOffIcon sx={{ color: '#888', fontSize: 24 }} />
+                      ) : (
+                        <VisibilityIcon sx={{ color: '#888', fontSize: 24 }} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {!isLogin && (
+                  <div className="input-group">
+                    <label>Confirm Password *</label>
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="Confirm your password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      disabled={isRegistered}
+                    />
+                  </div>
+                )}
+
+                <button type="submit" disabled={loading || isRegistered} className="login-btn">
+                  {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
                 </button>
-              </div>
-            </div>
-
-            {!isLogin && (
-              <div className="input-group">
-                <label>Confirm Password *</label>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Confirm your password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                />
-              </div>
+              </>
             )}
 
-            <button type="submit" disabled={loading} className="login-btn">
-              {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
-            </button>
+            {/* Show a "Go to Login" button after registration */}
+            {isRegistered && (
+              <button 
+                type="button" 
+                className="login-btn" 
+                onClick={() => {
+                  setIsRegistered(false);
+                  setIsLogin(true);
+                  setSuccess('');
+                  setError('');
+                }}
+                style={{ background: '#4a6fa5' }}
+              >
+                Go to Login
+              </button>
+            )}
           </form>
 
-          <div className="toggle-auth">
-            <button 
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError('');
-                setSuccess('');
-                setFullName('');
-                setContact('');
-                setDepartment('');
-                setPosition('');
-                setConfirmPassword('');
-              }}
-              className="toggle-btn"
-            >
-              {isLogin ? "Don't have an account? Register here" : "Already have an account? Login here"}
-            </button>
-          </div>
+          {!isRegistered && (
+            <div className="toggle-auth">
+              <button 
+                onClick={() => {
+                  setIsLogin(!isLogin);
+                  setError('');
+                  setSuccess('');
+                  setFullName('');
+                  setContact('');
+                  setDepartment('');
+                  setPosition('');
+                  setConfirmPassword('');
+                  setIsRegistered(false);
+                }}
+                className="toggle-btn"
+              >
+                {isLogin ? "Don't have an account? Register here" : "Already have an account? Login here"}
+              </button>
+            </div>
+          )}
 
-          {isLogin && (
+          {isLogin && !isRegistered && (
             <div className="demo-credentials">
               <p><strong>Demo Credentials:</strong></p>
-              <p>👑 HR Admin: admin@pagbilao.gov.ph / admin123</p>
-              <p>📋 MGDH: mgdh@pagbilao.gov.ph / mgdh123</p>
+              <p>HR Admin: admin@pagbilao.gov.ph / admin123</p>
+              <p>MGDH: mgdh@pagbilao.gov.ph / mgdh123</p>
             </div>
           )}
         </div>

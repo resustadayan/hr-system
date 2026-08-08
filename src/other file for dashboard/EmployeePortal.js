@@ -5,7 +5,6 @@ import { collection, getDocs, query, where, addDoc, updateDoc, deleteDoc, doc, g
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
-//import { put } from '@vercel/blob';
 
 // Material-UI Icons
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -23,21 +22,23 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
-import CloseIcon from '@mui/icons-material/Close';
 import DescriptionIcon from '@mui/icons-material/Description';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import DeleteIcon from '@mui/icons-material/Delete';
-import RestoreIcon from '@mui/icons-material/Restore';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import LoginIcon from '@mui/icons-material/Login';
 import Logout from '@mui/icons-material/Logout';
 import EventNoteIcon from '@mui/icons-material/EventNote';
 import TimelineIcon from '@mui/icons-material/Timeline';
-import CheckIcon from '@mui/icons-material/Check';
-import WarningIcon from '@mui/icons-material/Warning';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import MarkunreadIcon from '@mui/icons-material/Markunread';
+import TrendingDownIcon from '@mui/icons-material/TrendingDown';
+import PrintIcon from '@mui/icons-material/Print';
+import WarningIcon from '@mui/icons-material/Warning';
 import logo from '../assets/hrmo logo.jpg';
+
+// Late deduction rate (matches Payroll.js)
+const LATE_DEDUCTION_RATE = 500; // ₱500 per late day
 
 function EmployeePortal() {
   const navigate = useNavigate();
@@ -73,6 +74,10 @@ function EmployeePortal() {
   const [previewFileUrl, setPreviewFileUrl] = useState('');
   const [previewFileName, setPreviewFileName] = useState('');
 
+  // ====== PAYSLIP STATES ======
+  const [showPayslipModal, setShowPayslipModal] = useState(false);
+  const [selectedPayroll, setSelectedPayroll] = useState(null);
+
   // ====== ATTENDANCE STATES ======
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [todayAttendance, setTodayAttendance] = useState(null);
@@ -83,7 +88,7 @@ function EmployeePortal() {
   const [timeOut, setTimeOut] = useState(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [officeStartTime, setOfficeStartTime] = useState('08:00');
-  const [officeEndTime, setOfficeEndTime] = useState('17:00');
+  const [officeEndTime, setOfficeEndTime] = useState('5:00');
   const [attendanceSummary, setAttendanceSummary] = useState({
     totalDays: 0,
     presentDays: 0,
@@ -91,13 +96,18 @@ function EmployeePortal() {
     absentDays: 0
   });
 
+  // ====== PAYROLL STATES ======
+  const [employeePayroll, setEmployeePayroll] = useState(null);
+  const [employeeLateDays, setEmployeeLateDays] = useState(0);
+  const [employeeLateDeduction, setEmployeeLateDeduction] = useState(0);
+  const [allPayrollHistory, setAllPayrollHistory] = useState([]);
+
   // ====== SMART FILE VIEWER WITH IMAGE FIX ======
   const openFileViewer = (fileUrl, fileName) => {
     if (!fileUrl) return;
     
     const extension = fileName ? fileName.split('.').pop().toLowerCase() : '';
     
-    // For images - fetch and display as blob URL (prevents download)
     const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
     if (imageExtensions.includes(extension)) {
       fetch(fileUrl)
@@ -111,21 +121,8 @@ function EmployeePortal() {
                 <head>
                   <title>${fileName || 'Image'}</title>
                   <style>
-                    body { 
-                      margin: 0; 
-                      padding: 0; 
-                      height: 100vh; 
-                      display: flex; 
-                      justify-content: center; 
-                      align-items: center; 
-                      background: #f5f5f5; 
-                    }
-                    img { 
-                      max-width: 100%; 
-                      max-height: 100%; 
-                      object-fit: contain; 
-                      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-                    }
+                    body { margin: 0; padding: 0; height: 100vh; display: flex; justify-content: center; align-items: center; background: #f5f5f5; }
+                    img { max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
                   </style>
                 </head>
                 <body>
@@ -143,14 +140,12 @@ function EmployeePortal() {
       return;
     }
     
-    // PDF files - use Google Docs Viewer
     if (extension === 'pdf') {
       const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
       window.open(viewerUrl, '_blank');
       return;
     }
     
-    // Office files - use Google Docs Viewer
     const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
     if (officeExtensions.includes(extension)) {
       const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
@@ -158,14 +153,12 @@ function EmployeePortal() {
       return;
     }
     
-    // Text files - open directly
     const textExtensions = ['txt', 'csv', 'json', 'xml', 'log'];
     if (textExtensions.includes(extension)) {
       window.open(fileUrl, '_blank');
       return;
     }
     
-    // Default - try Google Docs Viewer
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
     window.open(viewerUrl, '_blank');
   };
@@ -210,8 +203,52 @@ function EmployeePortal() {
   // Fetch employee data
   useEffect(() => {
     fetchEmployeeData();
-    setupRealtimeListeners();
   }, []);
+
+  // ====== FETCH EMPLOYEE PAYROLL ======
+  const fetchEmployeePayroll = async () => {
+    if (!employee) return;
+    
+    try {
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
+      const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
+
+      const payrollQuery = query(
+        collection(db, 'payroll'),
+        where('employeeId', '==', employee.id),
+        where('periodStart', '==', startDate),
+        where('periodEnd', '==', endDate)
+      );
+      const payrollSnapshot = await getDocs(payrollQuery);
+      
+      if (!payrollSnapshot.empty) {
+        const payrollData = payrollSnapshot.docs[0].data();
+        setEmployeePayroll(payrollData);
+        setEmployeeLateDays(payrollData.lateDays || 0);
+        setEmployeeLateDeduction(payrollData.lateDeduction || 0);
+      } else {
+        setEmployeePayroll(null);
+        setEmployeeLateDays(0);
+        setEmployeeLateDeduction(0);
+      }
+
+      // Fetch all payroll history for this employee
+      const allPayrollQuery = query(
+        collection(db, 'payroll'),
+        where('employeeId', '==', employee.id)
+      );
+      const allPayrollSnapshot = await getDocs(allPayrollQuery);
+      const history = allPayrollSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort by periodStart (newest first)
+      history.sort((a, b) => b.periodStart?.localeCompare(a.periodStart) || 0);
+      setAllPayrollHistory(history);
+
+    } catch (error) {
+      console.error('Error fetching payroll:', error);
+    }
+  };
 
   // ====== FETCH EMPLOYEE DATA ======
   const fetchEmployeeData = async () => {
@@ -301,6 +338,9 @@ function EmployeePortal() {
         // ====== FETCH ATTENDANCE RECORDS ======
         await fetchAttendanceData(empId);
 
+        // ====== FETCH EMPLOYEE PAYROLL ======
+        await fetchEmployeePayroll();
+
         // Fetch notifications
         const notifQuery = query(
           collection(db, 'notifications'), 
@@ -334,6 +374,11 @@ function EmployeePortal() {
             });
           }
         }
+
+        // ====== SETUP REALTIME LISTENERS AFTER DATA IS LOADED ======
+        setTimeout(() => {
+          setupRealtimeListeners();
+        }, 300);
       }
     } catch (error) {
       console.error('Error fetching employee data:', error);
@@ -536,6 +581,7 @@ function EmployeePortal() {
     }
   };
 
+  // ====== SETUP REALTIME LISTENERS ======
   const setupRealtimeListeners = () => {
     const user = auth.currentUser;
     if (!user) return;
@@ -564,6 +610,7 @@ function EmployeePortal() {
       }
     });
 
+    // Only set up these listeners if employee exists
     if (employee && employee.id) {
       const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', employee.id));
       onSnapshot(leaveQuery, (snapshot) => {
@@ -619,6 +666,16 @@ function EmployeePortal() {
         }
         
         setNotifications(employeeNotifs);
+      });
+
+      // ====== PAYROLL REAL-TIME LISTENER ======
+      const payrollQuery = query(
+        collection(db, 'payroll'),
+        where('employeeId', '==', employee.id)
+      );
+      onSnapshot(payrollQuery, () => {
+        console.log('🔄 Payroll data changed, refreshing...');
+        fetchEmployeePayroll();
       });
     }
 
@@ -1166,6 +1223,267 @@ function EmployeePortal() {
     }).format(parseFloat(amount));
   };
 
+  // ====== GENERATE PAYSLIP PDF ======
+  const generatePayslipPDF = (payrollData) => {
+    const payslipHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payslip - ${employee.fullName}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: #f5f7fa; 
+            padding: 40px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+          }
+          .payslip-container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+          }
+          .payslip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #4a6fa5;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+          }
+          .payslip-header .title h1 {
+            color: #1a2a4a;
+            font-size: 28px;
+            margin: 0;
+          }
+          .payslip-header .title p {
+            color: #6b7a8f;
+            font-size: 14px;
+            margin: 4px 0 0;
+          }
+          .payslip-header .logo {
+            text-align: right;
+          }
+          .payslip-header .logo h3 {
+            color: #4a6fa5;
+            margin: 0;
+          }
+          .employee-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            background: #f8fafd;
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+          }
+          .employee-info .info-item {
+            display: flex;
+            flex-direction: column;
+          }
+          .employee-info .info-item label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #8a9bb5;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+          }
+          .employee-info .info-item span {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a2a4a;
+          }
+          .payslip-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+          }
+          .payslip-table th {
+            background: #4a6fa5;
+            color: white;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .payslip-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 14px;
+          }
+          .payslip-table tr:last-child td {
+            border-bottom: none;
+          }
+          .payslip-table .amount {
+            text-align: right;
+            font-weight: 500;
+          }
+          .payslip-table .total-row {
+            background: #f0f4fe;
+            font-weight: 700;
+          }
+          .payslip-table .total-row td {
+            font-size: 16px;
+          }
+          .payslip-table .deduction-row td {
+            color: #e74c3c;
+          }
+          .payslip-footer {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eef2f7;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #8a9bb5;
+          }
+          .payslip-footer .status-badge {
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .payslip-footer .status-badge.paid {
+            background: #e4f5e9;
+            color: #27ae60;
+          }
+          .payslip-footer .status-badge.pending {
+            background: #fef0e0;
+            color: #e67e22;
+          }
+          .late-warning {
+            background: #fef9f0;
+            border-left: 4px solid #e67e22;
+            padding: 10px 16px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #856404;
+          }
+          @media print {
+            body { padding: 20px; background: white; }
+            .payslip-container { box-shadow: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="payslip-container">
+          <div class="payslip-header">
+            <div class="title">
+              <h1>PAYSLIP</h1>
+              <p>Municipality of Pagbilao, Quezon</p>
+            </div>
+            <div class="logo">
+              <h3>HR System</h3>
+              <p style="font-size:12px;color:#8a9bb5;">${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
+            </div>
+          </div>
+
+          <div class="employee-info">
+            <div class="info-item">
+              <label>Employee Name</label>
+              <span>${employee.fullName}</span>
+            </div>
+            <div class="info-item">
+              <label>Employee ID</label>
+              <span>${employee.id || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Department</label>
+              <span>${employee.department || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Position</label>
+              <span>${employee.position || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Pay Period</label>
+              <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
+            </div>
+            <div class="info-item">
+              <label>Status</label>
+              <span>
+                <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
+                  ${payrollData.status || 'Pending'}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          ${payrollData.lateDays > 0 ? `
+            <div class="late-warning">
+              ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
+              Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
+            </div>
+          ` : ''}
+
+          <table class="payslip-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style="text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Basic Salary</td>
+                <td class="amount">₱${payrollData.basicSalary?.toLocaleString() || '0'}</td>
+              </tr>
+              ${payrollData.lateDays > 0 ? `
+                <tr class="deduction-row">
+                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE})</td>
+                  <td class="amount">-₱${payrollData.lateDeduction?.toLocaleString() || '0'}</td>
+                </tr>
+              ` : ''}
+              ${payrollData.originalDeductions > 0 ? `
+                <tr class="deduction-row">
+                  <td>Other Deductions</td>
+                  <td class="amount">-₱${payrollData.originalDeductions?.toLocaleString() || '0'}</td>
+                </tr>
+              ` : ''}
+              <tr class="total-row">
+                <td><strong>Net Pay</strong></td>
+                <td class="amount"><strong>₱${payrollData.netPay?.toLocaleString() || '0'}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="payslip-footer">
+            <div>
+              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+            </div>
+            <div>
+              <p>${employee.fullName} - Payslip</p>
+            </div>
+          </div>
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (printWindow) {
+      printWindow.document.write(payslipHTML);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    } else {
+      alert('Please allow popups to download payslip');
+    }
+  };
+
   // ====== PREVIEW MODAL ======
   const renderPreviewModal = () => {
     if (!previewFile) return null;
@@ -1270,6 +1588,14 @@ function EmployeePortal() {
           <NotificationsIcon style={{ fontSize: 20, marginRight: 12 }} />
           Notifications
           {unreadNotifications > 0 && <span className="badge-count">{unreadNotifications}</span>}
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('payroll'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'payroll' ? 'active' : ''}`}
+        >
+          <AttachMoneyIcon style={{ fontSize: 20, marginRight: 12 }} />
+          My Payroll
         </button>
         
         <button 
@@ -1415,6 +1741,61 @@ function EmployeePortal() {
         </div>
       </div>
 
+      {/* Payroll Quick Summary */}
+      {employeePayroll && (
+        <div className="payroll-quick-summary" style={{ 
+          background: 'white', 
+          borderRadius: '12px', 
+          padding: '20px', 
+          marginBottom: '20px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#333' }}>
+                <AttachMoneyIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
+                This Month's Payroll
+              </h3>
+              <p style={{ margin: '5px 0 0', fontSize: '14px', color: '#666' }}>
+                Net Pay: <strong>{formatCurrency(employeePayroll.netPay)}</strong>
+              </p>
+              {employeeLateDays > 0 && (
+                <p style={{ margin: '2px 0', fontSize: '13px', color: '#e67e22' }}>
+                  ⚠️ Late Days: {employeeLateDays} (Deduction: {formatCurrency(employeeLateDeduction)})
+                </p>
+              )}
+              {employeeLateDays === 0 && employeePayroll && (
+                <p style={{ margin: '2px 0', fontSize: '13px', color: '#27ae60' }}>
+                  ✅ No late deductions this month
+                </p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ 
+                padding: '8px 16px',
+                background: employeeLateDays > 0 ? '#fff3cd' : '#d4edda',
+                color: employeeLateDays > 0 ? '#856404' : '#155724',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600'
+              }}>
+                Basic: {formatCurrency(employeePayroll.basicSalary)}
+              </span>
+              <span style={{ 
+                padding: '8px 16px',
+                background: employeeLateDeduction > 0 ? '#f8d7da' : '#e8f0fe',
+                color: employeeLateDeduction > 0 ? '#721c24' : '#4a6fa5',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600'
+              }}>
+                Deductions: {formatCurrency(employeePayroll.totalDeductions || 0)}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="dashboard-grid">
         <div className="dashboard-box">
           <h2>Quick Actions</h2>
@@ -1538,7 +1919,7 @@ function EmployeePortal() {
                 }}
               >
                 <LoginIcon style={{ fontSize: 20 }} />
-                {attendanceLoading ? 'Processing...' : '⏰ Time In'}
+                {attendanceLoading ? 'Processing...' : 'Time In'}
               </button>
             )}
             {isTimedIn && !isTimedOut && (
@@ -1561,7 +1942,7 @@ function EmployeePortal() {
                 }}
               >
                 <Logout style={{ fontSize: 20 }} />
-                {attendanceLoading ? 'Processing...' : '🚪 Time Out'}
+                {attendanceLoading ? 'Processing...' : 'Time Out'}
               </button>
             )}
             {isTimedIn && isTimedOut && (
@@ -1577,7 +1958,7 @@ function EmployeePortal() {
                 gap: '10px'
               }}>
                 <CheckCircleIcon style={{ fontSize: 20 }} />
-                ✅ Day Complete
+                Day Complete
               </span>
             )}
           </div>
@@ -1840,35 +2221,6 @@ function EmployeePortal() {
               <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
             </div>
             
-            <div style={{ 
-              background: '#e8f5e9', 
-              padding: '12px', 
-              borderRadius: '8px', 
-              marginBottom: '15px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span style={{ fontSize: '13px', color: '#2e7d32' }}>
-                🚀 Quick Upload Test
-              </span>
-              <button 
-                onClick={testUpload}
-                style={{
-                  padding: '8px 20px',
-                  background: '#4caf50',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: 'bold'
-                }}
-                disabled={uploading}
-              >
-                {uploading ? 'Testing...' : '🧪 Test Now'}
-              </button>
-            </div>
-            
             <div className="form-grid">
               <div className="form-group full-width">
                 <label>Document Type</label>
@@ -1911,7 +2263,7 @@ function EmployeePortal() {
                 className="btn-save" 
                 disabled={uploading || !selectedFile || !selectedDocType}
               >
-                {uploading ? 'Uploading...' : 'Upload to Vercel Blob'}
+                {uploading ? 'Uploading...' : 'Upload File'}
               </button>
               <button 
                 type="button" 
@@ -2127,6 +2479,334 @@ function EmployeePortal() {
     );
   };
 
+  // ====== PAYSLIP MODAL ======
+  const renderPayslipModal = () => {
+    if (!showPayslipModal || !selectedPayroll) return null;
+
+    return (
+      <div className="modal-overlay" onClick={() => setShowPayslipModal(false)}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
+          <div className="modal-header">
+            <h3>Payslip Details</h3>
+            <button className="modal-close" onClick={() => setShowPayslipModal(false)}>✕</button>
+          </div>
+          <div style={{ padding: '10px 0' }}>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: '1fr 1fr', 
+              gap: '12px',
+              background: '#f8fafd',
+              padding: '16px',
+              borderRadius: '10px',
+              marginBottom: '16px'
+            }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Employee</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{employee.fullName}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Period</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{selectedPayroll.periodStart} → {selectedPayroll.periodEnd}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Department</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{employee.department || 'N/A'}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Status</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>
+                  <span className={`status-badge ${selectedPayroll.status === 'Paid' ? 'success' : 'warning'}`}>
+                    {selectedPayroll.status || 'Pending'}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {/* Deduction History */}
+            <h4 style={{ margin: '16px 0 10px', color: '#1a2a4a' }}>Deduction History</h4>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: '1fr 1fr',
+              gap: '10px',
+              background: '#f8fafd',
+              padding: '16px',
+              borderRadius: '10px',
+              marginBottom: '16px'
+            }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Basic Salary</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: '#4a6fa5' }}>
+                  ₱{selectedPayroll.basicSalary?.toLocaleString() || '0'}
+                </p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Days</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: selectedPayroll.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                  {selectedPayroll.lateDays || 0} {selectedPayroll.lateDays > 0 ? '⚠️' : '✅'}
+                </p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Deduction</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: selectedPayroll.lateDeduction > 0 ? '#e74c3c' : '#27ae60' }}>
+                  ₱{selectedPayroll.lateDeduction?.toLocaleString() || '0'}
+                </p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Other Deductions</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: selectedPayroll.originalDeductions > 0 ? '#e67e22' : '#27ae60' }}>
+                  ₱{selectedPayroll.originalDeductions?.toLocaleString() || '0'}
+                </p>
+              </div>
+              <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #eef2f7', paddingTop: '12px' }}>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Net Pay</label>
+                <p style={{ fontWeight: '700', fontSize: '24px', color: '#4a6fa5' }}>
+                  ₱{selectedPayroll.netPay?.toLocaleString() || '0'}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button 
+                onClick={() => generatePayslipPDF(selectedPayroll)}
+                className="btn-save"
+                style={{
+                  background: '#4a6fa5',
+                  color: 'white',
+                  padding: '10px 24px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+              >
+                <PrintIcon style={{ fontSize: 18 }} />
+                Download Payslip
+              </button>
+              <button 
+                onClick={() => setShowPayslipModal(false)}
+                className="btn-cancel"
+                style={{
+                  background: '#f0f2f7',
+                  color: '#2c3e50',
+                  padding: '10px 24px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ====== PAYROLL TAB ======
+  const renderPayroll = () => {
+    if (!employeePayroll) {
+      return (
+        <div className="employee-payroll-content">
+          <div className="section-header">
+            <h2><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
+          </div>
+          <div className="form-card-modern" style={{ textAlign: 'center', padding: '40px' }}>
+            <p>No payroll record found for this month.</p>
+            <p style={{ fontSize: '14px', color: '#666' }}>Payroll will be processed at the end of the month.</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="employee-payroll-content">
+        {renderPayslipModal()}
+
+        <div className="section-header">
+          <h2><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="stats-badge">{employeePayroll.periodMonth} {employeePayroll.periodYear}</span>
+            <button 
+              onClick={() => {
+                setSelectedPayroll(employeePayroll);
+                setShowPayslipModal(true);
+              }}
+              className="btn-add-modern"
+              style={{
+                background: '#4a6fa5',
+                color: 'white',
+                padding: '8px 16px',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <DescriptionIcon style={{ fontSize: 18 }} />
+              View Payslip
+            </button>
+          </div>
+        </div>
+
+        <div className="stats-row">
+          <div className="stat-card blue">
+            <div className="stat-icon"><AttachMoneyIcon style={{ fontSize: 30 }} /></div>
+            <div className="stat-info">
+              <h3>Basic Salary</h3>
+              <p>{formatCurrency(employeePayroll.basicSalary)}</p>
+            </div>
+          </div>
+          <div className="stat-card red">
+            <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 30 }} /></div>
+            <div className="stat-info">
+              <h3>Total Deductions</h3>
+              <p>{formatCurrency(employeePayroll.totalDeductions || 0)}</p>
+              {employeeLateDays > 0 && (
+                <small style={{ color: '#e67e22', display: 'block' }}>
+                  {employeeLateDays} late day(s): {formatCurrency(employeeLateDeduction)}
+                </small>
+              )}
+            </div>
+          </div>
+          <div className="stat-card green">
+            <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 30 }} /></div>
+            <div className="stat-info">
+              <h3>Net Pay</h3>
+              <p>{formatCurrency(employeePayroll.netPay)}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="form-card-modern">
+          <h3>Payroll Details</h3>
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '20px',
+            padding: '10px 0'
+          }}>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Period:</strong></p>
+              <p>{employeePayroll.periodStart} to {employeePayroll.periodEnd}</p>
+            </div>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Basic Salary:</strong></p>
+              <p>{formatCurrency(employeePayroll.basicSalary)}</p>
+            </div>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Days:</strong></p>
+              <p style={{ color: employeeLateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                {employeeLateDays > 0 ? `${employeeLateDays} days` : 'None ✅'}
+              </p>
+            </div>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Deduction:</strong></p>
+              <p style={{ color: employeeLateDeduction > 0 ? '#e74c3c' : '#27ae60' }}>
+                {formatCurrency(employeeLateDeduction)}
+              </p>
+            </div>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Other Deductions:</strong></p>
+              <p style={{ color: employeePayroll.originalDeductions > 0 ? '#e67e22' : '#27ae60' }}>
+                {formatCurrency(employeePayroll.originalDeductions || 0)}
+              </p>
+            </div>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Net Pay:</strong></p>
+              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#4a6fa5' }}>
+                {formatCurrency(employeePayroll.netPay)}
+              </p>
+            </div>
+            <div>
+              <p style={{ margin: '5px 0', color: '#666' }}><strong>Status:</strong></p>
+              <span className={`status-badge ${employeePayroll.status === 'Paid' ? 'success' : 'warning'}`}>
+                {employeePayroll.status === 'Paid' ? 'Paid' : 'Pending'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Payroll History */}
+        {allPayrollHistory.length > 1 && (
+          <div className="form-card-modern" style={{ marginTop: '20px' }}>
+            <h3>Payroll History</h3>
+            <div className="table-container">
+              <table className="payroll-history-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafd' }}>
+                    <th style={{ padding: '10px 14px', textAlign: 'left' }}>Period</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Basic Salary</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Late Days</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Deductions</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Net Pay</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Status</th>
+                    <th style={{ padding: '10px 14px', textAlign: 'center' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allPayrollHistory.map((record, index) => (
+                    <tr key={record.id || index} style={{ borderBottom: '1px solid #f0f2f7' }}>
+                      <td style={{ padding: '10px 14px' }}>{record.periodMonth} {record.periodYear}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right' }}>{formatCurrency(record.basicSalary)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', color: record.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                        {record.lateDays || 0}
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', color: record.totalDeductions > 0 ? '#e74c3c' : '#27ae60' }}>
+                        {formatCurrency(record.totalDeductions || 0)}
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '600', color: '#4a6fa5' }}>
+                        {formatCurrency(record.netPay)}
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                        <span className={`status-badge ${record.status === 'Paid' ? 'success' : 'warning'}`}>
+                          {record.status || 'Pending'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>
+                        <button
+                          onClick={() => {
+                            setSelectedPayroll(record);
+                            setShowPayslipModal(true);
+                          }}
+                          style={{
+                            background: 'transparent',
+                            color: '#4a6fa5',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <VisibilityIcon style={{ fontSize: 16 }} />
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderProfile = () => (
     <div className="employee-profile-content">
       <div className="section-header">
@@ -2191,6 +2871,7 @@ function EmployeePortal() {
         {activeTab === 'leave' && renderLeave()}
         {activeTab === 'compliance' && renderCompliance()}
         {activeTab === 'notifications' && renderNotifications()}
+        {activeTab === 'payroll' && renderPayroll()}
         {activeTab === 'profile' && renderProfile()}
       </div>
     </div>

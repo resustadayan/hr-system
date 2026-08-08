@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     const timestamp = Date.now();
     const blobPath = `compliance/${employeeId}/${documentType}/${timestamp}_${fileName}`;
 
-    console.log('Uploading to Vercel Blob...');
+    console.log('Uploading File');
     console.log('Path:', blobPath);
     console.log('Size:', buffer.length, 'bytes');
 

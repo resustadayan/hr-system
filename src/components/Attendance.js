@@ -89,7 +89,7 @@ function Attendance() {
       r => r.employeeId === selectedEmployee && r.date === date
     );
     if (existing) {
-      alert('⚠️ Attendance already recorded for this employee on this date.');
+      alert('Attendance already recorded for this employee on this date.');
       return;
     }
 
@@ -109,7 +109,7 @@ function Attendance() {
         recordedAt: new Date().toISOString()
       });
       
-      alert('✅ Attendance recorded successfully');
+      alert('Attendance recorded successfully');
       setSelectedEmployee('');
       setTimeIn('');
       setTimeOut('');

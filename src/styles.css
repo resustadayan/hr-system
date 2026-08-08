@@ -264,7 +264,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  min-height: 100vh;
+  min-height: 1vh;
 }
 
 .cover-content {
@@ -4575,3 +4575,4 @@ body {
     padding-top: 12px !important;
   }
 }
+
