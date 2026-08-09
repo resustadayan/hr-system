@@ -1,8 +1,9 @@
 // src/other file for dashboard/EmployeePortal.js
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth } from '../firebase';
+import { db } from '../firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../components/contexts/AuthContext';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
 
@@ -35,13 +36,18 @@ import MarkunreadIcon from '@mui/icons-material/Markunread';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import PrintIcon from '@mui/icons-material/Print';
 import WarningIcon from '@mui/icons-material/Warning';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import GetAppIcon from '@mui/icons-material/GetApp';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import logo from '../assets/hrmo logo.jpg';
 
 // Late deduction rate (matches Payroll.js)
-const LATE_DEDUCTION_RATE = 500; // ₱500 per late day
+const LATE_DEDUCTION_RATE = 500;
 
 function EmployeePortal() {
   const navigate = useNavigate();
+  const { user: authUser, userRole, loading: authLoading } = useAuth();
+  
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -101,6 +107,14 @@ function EmployeePortal() {
   const [employeeLateDays, setEmployeeLateDays] = useState(0);
   const [employeeLateDeduction, setEmployeeLateDeduction] = useState(0);
   const [allPayrollHistory, setAllPayrollHistory] = useState([]);
+  const [payrollSummary, setPayrollSummary] = useState({
+    totalEarned: 0,
+    totalDeductions: 0,
+    totalNetPay: 0,
+    totalLateDays: 0,
+    totalPayrolls: 0
+  });
+  const [isRefreshingPayroll, setIsRefreshingPayroll] = useState(false);
 
   // ====== SMART FILE VIEWER WITH IMAGE FIX ======
   const openFileViewer = (fileUrl, fileName) => {
@@ -163,19 +177,6 @@ function EmployeePortal() {
     window.open(viewerUrl, '_blank');
   };
 
-  // DEBUG: Check if token loads
-  useEffect(() => {
-    const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
-    console.log('TOKEN CHECK:');
-    console.log('Token exists:', !!token);
-    console.log('Token length:', token?.length || 0);
-    if (token) {
-      console.log('Token preview:', token.substring(0, 15) + '...');
-    } else {
-      console.error('TOKEN NOT FOUND! Check your .env file.');
-    }
-  }, []);
-
   // Handle mobile responsiveness
   useEffect(() => {
     const handleResize = () => {
@@ -200,21 +201,52 @@ function EmployeePortal() {
     setNotificationSound(audio);
   }, []);
 
-  // Fetch employee data
+  // Fetch employee data when auth user changes
   useEffect(() => {
-    fetchEmployeeData();
-  }, []);
+    if (authUser) {
+      fetchEmployeeData();
+    } else if (!authLoading) {
+      navigate('/login');
+    }
+  }, [authUser, authLoading]);
+
+  // ====== REFRESH PAYROLL FUNCTION ======
+  const refreshPayrollData = async () => {
+    if (!employee) {
+      console.log('⚠️ No employee data available for refresh');
+      return;
+    }
+    setIsRefreshingPayroll(true);
+    try {
+      await fetchEmployeePayroll();
+      console.log('✅ Payroll data refreshed successfully');
+    } catch (error) {
+      console.error('❌ Error refreshing payroll:', error);
+    } finally {
+      setIsRefreshingPayroll(false);
+    }
+  };
 
   // ====== FETCH EMPLOYEE PAYROLL ======
   const fetchEmployeePayroll = async () => {
-    if (!employee) return;
+    if (!employee) {
+      console.log('⚠️ No employee data available');
+      return;
+    }
+    
+    console.log('🔍 Fetching payroll for employee ID:', employee.id);
+    console.log('🔍 Employee data:', employee);
     
     try {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
+      const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
       const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
 
+      console.log(`📅 Current period: ${startDate} to ${endDate}`);
+
+      // Query payroll for this specific employee
       const payrollQuery = query(
         collection(db, 'payroll'),
         where('employeeId', '==', employee.id),
@@ -223,12 +255,16 @@ function EmployeePortal() {
       );
       const payrollSnapshot = await getDocs(payrollQuery);
       
+      console.log(`📊 Found ${payrollSnapshot.size} payroll records for current period`);
+      
       if (!payrollSnapshot.empty) {
         const payrollData = payrollSnapshot.docs[0].data();
+        console.log('📄 Payroll data:', payrollData);
         setEmployeePayroll(payrollData);
         setEmployeeLateDays(payrollData.lateDays || 0);
         setEmployeeLateDeduction(payrollData.lateDeduction || 0);
       } else {
+        console.log('⚠️ No payroll record found for current period');
         setEmployeePayroll(null);
         setEmployeeLateDays(0);
         setEmployeeLateDeduction(0);
@@ -241,51 +277,67 @@ function EmployeePortal() {
       );
       const allPayrollSnapshot = await getDocs(allPayrollQuery);
       const history = allPayrollSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log(`📊 Found ${history.length} total payroll records for this employee`);
+      
       // Sort by periodStart (newest first)
       history.sort((a, b) => b.periodStart?.localeCompare(a.periodStart) || 0);
       setAllPayrollHistory(history);
 
+      // Calculate summary
+      const summary = history.reduce((acc, record) => ({
+        totalEarned: acc.totalEarned + (record.basicSalary || 0),
+        totalDeductions: acc.totalDeductions + (record.totalDeductions || 0),
+        totalNetPay: acc.totalNetPay + (record.netPay || 0),
+        totalLateDays: acc.totalLateDays + (record.lateDays || 0),
+        totalPayrolls: acc.totalPayrolls + 1
+      }), { totalEarned: 0, totalDeductions: 0, totalNetPay: 0, totalLateDays: 0, totalPayrolls: 0 });
+      
+      setPayrollSummary(summary);
+
     } catch (error) {
-      console.error('Error fetching payroll:', error);
+      console.error('❌ Error fetching payroll:', error);
     }
   };
 
   // ====== FETCH EMPLOYEE DATA ======
   const fetchEmployeeData = async () => {
+    if (!authUser) {
+      console.log('⚠️ No authenticated user');
+      return;
+    }
+
     setLoading(true);
     try {
-      const user = auth.currentUser;
-      if (!user) {
-        navigate('/login');
-        return;
-      }
+      console.log('🔍 Fetching employee data for user:', authUser.email);
+      console.log('🔍 User UID:', authUser.uid);
 
       let empData = null;
       let empId = null;
-      let userSalary = null;
 
-      const empQuery = query(collection(db, 'employees'), where('email', '==', user.email));
+      // First, try to find employee by email in the employees collection
+      const empQuery = query(collection(db, 'employees'), where('email', '==', authUser.email));
       const empSnapshot = await getDocs(empQuery);
       
-      if (!empSnapshot.empty) {
-        empData = { id: empSnapshot.docs[0].id, ...empSnapshot.docs[0].data() };
-        empId = empData.id;
-      }
-
-      const userQuery = query(collection(db, 'users'), where('email', '==', user.email));
-      const userSnapshot = await getDocs(userQuery);
+      console.log('📊 Employees found:', empSnapshot.size);
       
-      if (!userSnapshot.empty) {
-        const userData = userSnapshot.docs[0].data();
-        const userId = userSnapshot.docs[0].id;
-        setUserId(userId);
-        userSalary = userData.salary || '';
+      if (!empSnapshot.empty) {
+        // Use the employee document ID from the employees collection
+        const docRef = empSnapshot.docs[0];
+        empData = { id: docRef.id, ...docRef.data() };
+        empId = docRef.id;
+        console.log('✅ Employee found with ID:', empId);
+        console.log('📋 Employee data:', empData);
+      } else {
+        console.log('⚠️ No employee document found for email:', authUser.email);
         
-        if (!empData) {
+        // Try to create employee from auth user data
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
           empData = {
-            id: userId,
-            fullName: userData.name || userData.fullName || '',
-            email: userData.email || user.email,
+            id: authUser.uid,
+            fullName: userData.name || userData.fullName || authUser.email?.split('@')[0] || 'User',
+            email: userData.email || authUser.email,
             department: userData.department || '',
             position: userData.position || '',
             salary: userData.salary || '',
@@ -294,13 +346,28 @@ function EmployeePortal() {
             status: userData.status || 'Active'
           };
           empId = empData.id;
+          console.log('📋 Created employee data from user document:', empData);
+          
+          // Optionally save this to employees collection
+          try {
+            await addDoc(collection(db, 'employees'), {
+              ...empData,
+              createdAt: new Date().toISOString()
+            });
+            console.log('✅ Employee saved to employees collection');
+          } catch (saveError) {
+            console.warn('Could not save employee to collection:', saveError);
+          }
         } else {
-          empData.salary = userSalary || empData.salary || '';
+          console.error('❌ No user document found for UID:', authUser.uid);
         }
       }
 
       if (empData) {
         setEmployee(empData);
+
+        // Debug: Check what ID we're using
+        console.log('🎯 Using employee ID for queries:', empId);
 
         // Fetch leave balance
         const balanceQuery = query(collection(db, 'leaveBalances'), where('employeeId', '==', empId));
@@ -379,9 +446,11 @@ function EmployeePortal() {
         setTimeout(() => {
           setupRealtimeListeners();
         }, 300);
+      } else {
+        console.error('❌ No employee data found!');
       }
     } catch (error) {
-      console.error('Error fetching employee data:', error);
+      console.error('❌ Error fetching employee data:', error);
     } finally {
       setLoading(false);
     }
@@ -583,115 +652,74 @@ function EmployeePortal() {
 
   // ====== SETUP REALTIME LISTENERS ======
   const setupRealtimeListeners = () => {
-    const user = auth.currentUser;
-    if (!user) return;
+    if (!employee || !employee.id) return;
 
-    const userQuery = query(collection(db, 'users'), where('email', '==', user.email));
-    onSnapshot(userQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const userData = snapshot.docs[0].data();
-        const userId = snapshot.docs[0].id;
-        setUserId(userId);
-        
-        setEmployee(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            fullName: userData.name || prev.fullName,
-            email: userData.email || prev.email,
-            department: userData.department || prev.department,
-            position: userData.position || prev.position,
-            salary: userData.salary || prev.salary || '',
-            phone: userData.phone || prev.phone,
-            dateHired: userData.dateHired || prev.dateHired,
-            status: userData.status || prev.status || 'Active'
-          };
-        });
-      }
+    const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', employee.id));
+    onSnapshot(leaveQuery, (snapshot) => {
+      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setLeaveRequests(requests);
     });
 
-    // Only set up these listeners if employee exists
-    if (employee && employee.id) {
-      const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', employee.id));
-      onSnapshot(leaveQuery, (snapshot) => {
-        const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setLeaveRequests(requests);
-      });
+    const attendanceQuery = query(collection(db, 'attendance'), where('employeeId', '==', employee.id));
+    onSnapshot(attendanceQuery, () => {
+      fetchAttendanceData(employee.id);
+    });
 
-      const attendanceQuery = query(collection(db, 'attendance'), where('employeeId', '==', employee.id));
-      onSnapshot(attendanceQuery, () => {
-        fetchAttendanceData(employee.id);
-      });
-
-      const notifQuery = query(
-        collection(db, 'notifications'), 
-        where('employeeId', '==', employee.id)
+    const notifQuery = query(
+      collection(db, 'notifications'), 
+      where('employeeId', '==', employee.id)
+    );
+    onSnapshot(notifQuery, (snapshot) => {
+      const allNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const employeeNotifs = allNotifs.filter(notif => 
+        notif.forEmployee === true || 
+        notif.type === 'leave_action' ||
+        notif.type === 'leave_confirmation' ||
+        notif.type === 'compliance_upload_confirmation' ||
+        notif.type === 'attendance_confirmation'
       );
-      onSnapshot(notifQuery, (snapshot) => {
-        const allNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const previousNotifs = notifications;
+      const newNotifs = employeeNotifs.filter(n => 
+        !previousNotifs.some(p => p.id === n.id) && !n.read
+      );
+      
+      const newLeaveActions = newNotifs.filter(n => n.type === 'leave_action');
+      if (newLeaveActions.length > 0) {
+        const latest = newLeaveActions[0];
+        setLatestNotification(latest);
+        setShowNotificationAlert(true);
         
-        const employeeNotifs = allNotifs.filter(notif => 
-          notif.forEmployee === true || 
-          notif.type === 'leave_action' ||
-          notif.type === 'leave_confirmation' ||
-          notif.type === 'compliance_upload_confirmation' ||
-          notif.type === 'attendance_confirmation'
-        );
-        
-        const previousNotifs = notifications;
-        const newNotifs = employeeNotifs.filter(n => 
-          !previousNotifs.some(p => p.id === n.id) && !n.read
-        );
-        
-        const newLeaveActions = newNotifs.filter(n => n.type === 'leave_action');
-        if (newLeaveActions.length > 0) {
-          const latest = newLeaveActions[0];
-          setLatestNotification(latest);
-          setShowNotificationAlert(true);
-          
-          if (notificationSound) {
-            notificationSound.play().catch(e => console.log('Sound play failed'));
-          }
-          
-          if (Notification.permission === 'granted') {
-            new Notification('Leave Request Update', {
-              body: latest.message,
-              icon: '/favicon.ico'
-            });
-          }
-          
-          setTimeout(() => {
-            setShowNotificationAlert(false);
-          }, 5000);
+        if (notificationSound) {
+          notificationSound.play().catch(e => console.log('Sound play failed'));
         }
         
-        setNotifications(employeeNotifs);
-      });
-
-      // ====== PAYROLL REAL-TIME LISTENER ======
-      const payrollQuery = query(
-        collection(db, 'payroll'),
-        where('employeeId', '==', employee.id)
-      );
-      onSnapshot(payrollQuery, () => {
-        console.log('🔄 Payroll data changed, refreshing...');
-        fetchEmployeePayroll();
-      });
-    }
-
-    const empQuery = query(collection(db, 'employees'), where('email', '==', user.email));
-    onSnapshot(empQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        const empData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
-        setEmployee(prev => {
-          if (!prev) return empData;
-          return {
-            ...prev,
-            ...empData,
-            salary: prev.salary || empData.salary || ''
-          };
-        });
+        if (Notification.permission === 'granted') {
+          new Notification('Leave Request Update', {
+            body: latest.message,
+            icon: '/favicon.ico'
+          });
+        }
+        
+        setTimeout(() => {
+          setShowNotificationAlert(false);
+        }, 5000);
       }
+      
+      setNotifications(employeeNotifs);
+    });
+
+    // ====== PAYROLL REAL-TIME LISTENER (Connects to Payroll.js) ======
+    const payrollQuery = query(
+      collection(db, 'payroll'),
+      where('employeeId', '==', employee.id)
+    );
+    onSnapshot(payrollQuery, (snapshot) => {
+      console.log('🔄 Payroll data changed, refreshing...');
+      fetchEmployeePayroll();
+    }, (error) => {
+      console.error('❌ Payroll listener error:', error);
     });
   };
 
@@ -1022,42 +1050,6 @@ function EmployeePortal() {
     }
   };
 
-  // ====== TEST FUNCTION ======
-  const testUpload = async () => {
-    try {
-      const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
-      if (!token) {
-        alert('❌ Token not found! Check .env file');
-        return;
-      }
-
-      console.log('🧪 Testing upload with token:', token.substring(0, 15) + '...');
-      
-      setUploadStatus('Testing Vercel Blob...');
-      setUploading(true);
-
-      const testContent = `Test file created at ${new Date().toISOString()}`;
-      const testFile = new File([testContent], `test_${Date.now()}.txt`, { type: 'text/plain' });
-      
-      const result = await uploadToVercelBlob(testFile, 'test', 'test');
-      
-      if (result.success) {
-        console.log('✅ Test successful:', result);
-        alert('✅ Test successful!\nURL: ' + result.url);
-        setUploadStatus('✅ Test successful!');
-      } else {
-        throw new Error(result.error);
-      }
-      
-      setUploading(false);
-    } catch (error) {
-      console.error('❌ Test failed:', error);
-      alert('❌ Test failed: ' + error.message);
-      setUploadStatus('❌ Test failed: ' + error.message);
-      setUploading(false);
-    }
-  };
-
   // ====== handleDocumentUpload ======
   const handleDocumentUpload = async () => {
     if (!selectedFile || !selectedDocType) {
@@ -1070,8 +1062,7 @@ function EmployeePortal() {
     setUploadStatus('Uploading to Vercel Blob...');
 
     try {
-      const user = auth.currentUser;
-      if (!user) {
+      if (!authUser) {
         alert('You must be logged in to upload');
         setUploading(false);
         return;
@@ -1229,7 +1220,7 @@ function EmployeePortal() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Payslip - ${employee.fullName}</title>
+        <title>Payslip - ${employee?.fullName || 'Employee'}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
           body { 
@@ -1273,6 +1264,11 @@ function EmployeePortal() {
           .payslip-header .logo h3 {
             color: #4a6fa5;
             margin: 0;
+          }
+          .payslip-header .logo p {
+            font-size: 12px;
+            color: #8a9bb5;
+            margin: 2px 0 0;
           }
           .employee-info {
             display: grid;
@@ -1380,27 +1376,27 @@ function EmployeePortal() {
               <p>Municipality of Pagbilao, Quezon</p>
             </div>
             <div class="logo">
-              <h3>HR System</h3>
-              <p style="font-size:12px;color:#8a9bb5;">${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
+              <h3>HR Management System</h3>
+              <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
             </div>
           </div>
 
           <div class="employee-info">
             <div class="info-item">
               <label>Employee Name</label>
-              <span>${employee.fullName}</span>
+              <span>${employee?.fullName || 'N/A'}</span>
             </div>
             <div class="info-item">
               <label>Employee ID</label>
-              <span>${employee.id || 'N/A'}</span>
+              <span>${employee?.id || 'N/A'}</span>
             </div>
             <div class="info-item">
               <label>Department</label>
-              <span>${employee.department || 'N/A'}</span>
+              <span>${employee?.department || 'N/A'}</span>
             </div>
             <div class="info-item">
               <label>Position</label>
-              <span>${employee.position || 'N/A'}</span>
+              <span>${employee?.position || 'N/A'}</span>
             </div>
             <div class="info-item">
               <label>Pay Period</label>
@@ -1433,23 +1429,23 @@ function EmployeePortal() {
             <tbody>
               <tr>
                 <td>Basic Salary</td>
-                <td class="amount">₱${payrollData.basicSalary?.toLocaleString() || '0'}</td>
+                <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
               </tr>
               ${payrollData.lateDays > 0 ? `
                 <tr class="deduction-row">
-                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE})</td>
-                  <td class="amount">-₱${payrollData.lateDeduction?.toLocaleString() || '0'}</td>
+                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
+                  <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
                 </tr>
               ` : ''}
-              ${payrollData.originalDeductions > 0 ? `
+              ${(payrollData.originalDeductions || 0) > 0 ? `
                 <tr class="deduction-row">
                   <td>Other Deductions</td>
-                  <td class="amount">-₱${payrollData.originalDeductions?.toLocaleString() || '0'}</td>
+                  <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
                 </tr>
               ` : ''}
               <tr class="total-row">
                 <td><strong>Net Pay</strong></td>
-                <td class="amount"><strong>₱${payrollData.netPay?.toLocaleString() || '0'}</strong></td>
+                <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
               </tr>
             </tbody>
           </table>
@@ -1459,7 +1455,7 @@ function EmployeePortal() {
               <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
             </div>
             <div>
-              <p>${employee.fullName} - Payslip</p>
+              <p>${employee?.fullName || 'Employee'} - Payslip</p>
             </div>
           </div>
         </div>
@@ -1526,7 +1522,7 @@ function EmployeePortal() {
     );
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return <div className="loading">Loading your portal...</div>;
   }
 
@@ -2483,11 +2479,16 @@ function EmployeePortal() {
   const renderPayslipModal = () => {
     if (!showPayslipModal || !selectedPayroll) return null;
 
+    const payroll = selectedPayroll;
+
     return (
       <div className="modal-overlay" onClick={() => setShowPayslipModal(false)}>
         <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
           <div className="modal-header">
-            <h3>Payslip Details</h3>
+            <h3>
+              <PictureAsPdfIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
+              Payslip Details
+            </h3>
             <button className="modal-close" onClick={() => setShowPayslipModal(false)}>✕</button>
           </div>
           <div style={{ padding: '10px 0' }}>
@@ -2506,7 +2507,7 @@ function EmployeePortal() {
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Period</label>
-                <p style={{ fontWeight: '600', margin: '2px 0' }}>{selectedPayroll.periodStart} → {selectedPayroll.periodEnd}</p>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{payroll.periodStart} → {payroll.periodEnd}</p>
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Department</label>
@@ -2515,15 +2516,13 @@ function EmployeePortal() {
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Status</label>
                 <p style={{ fontWeight: '600', margin: '2px 0' }}>
-                  <span className={`status-badge ${selectedPayroll.status === 'Paid' ? 'success' : 'warning'}`}>
-                    {selectedPayroll.status || 'Pending'}
+                  <span className={`status-badge ${payroll.status === 'Paid' ? 'success' : 'warning'}`}>
+                    {payroll.status || 'Pending'}
                   </span>
                 </p>
               </div>
             </div>
 
-            {/* Deduction History */}
-            <h4 style={{ margin: '16px 0 10px', color: '#1a2a4a' }}>Deduction History</h4>
             <div style={{ 
               display: 'grid', 
               gridTemplateColumns: '1fr 1fr',
@@ -2536,38 +2535,38 @@ function EmployeePortal() {
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Basic Salary</label>
                 <p style={{ fontWeight: '600', fontSize: '16px', color: '#4a6fa5' }}>
-                  ₱{selectedPayroll.basicSalary?.toLocaleString() || '0'}
+                  ₱{(payroll.basicSalary || 0).toLocaleString()}
                 </p>
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Days</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: selectedPayroll.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
-                  {selectedPayroll.lateDays || 0} {selectedPayroll.lateDays > 0 ? '⚠️' : '✅'}
+                <p style={{ fontWeight: '600', fontSize: '16px', color: payroll.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                  {payroll.lateDays || 0} {payroll.lateDays > 0 ? '⚠️' : '✅'}
                 </p>
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Deduction</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: selectedPayroll.lateDeduction > 0 ? '#e74c3c' : '#27ae60' }}>
-                  ₱{selectedPayroll.lateDeduction?.toLocaleString() || '0'}
+                <p style={{ fontWeight: '600', fontSize: '16px', color: (payroll.lateDeduction || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
+                  ₱{(payroll.lateDeduction || 0).toLocaleString()}
                 </p>
               </div>
               <div>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Other Deductions</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: selectedPayroll.originalDeductions > 0 ? '#e67e22' : '#27ae60' }}>
-                  ₱{selectedPayroll.originalDeductions?.toLocaleString() || '0'}
+                <p style={{ fontWeight: '600', fontSize: '16px', color: (payroll.originalDeductions || 0) > 0 ? '#e67e22' : '#27ae60' }}>
+                  ₱{(payroll.originalDeductions || 0).toLocaleString()}
                 </p>
               </div>
               <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #eef2f7', paddingTop: '12px' }}>
                 <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Net Pay</label>
                 <p style={{ fontWeight: '700', fontSize: '24px', color: '#4a6fa5' }}>
-                  ₱{selectedPayroll.netPay?.toLocaleString() || '0'}
+                  ₱{(payroll.netPay || 0).toLocaleString()}
                 </p>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button 
-                onClick={() => generatePayslipPDF(selectedPayroll)}
+                onClick={() => generatePayslipPDF(payroll)}
                 className="btn-save"
                 style={{
                   background: '#4a6fa5',
@@ -2584,7 +2583,7 @@ function EmployeePortal() {
                 }}
               >
                 <PrintIcon style={{ fontSize: 18 }} />
-                Download Payslip
+                Download / Print Payslip
               </button>
               <button 
                 onClick={() => setShowPayslipModal(false)}
@@ -2611,19 +2610,8 @@ function EmployeePortal() {
 
   // ====== PAYROLL TAB ======
   const renderPayroll = () => {
-    if (!employeePayroll) {
-      return (
-        <div className="employee-payroll-content">
-          <div className="section-header">
-            <h2><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
-          </div>
-          <div className="form-card-modern" style={{ textAlign: 'center', padding: '40px' }}>
-            <p>No payroll record found for this month.</p>
-            <p style={{ fontSize: '14px', color: '#666' }}>Payroll will be processed at the end of the month.</p>
-          </div>
-        </div>
-      );
-    }
+    const hasCurrentPayroll = !!employeePayroll;
+    const hasHistory = allPayrollHistory.length > 0;
 
     return (
       <div className="employee-payroll-content">
@@ -2632,115 +2620,186 @@ function EmployeePortal() {
         <div className="section-header">
           <h2><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className="stats-badge">{employeePayroll.periodMonth} {employeePayroll.periodYear}</span>
             <button 
-              onClick={() => {
-                setSelectedPayroll(employeePayroll);
-                setShowPayslipModal(true);
-              }}
-              className="btn-add-modern"
+              onClick={refreshPayrollData}
+              disabled={isRefreshingPayroll}
               style={{
+                padding: '6px 14px',
                 background: '#4a6fa5',
                 color: 'white',
-                padding: '8px 16px',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 fontSize: '13px',
-                fontWeight: '600',
-                cursor: 'pointer',
+                cursor: isRefreshingPayroll ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '6px'
+                gap: '6px',
+                opacity: isRefreshingPayroll ? 0.7 : 1
               }}
             >
-              <DescriptionIcon style={{ fontSize: 18 }} />
-              View Payslip
+              <RefreshIcon style={{ fontSize: 16, animation: isRefreshingPayroll ? 'spin 1s linear infinite' : 'none' }} />
+              {isRefreshingPayroll ? 'Refreshing...' : 'Refresh'}
             </button>
-          </div>
-        </div>
-
-        <div className="stats-row">
-          <div className="stat-card blue">
-            <div className="stat-icon"><AttachMoneyIcon style={{ fontSize: 30 }} /></div>
-            <div className="stat-info">
-              <h3>Basic Salary</h3>
-              <p>{formatCurrency(employeePayroll.basicSalary)}</p>
-            </div>
-          </div>
-          <div className="stat-card red">
-            <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 30 }} /></div>
-            <div className="stat-info">
-              <h3>Total Deductions</h3>
-              <p>{formatCurrency(employeePayroll.totalDeductions || 0)}</p>
-              {employeeLateDays > 0 && (
-                <small style={{ color: '#e67e22', display: 'block' }}>
-                  {employeeLateDays} late day(s): {formatCurrency(employeeLateDeduction)}
-                </small>
-              )}
-            </div>
-          </div>
-          <div className="stat-card green">
-            <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 30 }} /></div>
-            <div className="stat-info">
-              <h3>Net Pay</h3>
-              <p>{formatCurrency(employeePayroll.netPay)}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="form-card-modern">
-          <h3>Payroll Details</h3>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '20px',
-            padding: '10px 0'
-          }}>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Period:</strong></p>
-              <p>{employeePayroll.periodStart} to {employeePayroll.periodEnd}</p>
-            </div>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Basic Salary:</strong></p>
-              <p>{formatCurrency(employeePayroll.basicSalary)}</p>
-            </div>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Days:</strong></p>
-              <p style={{ color: employeeLateDays > 0 ? '#e67e22' : '#27ae60' }}>
-                {employeeLateDays > 0 ? `${employeeLateDays} days` : 'None ✅'}
-              </p>
-            </div>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Deduction:</strong></p>
-              <p style={{ color: employeeLateDeduction > 0 ? '#e74c3c' : '#27ae60' }}>
-                {formatCurrency(employeeLateDeduction)}
-              </p>
-            </div>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Other Deductions:</strong></p>
-              <p style={{ color: employeePayroll.originalDeductions > 0 ? '#e67e22' : '#27ae60' }}>
-                {formatCurrency(employeePayroll.originalDeductions || 0)}
-              </p>
-            </div>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Net Pay:</strong></p>
-              <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#4a6fa5' }}>
-                {formatCurrency(employeePayroll.netPay)}
-              </p>
-            </div>
-            <div>
-              <p style={{ margin: '5px 0', color: '#666' }}><strong>Status:</strong></p>
-              <span className={`status-badge ${employeePayroll.status === 'Paid' ? 'success' : 'warning'}`}>
-                {employeePayroll.status === 'Paid' ? 'Paid' : 'Pending'}
+            {hasCurrentPayroll && (
+              <span className="stats-badge">
+                {employeePayroll.periodMonth} {employeePayroll.periodYear}
               </span>
-            </div>
+            )}
+            {hasCurrentPayroll && (
+              <button 
+                onClick={() => {
+                  setSelectedPayroll(employeePayroll);
+                  setShowPayslipModal(true);
+                }}
+                className="btn-add-modern"
+                style={{
+                  background: '#4a6fa5',
+                  color: 'white',
+                  padding: '8px 16px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <DescriptionIcon style={{ fontSize: 18 }} />
+                View Payslip
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Debug Info */}
+        <div style={{ 
+          padding: '10px 16px', 
+          background: '#f0f4fe', 
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '13px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '20px',
+          alignItems: 'center'
+        }}>
+          <span>🔍 Employee ID: <strong>{employee?.id || 'N/A'}</strong></span>
+          <span>📊 History Records: <strong>{allPayrollHistory.length}</strong></span>
+          <span>📄 Current Payroll: <strong>{employeePayroll ? 'Yes' : 'No'}</strong></span>
+          {!hasCurrentPayroll && !hasHistory && (
+            <span style={{ color: '#e67e22' }}>
+              ⚠️ No payroll records found. Click "Process Payroll" in the HR dashboard.
+            </span>
+          )}
+          {allPayrollHistory.length > 0 && (
+            <span style={{ color: '#27ae60' }}>
+              ✅ Found {allPayrollHistory.length} payroll record(s)
+            </span>
+          )}
+        </div>
+
+        {/* Payroll Summary Cards */}
+        {payrollSummary.totalPayrolls > 0 && (
+          <div className="stats-row">
+            <div className="stat-card blue">
+              <div className="stat-icon"><AttachMoneyIcon style={{ fontSize: 30 }} /></div>
+              <div className="stat-info">
+                <h3>Total Earned</h3>
+                <p>{formatCurrency(payrollSummary.totalEarned)}</p>
+              </div>
+            </div>
+            <div className="stat-card red">
+              <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 30 }} /></div>
+              <div className="stat-info">
+                <h3>Total Deductions</h3>
+                <p>{formatCurrency(payrollSummary.totalDeductions)}</p>
+              </div>
+            </div>
+            <div className="stat-card green">
+              <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 30 }} /></div>
+              <div className="stat-info">
+                <h3>Total Net Pay</h3>
+                <p>{formatCurrency(payrollSummary.totalNetPay)}</p>
+              </div>
+            </div>
+            <div className="stat-card orange">
+              <div className="stat-icon"><WarningIcon style={{ fontSize: 30 }} /></div>
+              <div className="stat-info">
+                <h3>Total Late Days</h3>
+                <p>{payrollSummary.totalLateDays} days</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Current Month Payroll */}
+        {hasCurrentPayroll && (
+          <div className="form-card-modern">
+            <h3>
+              Current Month Payroll
+              <span style={{ fontSize: '13px', fontWeight: 'normal', marginLeft: '12px', color: '#666' }}>
+                ({employeePayroll.periodMonth} {employeePayroll.periodYear})
+              </span>
+            </h3>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '20px',
+              padding: '10px 0'
+            }}>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Period:</strong></p>
+                <p>{employeePayroll.periodStart} to {employeePayroll.periodEnd}</p>
+              </div>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Basic Salary:</strong></p>
+                <p>{formatCurrency(employeePayroll.basicSalary)}</p>
+              </div>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Days:</strong></p>
+                <p style={{ color: employeeLateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                  {employeeLateDays > 0 ? `${employeeLateDays} days` : 'None ✅'}
+                </p>
+              </div>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Deduction:</strong></p>
+                <p style={{ color: employeeLateDeduction > 0 ? '#e74c3c' : '#27ae60' }}>
+                  {formatCurrency(employeeLateDeduction)}
+                </p>
+              </div>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Other Deductions:</strong></p>
+                <p style={{ color: (employeePayroll.originalDeductions || 0) > 0 ? '#e67e22' : '#27ae60' }}>
+                  {formatCurrency(employeePayroll.originalDeductions || 0)}
+                </p>
+              </div>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Net Pay:</strong></p>
+                <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#4a6fa5' }}>
+                  {formatCurrency(employeePayroll.netPay)}
+                </p>
+              </div>
+              <div>
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Status:</strong></p>
+                <span className={`status-badge ${employeePayroll.status === 'Paid' ? 'success' : 'warning'}`}>
+                  {employeePayroll.status === 'Paid' ? 'Paid' : 'Pending'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Payroll History */}
-        {allPayrollHistory.length > 1 && (
+        {hasHistory && (
           <div className="form-card-modern" style={{ marginTop: '20px' }}>
-            <h3>Payroll History</h3>
+            <h3>
+              Payroll History
+              <span style={{ fontSize: '13px', fontWeight: 'normal', marginLeft: '12px', color: '#666' }}>
+                {allPayrollHistory.length} record{allPayrollHistory.length > 1 ? 's' : ''}
+              </span>
+            </h3>
             <div className="table-container">
               <table className="payroll-history-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
@@ -2762,7 +2821,7 @@ function EmployeePortal() {
                       <td style={{ padding: '10px 14px', textAlign: 'right', color: record.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
                         {record.lateDays || 0}
                       </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', color: record.totalDeductions > 0 ? '#e74c3c' : '#27ae60' }}>
+                      <td style={{ padding: '10px 14px', textAlign: 'right', color: (record.totalDeductions || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
                         {formatCurrency(record.totalDeductions || 0)}
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '600', color: '#4a6fa5' }}>
@@ -2795,6 +2854,24 @@ function EmployeePortal() {
                           <VisibilityIcon style={{ fontSize: 16 }} />
                           View
                         </button>
+                        <button
+                          onClick={() => generatePayslipPDF(record)}
+                          style={{
+                            background: 'transparent',
+                            color: '#27ae60',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '4px 12px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <GetAppIcon style={{ fontSize: 16 }} />
+                          Download
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -2803,6 +2880,56 @@ function EmployeePortal() {
             </div>
           </div>
         )}
+
+        {/* No Payroll Records */}
+        {!hasCurrentPayroll && !hasHistory && (
+          <div className="form-card-modern" style={{ textAlign: 'center', padding: '40px' }}>
+            <AttachMoneyIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 16px' }} />
+            <h3>No Payroll Records Found</h3>
+            <p style={{ color: '#666', marginTop: '8px' }}>
+              Your payroll will appear here after payroll processing.
+            </p>
+            <p style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
+              Payroll is typically processed at the end of each month.
+            </p>
+            <button 
+              onClick={refreshPayrollData}
+              disabled={isRefreshingPayroll}
+              style={{
+                marginTop: '16px',
+                padding: '8px 20px',
+                background: '#4a6fa5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '6px',
+                cursor: isRefreshingPayroll ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <RefreshIcon style={{ fontSize: 16 }} />
+              {isRefreshingPayroll ? 'Refreshing...' : 'Refresh Now'}
+            </button>
+          </div>
+        )}
+
+        {/* Connection Status with Payroll.js */}
+        <div style={{ 
+          marginTop: '20px', 
+          padding: '12px 16px', 
+          background: '#e8f0fe', 
+          borderRadius: '8px',
+          fontSize: '13px',
+          color: '#4a6fa5',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          border: '1px solid #d0e0f8'
+        }}>
+          <RefreshIcon style={{ fontSize: 18 }} />
+          <span>Payroll data is synced with HR system. Changes made in Payroll Management will appear here automatically.</span>
+        </div>
       </div>
     );
   };
@@ -2874,6 +3001,13 @@ function EmployeePortal() {
         {activeTab === 'payroll' && renderPayroll()}
         {activeTab === 'profile' && renderProfile()}
       </div>
+
+      <style jsx>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

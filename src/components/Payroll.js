@@ -1,4 +1,4 @@
-// src/components/Payroll.js
+// src/components/Payroll.js - Enhanced Version
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, onSnapshot } from 'firebase/firestore';
@@ -17,12 +17,18 @@ import InboxIcon from '@mui/icons-material/Inbox';
 import WarningIcon from '@mui/icons-material/Warning';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import PaidIcon from '@mui/icons-material/Paid';
+import PendingIcon from '@mui/icons-material/Pending';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import PrintIcon from '@mui/icons-material/Print';
+import CancelIcon from '@mui/icons-material/Cancel';
 
 function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const [payrollRecords, setPayrollRecords] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [filterDepartment, setFilterDepartment] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [departments, setDepartments] = useState([]);
   const [summary, setSummary] = useState({ 
     totalPayroll: 0, 
@@ -31,14 +37,16 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     totalDeductions: 0,
     totalEmployees: 0,
     totalLateDeductions: 0,
-    totalLateDays: 0
+    totalLateDays: 0,
+    paidCount: 0,
+    pendingCount: 0
   });
   const [loading, setLoading] = useState(true);
   const [processingPayroll, setProcessingPayroll] = useState(false);
   const [processMessage, setProcessMessage] = useState('');
   const [processSuccess, setProcessSuccess] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  // Late deduction rate per day
   const LATE_DEDUCTION_RATE = 500;
 
   // Real-time listener for payroll changes
@@ -54,17 +62,13 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     try {
       console.log('Fetching payroll data...');
       
-      // Fetch employees
       const empSnapshot = await getDocs(collection(db, 'employees'));
       const empList = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log(`Found ${empList.length} employees`);
       setEmployees(empList);
 
-      // Get departments
       const deptList = [...new Set(empList.map(emp => emp.department || emp.dept).filter(Boolean))];
       setDepartments(deptList);
 
-      // Fetch attendance records for current month
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
@@ -76,15 +80,11 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       const monthAttendance = allAttendance.filter(record => {
         return record.date >= startDate && record.date <= endDate;
       });
-      console.log(`Found ${monthAttendance.length} attendance records for this month`);
       setAttendanceRecords(monthAttendance);
 
-      // Fetch payroll records
       const payrollSnapshot = await getDocs(collection(db, 'payroll'));
       const payrollList = payrollSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log(`Found ${payrollList.length} payroll records`);
       
-      // Calculate late days per employee from attendance
       const lateDaysMap = {};
       monthAttendance.forEach(record => {
         if (record.status === 'Late' || record.status === 'late') {
@@ -92,7 +92,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         }
       });
 
-      // Update payroll with late deductions
       const updatedPayroll = payrollList.map(record => {
         const lateDays = lateDaysMap[record.employeeId] || 0;
         const lateDeduction = lateDays * LATE_DEDUCTION_RATE;
@@ -127,6 +126,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     const totalLateDeductions = records.reduce((sum, record) => sum + (record.lateDeduction || 0), 0);
     const totalLateDays = Object.values(lateDaysMap || {}).reduce((sum, val) => sum + val, 0);
     const avgSalary = records.length > 0 ? totalPayroll / records.length : 0;
+    const paidCount = records.filter(r => r.status === 'Paid').length;
+    const pendingCount = records.filter(r => r.status === 'Pending' || !r.status).length;
     
     const deptMap = {};
     records.forEach(record => {
@@ -146,11 +147,113 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       totalDeductions,
       totalEmployees: empList.length,
       totalLateDeductions,
-      totalLateDays
+      totalLateDays,
+      paidCount,
+      pendingCount
     });
   };
 
-  // ====== PROCESS PAYROLL FUNCTION - FIXED ======
+  // ====== UPDATE PAYROLL STATUS ======
+  const updatePayrollStatus = async (payrollId, newStatus) => {
+    if (!window.confirm(`Mark this payroll as "${newStatus}"?`)) return;
+    
+    setUpdatingStatus(true);
+    try {
+      await updateDoc(doc(db, 'payroll', payrollId), {
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+        ...(newStatus === 'Paid' ? { paidAt: new Date().toISOString() } : {})
+      });
+
+      // Get the payroll record for notification
+      const payrollRecord = payrollRecords.find(r => r.id === payrollId);
+      
+      // Notify employee
+      if (payrollRecord) {
+        await addDoc(collection(db, 'notifications'), {
+          employeeId: payrollRecord.employeeId,
+          employeeName: payrollRecord.employeeName,
+          type: 'payroll_status_update',
+          message: `Your payroll for ${payrollRecord.periodMonth} ${payrollRecord.periodYear} has been marked as ${newStatus}`,
+          read: false,
+          forEmployee: true,
+          forAdmin: false,
+          createdAt: new Date().toISOString()
+        });
+      }
+
+      setProcessMessage(`✅ Payroll status updated to ${newStatus}`);
+      setProcessSuccess(true);
+      
+      setTimeout(() => {
+        setProcessMessage('');
+        setProcessSuccess(false);
+      }, 5000);
+      
+      await fetchData();
+    } catch (error) {
+      console.error('Error updating status:', error);
+      setProcessMessage('❌ Error updating status: ' + error.message);
+      setProcessSuccess(false);
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  // ====== UPDATE ALL PENDING TO PAID ======
+  const markAllAsPaid = async () => {
+    const pendingRecords = payrollRecords.filter(r => r.status === 'Pending' || !r.status);
+    if (pendingRecords.length === 0) {
+      alert('No pending payroll records to mark as paid.');
+      return;
+    }
+    
+    if (!window.confirm(`Mark ${pendingRecords.length} payroll records as "Paid"?`)) return;
+    
+    setUpdatingStatus(true);
+    try {
+      let updatedCount = 0;
+      for (const record of pendingRecords) {
+        await updateDoc(doc(db, 'payroll', record.id), {
+          status: 'Paid',
+          paidAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        
+        // Notify each employee
+        await addDoc(collection(db, 'notifications'), {
+          employeeId: record.employeeId,
+          employeeName: record.employeeName,
+          type: 'payroll_status_update',
+          message: `Your payroll for ${record.periodMonth} ${record.periodYear} has been marked as Paid`,
+          read: false,
+          forEmployee: true,
+          forAdmin: false,
+          createdAt: new Date().toISOString()
+        });
+        
+        updatedCount++;
+      }
+      
+      setProcessMessage(`✅ Successfully marked ${updatedCount} payroll records as Paid`);
+      setProcessSuccess(true);
+      
+      setTimeout(() => {
+        setProcessMessage('');
+        setProcessSuccess(false);
+      }, 5000);
+      
+      await fetchData();
+    } catch (error) {
+      console.error('Error marking all as paid:', error);
+      setProcessMessage('❌ Error: ' + error.message);
+      setProcessSuccess(false);
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  // ====== PROCESS PAYROLL FUNCTION ======
   const processPayrollWithLateDeductions = async () => {
     setProcessingPayroll(true);
     setProcessMessage('⏳ Processing payroll...');
@@ -165,12 +268,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
 
-      console.log(`Processing for: ${monthName} ${currentYear} (${startDate} to ${endDate})`);
-
-      // Get all employees
       const empSnapshot = await getDocs(collection(db, 'employees'));
       const empList = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log(`Found ${empList.length} employees`);
 
       if (empList.length === 0) {
         setProcessMessage('⚠️ No employees found. Please add employees first.');
@@ -178,40 +277,30 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         return;
       }
 
-      // Get attendance for current month
       const attendanceSnapshot = await getDocs(collection(db, 'attendance'));
       const allAttendance = attendanceSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const monthAttendance = allAttendance.filter(record => {
         return record.date >= startDate && record.date <= endDate;
       });
-      console.log(`Found ${monthAttendance.length} attendance records for this month`);
 
-      // Calculate late days per employee
       const lateDaysMap = {};
       monthAttendance.forEach(record => {
         if (record.status === 'Late' || record.status === 'late') {
           lateDaysMap[record.employeeId] = (lateDaysMap[record.employeeId] || 0) + 1;
         }
       });
-      console.log('📊 Late days per employee:', lateDaysMap);
 
       let createdCount = 0;
       let updatedCount = 0;
       let errorCount = 0;
 
-      // Create/update payroll records for each employee
       for (const emp of empList) {
         try {
           const lateDays = lateDaysMap[emp.id] || 0;
           const lateDeduction = lateDays * LATE_DEDUCTION_RATE;
-          
-          // Get salary from employee (try different field names)
           const basicSalary = parseFloat(emp.salary || emp.basicSalary || emp.baseSalary || 0) || 0;
-          
           const totalDeductions = lateDeduction;
           const netPay = basicSalary - totalDeductions;
-
-          // Get employee name from various possible fields
           const employeeName = emp.fullName || emp.name || emp.employeeName || 'Unknown';
 
           const payrollData = {
@@ -229,12 +318,11 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             originalDeductions: 0,
             totalDeductions: totalDeductions,
             netPay: netPay,
-            status: 'Pending',
+            status: 'Pending', // Default status
             hasLate: lateDays > 0,
             processedAt: new Date().toISOString()
           };
 
-          // Check if payroll record exists for this employee and period
           const existingQuery = query(
             collection(db, 'payroll'),
             where('employeeId', '==', emp.id),
@@ -244,16 +332,12 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           const existingSnapshot = await getDocs(existingQuery);
 
           if (!existingSnapshot.empty) {
-            // Update existing record
             const docId = existingSnapshot.docs[0].id;
             await updateDoc(doc(db, 'payroll', docId), payrollData);
             updatedCount++;
-            console.log(`✅ Updated payroll for: ${employeeName}`);
           } else {
-            // Create new record
             await addDoc(collection(db, 'payroll'), payrollData);
             createdCount++;
-            console.log(`✅ Created payroll for: ${employeeName}`);
           }
         } catch (error) {
           console.error(`❌ Error processing payroll for employee ${emp.id}:`, error);
@@ -268,25 +352,22 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         `✅ Payroll processed successfully!\n` +
         `📝 Created: ${createdCount}, Updated: ${updatedCount}\n` +
         `📊 Total late days: ${totalLateDays}\n` +
-        `💰 Total late deductions: ₱${totalLateDeductions.toLocaleString()}`;
+        `💰 Total late deductions: ₱${totalLateDeductions.toLocaleString()}\n` +
+        `📌 Status set to: Pending (Ready for review)`;
       
-      console.log(successMessage);
       setProcessMessage(successMessage);
       setProcessSuccess(true);
       
-      // Refresh data
       await fetchData();
       
-      // Notify parent component (Dashboard) that payroll was processed
       if (onPayrollProcessed) {
         onPayrollProcessed();
       }
       
-      // Auto-clear message after 8 seconds
       setTimeout(() => {
         setProcessMessage('');
         setProcessSuccess(false);
-      }, 8000);
+      }, 10000);
 
     } catch (error) {
       console.error('❌ Error processing payroll:', error);
@@ -296,18 +377,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       setProcessingPayroll(false);
     }
   };
-
-  // Initial fetch
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  // Refresh when triggered by parent
-  useEffect(() => {
-    if (refreshTrigger) {
-      fetchData();
-    }
-  }, [refreshTrigger]);
 
   const getEmployeeName = (employeeId) => {
     const emp = employees.find(e => e.id === employeeId);
@@ -320,15 +389,9 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
   };
 
   const getStatusBadge = (record) => {
-    if (record.hasLate) {
-      return (
-        <span className="status-badge warning">
-          <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-          {record.status === 'Paid' ? 'Paid (Late)' : 'Late Deduction'}
-        </span>
-      );
-    }
-    if (record.status === 'Paid') {
+    const status = record.status || 'Pending';
+    
+    if (status === 'Paid') {
       return (
         <span className="status-badge success">
           <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
@@ -336,20 +399,35 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         </span>
       );
     }
+    if (status === 'Processing') {
+      return (
+        <span className="status-badge info">
+          <HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+          Processing
+        </span>
+      );
+    }
+    if (status === 'Cancelled') {
+      return (
+        <span className="status-badge danger">
+          <CancelIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+          Cancelled
+        </span>
+      );
+    }
     return (
-      <span className="status-badge info">
+      <span className="status-badge warning">
         <HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
         Pending
       </span>
     );
   };
 
-  const filteredRecords = filterDepartment === 'all' 
-    ? payrollRecords 
-    : payrollRecords.filter(record => {
-        const dept = getEmployeeDepartment(record.employeeId);
-        return dept === filterDepartment;
-      });
+  const filteredRecords = payrollRecords.filter(record => {
+    const deptMatch = filterDepartment === 'all' || getEmployeeDepartment(record.employeeId) === filterDepartment;
+    const statusMatch = filterStatus === 'all' || (record.status || 'Pending') === filterStatus;
+    return deptMatch && statusMatch;
+  });
 
   if (loading) {
     return <div className="loading">Loading payroll data...</div>;
@@ -372,22 +450,49 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <CalendarTodayIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
             {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
           </div>
+          
+          {/* Mark All as Paid Button */}
+          {summary.pendingCount > 0 && (
+            <button 
+              onClick={markAllAsPaid}
+              disabled={updatingStatus}
+              className="btn-mark-all-paid"
+              style={{
+                padding: '8px 16px',
+                background: '#27ae60',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: updatingStatus ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                opacity: updatingStatus ? 0.7 : 1
+              }}
+            >
+              <PaidIcon style={{ fontSize: 18 }} />
+              {updatingStatus ? 'Updating...' : `Mark All (${summary.pendingCount}) as Paid`}
+            </button>
+          )}
+          
           <button 
             onClick={processPayrollWithLateDeductions}
             disabled={processingPayroll}
             className="btn-process-payroll"
             style={{
-              padding: '10px',
-              background: processingPayroll ? '#95a5a6' : '#27ae60',
+              padding: '8px 16px',
+              background: processingPayroll ? '#95a5a6' : '#4a6fa5',
               color: 'white',
               border: 'none',
               borderRadius: '8px',
-              fontSize: '14px',
+              fontSize: '13px',
               fontWeight: '600',
               cursor: processingPayroll ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '6px',
               opacity: processingPayroll ? 0.7 : 1
             }}
           >
@@ -445,14 +550,24 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <p>₱{summary.totalDeductions.toLocaleString()}</p>
           </div>
         </div>
-        <div className="stat-card orange">
+        <div className="stat-card green">
           <div className="stat-icon">
-            <WarningIcon style={{ fontSize: 30 }} />
+            <CheckCircleIcon style={{ fontSize: 30 }} />
           </div>
           <div className="stat-info">
-            <h3>Late Deductions</h3>
-            <p>₱{summary.totalLateDeductions.toLocaleString()}</p>
-            <small>{summary.totalLateDays} late days</small>
+            <h3>Paid</h3>
+            <p>{summary.paidCount}</p>
+            <small>employees</small>
+          </div>
+        </div>
+        <div className="stat-card orange">
+          <div className="stat-icon">
+            <HourglassEmptyIcon style={{ fontSize: 30 }} />
+          </div>
+          <div className="stat-info">
+            <h3>Pending</h3>
+            <p>{summary.pendingCount}</p>
+            <small>employees</small>
           </div>
         </div>
       </div>
@@ -472,12 +587,26 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             ))}
           </select>
         </div>
+        <div className="filter-group">
+          <ReceiptIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Status</option>
+            <option value="Pending">Pending</option>
+            <option value="Paid">Paid</option>
+            <option value="Processing">Processing</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
         <div className="stats-badge">
           <span>{filteredRecords.length} payroll records</span>
         </div>
       </div>
 
-      {/* Department Breakdown Chart */}
+      {/* Department Breakdown */}
       {summary.departmentBreakdown.length > 0 && (
         <div className="chart-section-modern">
           <h3>
@@ -527,10 +656,10 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
               <th>Basic Salary</th>
               <th>Late Days</th>
               <th>Late Deduction</th>
-              <th>Other Deductions</th>
               <th>Total Deductions</th>
               <th>Net Pay</th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -568,7 +697,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
                       '₱0'
                     )}
                   </td>
-                  <td className="deduction-cell">₱{record.originalDeductions?.toLocaleString() || '0'}</td>
                   <td className="deduction-cell">
                     {record.totalDeductions > 0 ? (
                       <span style={{ color: '#e74c3c', fontWeight: '600' }}>₱{record.totalDeductions?.toLocaleString() || '0'}</span>
@@ -584,6 +712,53 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
                     )}
                   </td>
                   <td>{getStatusBadge(record)}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                      {/* Status Update Buttons */}
+                      {(record.status === 'Pending' || !record.status) && (
+                        <button
+                          onClick={() => updatePayrollStatus(record.id, 'Paid')}
+                          disabled={updatingStatus}
+                          style={{
+                            padding: '4px 10px',
+                            background: '#27ae60',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            cursor: updatingStatus ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <PaidIcon style={{ fontSize: 14 }} />
+                          Mark Paid
+                        </button>
+                      )}
+                      {record.status === 'Paid' && (
+                        <button
+                          onClick={() => updatePayrollStatus(record.id, 'Pending')}
+                          disabled={updatingStatus}
+                          style={{
+                            padding: '4px 10px',
+                            background: '#e67e22',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            cursor: updatingStatus ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <PendingIcon style={{ fontSize: 14 }} />
+                          Revert
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))
             ) : (

@@ -93,16 +93,9 @@ function UserManagement({ refreshTrigger }) {
 
   // Function to calculate deductions
   const calculateDeductions = (salary) => {
-    // SSS Contribution (simplified - actual rates vary)
     const sss = salary * 0.045;
-    
-    // PhilHealth Contribution (simplified - actual rates vary)
     const philhealth = salary * 0.025;
-    
-    // Pag-IBIG Contribution (fixed rate for now)
     const pagibig = Math.min(salary * 0.01, 100);
-    
-    // Total deductions
     const totalDeductions = sss + philhealth + pagibig;
     const netPay = salary - totalDeductions;
     
@@ -122,13 +115,11 @@ function UserManagement({ refreshTrigger }) {
       const month = currentDate.toLocaleString('default', { month: 'long' });
       const year = currentDate.getFullYear();
       
-      // Calculate deductions
       const deductions = calculateDeductions(parseFloat(salary));
       
       const periodStart = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-01`;
       const periodEnd = `${year}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(new Date(year, currentDate.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
 
-      // Check if payroll record already exists for this employee this month
       const payrollQuery = query(
         collection(db, 'payroll'), 
         where('employeeId', '==', userId),
@@ -137,7 +128,6 @@ function UserManagement({ refreshTrigger }) {
       const existingPayroll = await getDocs(payrollQuery);
       
       if (!existingPayroll.empty) {
-        // Update existing payroll record
         const payrollDoc = existingPayroll.docs[0];
         await updateDoc(doc(db, 'payroll', payrollDoc.id), {
           basicSalary: parseFloat(salary),
@@ -150,7 +140,6 @@ function UserManagement({ refreshTrigger }) {
         });
         console.log('✅ Payroll record updated for: ' + userName);
       } else {
-        // Create new payroll record
         await addDoc(collection(db, 'payroll'), {
           employeeId: userId,
           employeeName: userName,
@@ -199,7 +188,6 @@ function UserManagement({ refreshTrigger }) {
 
     setLoading(true);
     try {
-      // Generate a default password
       const defaultPassword = 'Password123!';
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, defaultPassword);
       
@@ -218,7 +206,6 @@ function UserManagement({ refreshTrigger }) {
       
       const docRef = await addDoc(collection(db, 'users'), userData);
       
-      // Create payroll record if salary is provided
       if (formData.salary && formData.salary > 0) {
         await createPayrollRecord(
           docRef.id,
@@ -262,7 +249,6 @@ function UserManagement({ refreshTrigger }) {
       
       await updateDoc(userRef, updateData);
       
-      // Update payroll record if salary is provided
       if (formData.salary && formData.salary > 0) {
         await createPayrollRecord(
           editingId,
@@ -288,7 +274,6 @@ function UserManagement({ refreshTrigger }) {
   const deleteUser = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete user "${name}"? This will also remove their payroll records.`)) {
       try {
-        // Delete payroll records for this user
         const payrollQuery = query(collection(db, 'payroll'), where('employeeId', '==', id));
         const payrollSnapshot = await getDocs(payrollQuery);
         payrollSnapshot.docs.forEach(async (doc) => {
@@ -371,16 +356,20 @@ function UserManagement({ refreshTrigger }) {
       user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'
     ]);
 
-    let csvContent = headers.join(',') + '\n';
+    let csvContent = '\uFEFF';
+    csvContent += `"Human Resource Management Pagbilao, Quezon - User Report"\n`;
+    csvContent += `"Generated: ${new Date().toLocaleString()}"\n`;
+    csvContent += `"Total Users: ${filteredUsers.length}"\n\n`;
+    csvContent += headers.join(',') + '\n';
     rows.forEach(row => {
-      csvContent += row.join(',') + '\n';
+      csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
     });
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `users_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `User_Report_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -388,11 +377,19 @@ function UserManagement({ refreshTrigger }) {
   };
 
   const exportToPDF = () => {
+    document.body.classList.add('printing-pdf');
     window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-pdf');
+    }, 1000);
   };
 
   const handlePrint = () => {
+    document.body.classList.add('printing-pdf');
     window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-pdf');
+    }, 1000);
   };
 
   // Filter users
@@ -419,8 +416,87 @@ function UserManagement({ refreshTrigger }) {
     }).format(salary);
   };
 
+  // Clean professional report content
+  const PrintContent = () => (
+    <div className="print-report">
+      {/* Report Header */}
+      <div className="report-header">
+        <h1>Human Resource Management</h1>
+        <h2>Pagbilao, Quezon</h2>
+        <div className="report-divider"></div>
+        <h3>User Report</h3>
+        <p className="report-meta">
+          Generated: {new Date().toLocaleString()} | Total Users: {filteredUsers.length}
+        </p>
+      </div>
+
+      {/* User Table */}
+      <div className="report-table-wrapper">
+        <table className="report-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Department</th>
+              <th>Position</th>
+              <th>Role</th>
+              <th>Salary</th>
+              <th>Date Hired</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.map((user, index) => (
+              <tr key={user.id}>
+                <td>{index + 1}</td>
+                <td>{user.name || 'N/A'}</td>
+                <td>{user.email || 'N/A'}</td>
+                <td>{user.department || '—'}</td>
+                <td>{user.position || '—'}</td>
+                <td>{user.role || 'N/A'}</td>
+                <td>{formatSalary(user.salary)}</td>
+                <td>{user.dateHired || 'N/A'}</td>
+              </tr>
+            ))}
+            {filteredUsers.length === 0 && (
+              <tr>
+                <td colSpan="8" className="report-empty">
+                  No users found in the system
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Report Footer */}
+      <div className="report-footer">
+        <div className="report-footer-left">
+          <p>Prepared by: HR Management Office</p>
+          <p>Document ID: HR-UM-{new Date().getFullYear()}-{String(new Date().getMonth() + 1).padStart(2, '0')}{String(new Date().getDate()).padStart(2, '0')}</p>
+        </div>
+        <div className="report-footer-center">
+          <div className="signature-line">
+            <span>_________________________</span>
+            <p>HR Officer Signature</p>
+          </div>
+          <div className="signature-line">
+            <span>_________________________</span>
+            <p>Date</p>
+          </div>
+        </div>
+        <div className="report-footer-right">
+          <p>Page <span className="page-num"></span></p>
+          <p>© {new Date().getFullYear()} HRM Pagbilao</p>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="user-management">
+      {/* Hidden print content */}
+      <PrintContent />
 
       {/* Page Header */}
       <div className="page-header-modern">
@@ -628,7 +704,7 @@ function UserManagement({ refreshTrigger }) {
         </table>
       </div>
 
-      {/* Add/Edit User Modal - Matches EmployeeRecords style */}
+      {/* Add/Edit User Modal */}
       {showForm && (
         <div className="modal-overlay" onClick={() => { setShowForm(false); resetForm(); }}>
           <div className="modal-form" onClick={(e) => e.stopPropagation()}>
@@ -745,7 +821,6 @@ function UserManagement({ refreshTrigger }) {
                     <option value="HR Admin">HR Admin</option>
                   </select>
                 </div>
-                {/* Salary field - shows when adding or editing */}
                 <div className="form-group">
                   <label>
                     <AttachMoneyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />

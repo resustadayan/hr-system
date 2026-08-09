@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getEmployees, getLeaveRequests, db, auth } from "../firebase";
 import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
 import MGDHDashboard from "../other file for dashboard/MGDHPDashboard";
+import Payroll from "./Payroll";
 
 // Material-UI Icons
 import PeopleIcon from '@mui/icons-material/People';
@@ -24,6 +25,8 @@ function Dashboard() {
   const navigate = useNavigate();
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [payrollRefreshTrigger, setPayrollRefreshTrigger] = useState(0);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     presentToday: 0,
@@ -232,6 +235,12 @@ function Dashboard() {
     }
   };
 
+  // Handle payroll processed callback
+  const handlePayrollProcessed = () => {
+    setPayrollRefreshTrigger(prev => prev + 1);
+    fetchDashboard();
+  };
+
   // If user is MGDH, render the MGDH Dashboard
   if (userRole === 'MGDH') {
     return <MGDHDashboard />;
@@ -256,7 +265,7 @@ function Dashboard() {
   const handleAddEmployee = () => navigate('/employees');
   const handleRecordAttendance = () => navigate('/attendance');
   const handleProcessLeave = () => navigate('/leave');
-  const handlePayroll = () => navigate('/payroll');
+  const handlePayroll = () => setActiveTab('payroll');
 
   return (
     <div className="dashboard">
@@ -280,115 +289,127 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="stats-row">
-        {statCards.map((card) => {
-          const IconComponent = card.icon;
-          return (
-            <div key={card.key} className={`stat-card ${card.color}`}>
-              <div className="stat-icon">
-                <IconComponent style={{ fontSize: 30 }} />
-              </div>
-              <div className="stat-info">
-                <h3>{card.label}</h3>
-                <p>{card.value}</p>
+      {/* Dashboard Tab Content */}
+      {activeTab === 'dashboard' && (
+        <>
+          {/* Stats Cards */}
+          <div className="stats-row">
+            {statCards.map((card) => {
+              const IconComponent = card.icon;
+              return (
+                <div key={card.key} className={`stat-card ${card.color}`}>
+                  <div className="stat-icon">
+                    <IconComponent style={{ fontSize: 30 }} />
+                  </div>
+                  <div className="stat-info">
+                    <h3>{card.label}</h3>
+                    <p>{card.value}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick Actions & Notifications */}
+          <div className="dashboard-grid">
+            {/* Quick Actions */}
+            <div className="dashboard-box">
+              <h2><AssessmentIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Quick Actions</h2>
+              <div className="actions-grid">
+                <button className="action-btn blue" onClick={handleAddEmployee}>
+                  <AddIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  Add Employee
+                </button>
+                <button className="action-btn green" onClick={handleRecordAttendance}>
+                  <AccessTimeIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  Record Attendance
+                </button>
+                <button className="action-btn orange" onClick={handleProcessLeave}>
+                  <CalendarTodayIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  Process Leave
+                </button>
+                <button className="action-btn purple" onClick={handlePayroll}>
+                  <AttachMoneyIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  Payroll
+                </button>
               </div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* Quick Actions & Notifications */}
-      <div className="dashboard-grid">
-        {/* Quick Actions */}
-        <div className="dashboard-box">
-          <h2><AssessmentIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Quick Actions</h2>
-          <div className="actions-grid">
-            <button className="action-btn blue" onClick={handleAddEmployee}>
-              <AddIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-              Add Employee
-            </button>
-            <button className="action-btn green" onClick={handleRecordAttendance}>
-              <AccessTimeIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-              Record Attendance
-            </button>
-            <button className="action-btn orange" onClick={handleProcessLeave}>
-              <CalendarTodayIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-              Process Leave
-            </button>
-            <button className="action-btn purple" onClick={handlePayroll}>
-              <AttachMoneyIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-              Payroll
-            </button>
+            {/* Notifications */}
+            <div className="dashboard-box">
+              <h2><NotificationsIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Notifications</h2>
+              <ul className="notification-list">
+                <li>
+                  <span className="badge orange"><HourglassEmptyIcon style={{ fontSize: 18 }} /></span>
+                  Pending Leave Requests: <strong>{stats.pendingLeaves}</strong>
+                </li>
+                <li>
+                  <span className="badge red"><DescriptionIcon style={{ fontSize: 18 }} /></span>
+                  Missing Documents: <strong>{stats.missingDocuments}</strong>
+                </li>
+                <li>
+                  <span className="badge green"><CheckCircleIcon style={{ fontSize: 18 }} /></span>
+                  Today's Attendance: <strong>{stats.presentToday}</strong>
+                </li>
+                <li>
+                  <span className="badge purple"><BarChartIcon style={{ fontSize: 18 }} /></span>
+                  Compliance Rate: <strong>{stats.complianceRate}%</strong>
+                </li>
+              </ul>
+            </div>
           </div>
-        </div>
 
-        {/* Notifications */}
-        <div className="dashboard-box">
-          <h2><NotificationsIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Notifications</h2>
-          <ul className="notification-list">
-            <li>
-              <span className="badge orange"><HourglassEmptyIcon style={{ fontSize: 18 }} /></span>
-              Pending Leave Requests: <strong>{stats.pendingLeaves}</strong>
-            </li>
-            <li>
-              <span className="badge red"><DescriptionIcon style={{ fontSize: 18 }} /></span>
-              Missing Documents: <strong>{stats.missingDocuments}</strong>
-            </li>
-            <li>
-              <span className="badge green"><CheckCircleIcon style={{ fontSize: 18 }} /></span>
-              Today's Attendance: <strong>{stats.presentToday}</strong>
-            </li>
-            <li>
-              <span className="badge purple"><BarChartIcon style={{ fontSize: 18 }} /></span>
-              Compliance Rate: <strong>{stats.complianceRate}%</strong>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      {/* Recent Activities */}
-      <div className="dashboard-box full-width">
-        <h2><AssessmentIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Recent Activities</h2>
-        <table className="activity-table">
-          <thead>
-            <tr>
-              <th>Activity</th>
-              <th>Department</th>
-              <th>Status</th>
-              <th>Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recentActivities.length > 0 ? (
-              recentActivities.map(activity => (
-                <tr key={activity.id}>
-                  <td>{activity.icon} {activity.text}</td>
-                  <td>{activity.dept}</td>
-                  <td>
-                    <span className={`status-badge ${
-                      activity.status === 'Completed' ? 'success' : 
-                      activity.status === 'Pending' ? 'warning' :
-                      activity.status === 'Error' ? 'danger' :
-                      'secondary'
-                    }`}>
-                      {activity.status}
-                    </span>
-                  </td>
-                  <td>{activity.time}</td>
+          {/* Recent Activities */}
+          <div className="dashboard-box full-width">
+            <h2><AssessmentIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Recent Activities</h2>
+            <table className="activity-table">
+              <thead>
+                <tr>
+                  <th>Activity</th>
+                  <th>Department</th>
+                  <th>Status</th>
+                  <th>Date</th>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="4" className="empty-state">
-                  <p>No recent activities</p>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {recentActivities.length > 0 ? (
+                  recentActivities.map(activity => (
+                    <tr key={activity.id}>
+                      <td>{activity.icon} {activity.text}</td>
+                      <td>{activity.dept}</td>
+                      <td>
+                        <span className={`status-badge ${
+                          activity.status === 'Completed' ? 'success' : 
+                          activity.status === 'Pending' ? 'warning' :
+                          activity.status === 'Error' ? 'danger' :
+                          'secondary'
+                        }`}>
+                          {activity.status}
+                        </span>
+                      </td>
+                      <td>{activity.time}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="empty-state">
+                      <p>No recent activities</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
+      {/* Payroll Tab Content */}
+      {activeTab === 'payroll' && (
+        <Payroll 
+          refreshTrigger={payrollRefreshTrigger}
+          onPayrollProcessed={handlePayrollProcessed}
+        />
+      )}
     </div>
   );
 }
