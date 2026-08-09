@@ -213,15 +213,15 @@ function EmployeePortal() {
   // ====== REFRESH PAYROLL FUNCTION ======
   const refreshPayrollData = async () => {
     if (!employee) {
-      console.log('⚠️ No employee data available for refresh');
+      console.log('No employee data available for refresh');
       return;
     }
     setIsRefreshingPayroll(true);
     try {
       await fetchEmployeePayroll();
-      console.log('✅ Payroll data refreshed successfully');
+      console.log('Payroll data refreshed successfully');
     } catch (error) {
-      console.error('❌ Error refreshing payroll:', error);
+      console.error('Error refreshing payroll:', error);
     } finally {
       setIsRefreshingPayroll(false);
     }
@@ -230,12 +230,12 @@ function EmployeePortal() {
   // ====== FETCH EMPLOYEE PAYROLL ======
   const fetchEmployeePayroll = async () => {
     if (!employee) {
-      console.log('⚠️ No employee data available');
+      console.log('No employee data available');
       return;
     }
     
-    console.log('🔍 Fetching payroll for employee ID:', employee.id);
-    console.log('🔍 Employee data:', employee);
+    console.log('Fetching payroll for employee ID:', employee.id);
+    console.log('Employee data:', employee);
     
     try {
       const currentMonth = new Date().getMonth();
@@ -302,7 +302,7 @@ function EmployeePortal() {
   // ====== FETCH EMPLOYEE DATA ======
   const fetchEmployeeData = async () => {
     if (!authUser) {
-      console.log('⚠️ No authenticated user');
+      console.log('No authenticated user');
       return;
     }
 
@@ -346,7 +346,7 @@ function EmployeePortal() {
             status: userData.status || 'Active'
           };
           empId = empData.id;
-          console.log('📋 Created employee data from user document:', empData);
+          console.log('Created employee data from user document:', empData);
           
           // Optionally save this to employees collection
           try {
@@ -354,12 +354,12 @@ function EmployeePortal() {
               ...empData,
               createdAt: new Date().toISOString()
             });
-            console.log('✅ Employee saved to employees collection');
+            console.log('Employee saved to employees collection');
           } catch (saveError) {
             console.warn('Could not save employee to collection:', saveError);
           }
         } else {
-          console.error('❌ No user document found for UID:', authUser.uid);
+          console.error('No user document found for UID:', authUser.uid);
         }
       }
 
@@ -447,10 +447,10 @@ function EmployeePortal() {
           setupRealtimeListeners();
         }, 300);
       } else {
-        console.error('❌ No employee data found!');
+        console.error('No employee data found!');
       }
     } catch (error) {
-      console.error('❌ Error fetching employee data:', error);
+      console.error('Error fetching employee data:', error);
     } finally {
       setLoading(false);
     }
@@ -716,10 +716,10 @@ function EmployeePortal() {
       where('employeeId', '==', employee.id)
     );
     onSnapshot(payrollQuery, (snapshot) => {
-      console.log('🔄 Payroll data changed, refreshing...');
+      console.log('Payroll data changed, refreshing...');
       fetchEmployeePayroll();
     }, (error) => {
-      console.error('❌ Payroll listener error:', error);
+      console.error('Payroll listener error:', error);
     });
   };
 
@@ -1059,7 +1059,7 @@ function EmployeePortal() {
 
     setUploading(true);
     setUploadProgress(0);
-    setUploadStatus('Uploading to Vercel Blob...');
+    setUploadStatus('Uploading File.....');
 
     try {
       if (!authUser) {
@@ -1081,11 +1081,11 @@ function EmployeePortal() {
       );
 
       if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'Upload to Vercel Blob failed');
+        throw new Error(uploadResult.error || 'Upload file failed');
       }
 
       setUploadProgress(50);
-      setUploadStatus('Saving to database...');
+      setUploadStatus('Saving compliance...');
 
       await addDoc(collection(db, 'documents'), {
         employeeId: employee.id,
@@ -1134,13 +1134,6 @@ function EmployeePortal() {
       setSelectedDocType('');
       setShowUploadForm(false);
       
-      navigate('/compliance', { 
-        state: { 
-          notification: `${employee.fullName} uploaded ${selectedDocType}`,
-          employeeId: employee.id,
-          timestamp: new Date().toISOString()
-        }
-      });
       
       fetchEmployeeData();
       setUploading(false);
@@ -2143,6 +2136,7 @@ function EmployeePortal() {
     </div>
   );
 
+  //Compliance Tab//
   const renderCompliance = () => (
     <div className="employee-compliance-content">
       <div className="section-header">
