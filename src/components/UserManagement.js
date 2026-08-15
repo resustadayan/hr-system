@@ -15,9 +15,6 @@ import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CloseIcon from '@mui/icons-material/Close';
-import DownloadIcon from '@mui/icons-material/Download';
-import PrintIcon from '@mui/icons-material/Print';
-import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import BusinessIcon from '@mui/icons-material/Business';
 import WorkIcon from '@mui/icons-material/Work';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -341,57 +338,6 @@ function UserManagement({ refreshTrigger }) {
     return users.filter(user => user.role === role).length;
   };
 
-  // Export to CSV
-  const exportToCSV = () => {
-    const headers = ['Name', 'Email', 'Department', 'Position', 'Role', 'Salary', 'Phone', 'Date Hired', 'Created At'];
-    const rows = filteredUsers.map(user => [
-      user.name || 'N/A',
-      user.email || 'N/A',
-      user.department || 'N/A',
-      user.position || 'N/A',
-      user.role || 'N/A',
-      user.salary || 'N/A',
-      user.phone || 'N/A',
-      user.dateHired || 'N/A',
-      user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'
-    ]);
-
-    let csvContent = '\uFEFF';
-    csvContent += `"Human Resource Management Pagbilao, Quezon - User Report"\n`;
-    csvContent += `"Generated: ${new Date().toLocaleString()}"\n`;
-    csvContent += `"Total Users: ${filteredUsers.length}"\n\n`;
-    csvContent += headers.join(',') + '\n';
-    rows.forEach(row => {
-      csvContent += row.map(cell => `"${cell}"`).join(',') + '\n';
-    });
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `User_Report_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  };
-
-  const exportToPDF = () => {
-    document.body.classList.add('printing-pdf');
-    window.print();
-    setTimeout(() => {
-      document.body.classList.remove('printing-pdf');
-    }, 1000);
-  };
-
-  const handlePrint = () => {
-    document.body.classList.add('printing-pdf');
-    window.print();
-    setTimeout(() => {
-      document.body.classList.remove('printing-pdf');
-    }, 1000);
-  };
-
   // Filter users
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -416,88 +362,8 @@ function UserManagement({ refreshTrigger }) {
     }).format(salary);
   };
 
-  // Clean professional report content
-  const PrintContent = () => (
-    <div className="print-report">
-      {/* Report Header */}
-      <div className="report-header">
-        <h1>Human Resource Management</h1>
-        <h2>Pagbilao, Quezon</h2>
-        <div className="report-divider"></div>
-        <h3>User Report</h3>
-        <p className="report-meta">
-          Generated: {new Date().toLocaleString()} | Total Users: {filteredUsers.length}
-        </p>
-      </div>
-
-      {/* User Table */}
-      <div className="report-table-wrapper">
-        <table className="report-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Department</th>
-              <th>Position</th>
-              <th>Role</th>
-              <th>Salary</th>
-              <th>Date Hired</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((user, index) => (
-              <tr key={user.id}>
-                <td>{index + 1}</td>
-                <td>{user.name || 'N/A'}</td>
-                <td>{user.email || 'N/A'}</td>
-                <td>{user.department || '—'}</td>
-                <td>{user.position || '—'}</td>
-                <td>{user.role || 'N/A'}</td>
-                <td>{formatSalary(user.salary)}</td>
-                <td>{user.dateHired || 'N/A'}</td>
-              </tr>
-            ))}
-            {filteredUsers.length === 0 && (
-              <tr>
-                <td colSpan="8" className="report-empty">
-                  No users found in the system
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Report Footer */}
-      <div className="report-footer">
-        <div className="report-footer-left">
-          <p>Prepared by: HR Management Office</p>
-          <p>Document ID: HR-UM-{new Date().getFullYear()}-{String(new Date().getMonth() + 1).padStart(2, '0')}{String(new Date().getDate()).padStart(2, '0')}</p>
-        </div>
-        <div className="report-footer-center">
-          <div className="signature-line">
-            <span>_________________________</span>
-            <p>HR Officer Signature</p>
-          </div>
-          <div className="signature-line">
-            <span>_________________________</span>
-            <p>Date</p>
-          </div>
-        </div>
-        <div className="report-footer-right">
-          <p>Page <span className="page-num"></span></p>
-          <p>© {new Date().getFullYear()} HRM Pagbilao</p>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div className="user-management">
-      {/* Hidden print content */}
-      <PrintContent />
-
       {/* Page Header */}
       <div className="page-header-modern">
         <div className="header-left">
@@ -553,7 +419,7 @@ function UserManagement({ refreshTrigger }) {
         </div>
       </div>
 
-      {/* Search, Filter & Export */}
+      {/* Search & Filter */}
       <div className="search-filter-bar">
         <div className="search-group">
           <SearchIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
@@ -589,20 +455,6 @@ function UserManagement({ refreshTrigger }) {
             <option value="MGDH">MGDH</option>
             <option value="Employee">Employee</option>
           </select>
-        </div>
-        <div className="export-group">
-          <button onClick={exportToCSV} className="btn-export csv">
-            <DownloadIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-            CSV
-          </button>
-          <button onClick={exportToPDF} className="btn-export pdf">
-            <PictureAsPdfIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-            PDF
-          </button>
-          <button onClick={handlePrint} className="btn-export print">
-            <PrintIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-            Print
-          </button>
         </div>
         <div className="stats-badge">
           <span>{filteredUsers.length} users</span>
@@ -797,30 +649,7 @@ function UserManagement({ refreshTrigger }) {
                     onChange={(e) => setFormData({...formData, dateHired: e.target.value})}
                   />
                 </div>
-                <div className="form-group">
-                  <label>
-                    <AdminPanelSettingsIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                    Role *
-                  </label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({...formData, role: e.target.value})}
-                    className="role-select-modern"
-                    required
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      border: '2px solid #e2e8f0',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <option value="Employee">Employee</option>
-                    <option value="MGDH">MGDH (Department Head)</option>
-                    <option value="HR Admin">HR Admin</option>
-                  </select>
-                </div>
+                
                 <div className="form-group">
                   <label>
                     <AttachMoneyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />

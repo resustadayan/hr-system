@@ -1,7 +1,7 @@
 // src/other file for dashboard/MGDHDashboard.js
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from '../firebase';
-import { collection, getDocs, query, where, addDoc, updateDoc, doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, query, where, addDoc, updateDoc, doc, getDoc, setDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { logout } from '../firebase';
 
@@ -28,6 +28,11 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import AssignmentLateIcon from '@mui/icons-material/AssignmentLate';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import MarkunreadIcon from '@mui/icons-material/Markunread';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import LoginIcon from '@mui/icons-material/Login';
+import Logout from '@mui/icons-material/Logout';
+import WarningIcon from '@mui/icons-material/Warning';
+import TimelineIcon from '@mui/icons-material/Timeline';
 import logo from '../assets/hrmo logo.jpg';
 
 function MGDHDashboard() {
@@ -57,6 +62,26 @@ function MGDHDashboard() {
   const [latestNotification, setLatestNotification] = useState(null);
   const [userEmail, setUserEmail] = useState('');
   const [mgdhUserId, setMgdhUserId] = useState('');
+  const [allEmployees, setAllEmployees] = useState([]);
+  
+  // ====== ATTENDANCE STATES ======
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [todayAttendance, setTodayAttendance] = useState(null);
+  const [attendanceStatus, setAttendanceStatus] = useState('Not Timed In');
+  const [isTimedIn, setIsTimedIn] = useState(false);
+  const [isTimedOut, setIsTimedOut] = useState(false);
+  const [timeIn, setTimeIn] = useState(null);
+  const [timeOut, setTimeOut] = useState(null);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+  const [officeStartTime, setOfficeStartTime] = useState('08:00');
+  const [officeEndTime, setOfficeEndTime] = useState('17:00');
+  const [attendanceSummary, setAttendanceSummary] = useState({
+    totalDays: 0,
+    presentDays: 0,
+    lateDays: 0,
+    absentDays: 0
+  });
+  const [mgdhEmployeeData, setMgdhEmployeeData] = useState(null);
 
   // Handle mobile responsiveness
   useEffect(() => {
@@ -85,6 +110,488 @@ function MGDHDashboard() {
     setupRealtimeListeners();
   }, []);
 
+  // ====== FETCH MGDH EMPLOYEE DATA FOR ATTENDANCE ======
+  const fetchMgdhEmployeeData = async (email) => {
+    try {
+      // Find employee in employees collection
+      const empQuery = query(collection(db, 'employees'), where('email', '==', email));
+      const empSnapshot = await getDocs(empQuery);
+      
+      if (!empSnapshot.empty) {
+        const empData = { id: empSnapshot.docs[0].id, ...empSnapshot.docs[0].data() };
+        setMgdhEmployeeData(empData);
+        await fetchMgdhAttendance(empData.id);
+        console.log('✅ MGDH employee found:', empData);
+        return empData;
+      }
+      
+      // If no employee found, CREATE ONE using the MGDH user data
+      console.log('⚠️ No employee record found for MGDH. Creating one...');
+      
+      // Get the MGDH user data from the users collection
+      const userQuery = query(collection(db, 'users'), where('email', '==', email));
+      const userSnapshot = await getDocs(userQuery);
+      
+      if (userSnapshot.empty) {
+        console.error('❌ No user found with email:', email);
+        alert('No user account found. Please contact HR.');
+        return null;
+      }
+      
+      const userData = userSnapshot.docs[0].data();
+      const userId = userSnapshot.docs[0].id;
+      
+      // Create employee document using the user's UID as the document ID
+      const employeeData = {
+        fullName: userData.name || userData.fullName || email.split('@')[0] || 'MGDH User',
+        email: email,
+        department: userData.department || userData.dept || 'N/A',
+        position: userData.position || 'Department Head',
+        contact: userData.contact || '',
+        employmentStatus: 'Active',
+        dateHired: new Date().toISOString().split('T')[0],
+        salary: userData.salary || 0,
+        createdAt: new Date().toISOString()
+      };
+      
+      // Use the same ID as the users collection document
+      await setDoc(doc(db, 'employees', userId), employeeData);
+      console.log('✅ Created employee record for MGDH:', employeeData);
+      
+      // Also create a leave balance for this employee
+      const balanceRef = doc(db, 'leaveBalances', userId);
+      const balanceSnap = await getDoc(balanceRef);
+      if (!balanceSnap.exists()) {
+        await setDoc(balanceRef, {
+          employeeId: userId,
+          vacationLeave: 15,
+          sickLeave: 15,
+          createdAt: new Date().toISOString()
+        });
+        console.log('✅ Created leave balance for MGDH');
+      }
+      
+      // Fetch the newly created employee data
+      const newEmpData = { id: userId, ...employeeData };
+      setMgdhEmployeeData(newEmpData);
+      await fetchMgdhAttendance(userId);
+      
+      alert('✅ Employee record created successfully! You can now time in.');
+      return newEmpData;
+      
+    } catch (error) {
+      console.error('❌ Error fetching/creating MGDH employee data:', error);
+      alert('Error: ' + error.message);
+      return null;
+    }
+  };
+
+  // ====== FETCH MGDH ATTENDANCE ======
+  const fetchMgdhAttendance = async (empId) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const todayQuery = query(
+        collection(db, 'attendance'), 
+        where('employeeId', '==', empId),
+        where('date', '==', today)
+      );
+      const todaySnapshot = await getDocs(todayQuery);
+      
+      if (!todaySnapshot.empty) {
+        const todayData = todaySnapshot.docs[0].data();
+        const todayId = todaySnapshot.docs[0].id;
+        setTodayAttendance({ id: todayId, ...todayData });
+        setTimeIn(todayData.timeIn || null);
+        setTimeOut(todayData.timeOut || null);
+        setIsTimedIn(!!todayData.timeIn);
+        setIsTimedOut(!!todayData.timeOut);
+        
+        if (todayData.timeIn && !todayData.timeOut) {
+          setAttendanceStatus('Timed In');
+        } else if (todayData.timeIn && todayData.timeOut) {
+          setAttendanceStatus('Completed');
+        } else {
+          setAttendanceStatus('Not Timed In');
+        }
+      } else {
+        setTodayAttendance(null);
+        setTimeIn(null);
+        setTimeOut(null);
+        setIsTimedIn(false);
+        setIsTimedOut(false);
+        setAttendanceStatus('Not Timed In');
+      }
+
+      // Fetch all attendance records for this employee
+      const allQuery = query(
+        collection(db, 'attendance'), 
+        where('employeeId', '==', empId)
+      );
+      const allSnapshot = await getDocs(allQuery);
+      const records = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAttendanceRecords(records);
+
+      // Calculate summary for current month
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      const monthRecords = records.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
+      });
+
+      const totalDays = monthRecords.length;
+      const presentDays = monthRecords.filter(r => r.status === 'Present' || r.status === 'On Time').length;
+      const lateDays = monthRecords.filter(r => r.status === 'Late').length;
+      
+      setAttendanceSummary({
+        totalDays: totalDays || 0,
+        presentDays: presentDays || 0,
+        lateDays: lateDays || 0,
+        absentDays: Math.max(0, totalDays - presentDays - lateDays)
+      });
+
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+    }
+  };
+
+  // ====== MGDH TIME IN ======
+  const handleTimeIn = async () => {
+    if (!mgdhEmployeeData) {
+      alert('Employee data not found. Please refresh and try again.');
+      const user = auth.currentUser;
+      if (user) {
+        await fetchMgdhEmployeeData(user.email);
+      }
+      return;
+    }
+    
+    setAttendanceLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const currentTime = new Date();
+      const timeInStr = currentTime.toTimeString().slice(0, 5);
+      
+      const existingQuery = query(
+        collection(db, 'attendance'),
+        where('employeeId', '==', mgdhEmployeeData.id),
+        where('date', '==', today)
+      );
+      const existingSnapshot = await getDocs(existingQuery);
+      
+      if (!existingSnapshot.empty) {
+        alert('You have already timed in today!');
+        setAttendanceLoading(false);
+        return;
+      }
+
+      const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
+
+      await addDoc(collection(db, 'attendance'), {
+        employeeId: mgdhEmployeeData.id,
+        employeeName: mgdhEmployeeData.fullName || userName,
+        department: department || mgdhEmployeeData.department || 'N/A',
+        date: today,
+        timeIn: timeInStr,
+        timeOut: null,
+        status: status,
+        recordedBy: 'MGDH',
+        recordedAt: new Date().toISOString(),
+        timestamp: Timestamp.now()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: mgdhEmployeeData.id,
+        employeeName: mgdhEmployeeData.fullName || userName,
+        department: department || mgdhEmployeeData.department || 'N/A',
+        type: 'attendance_timein_mgdh',
+        message: `${userName} (MGDH) timed in at ${timeInStr} (${status})`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: mgdhEmployeeData.id,
+        type: 'attendance_confirmation',
+        message: `You have successfully timed in at ${timeInStr} (${status})`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setTimeIn(timeInStr);
+      setIsTimedIn(true);
+      setAttendanceStatus('Timed In');
+      
+      const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
+      alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}`);
+      
+      await fetchMgdhAttendance(mgdhEmployeeData.id);
+      
+    } catch (error) {
+      console.error('Error timing in:', error);
+      alert('Failed to time in. Please try again.');
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
+  // ====== MGDH TIME OUT ======
+  const handleTimeOut = async () => {
+    if (!mgdhEmployeeData || !todayAttendance) {
+      alert('You need to time in first before timing out.');
+      return;
+    }
+    
+    setAttendanceLoading(true);
+    try {
+      const currentTime = new Date();
+      const timeOutStr = currentTime.toTimeString().slice(0, 5);
+      
+      await updateDoc(doc(db, 'attendance', todayAttendance.id), {
+        timeOut: timeOutStr,
+        updatedAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: mgdhEmployeeData.id,
+        employeeName: mgdhEmployeeData.fullName || userName,
+        department: department || mgdhEmployeeData.department || 'N/A',
+        type: 'attendance_timeout_mgdh',
+        message: `${userName} (MGDH) timed out at ${timeOutStr}`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: mgdhEmployeeData.id,
+        type: 'attendance_confirmation',
+        message: `You have successfully timed out at ${timeOutStr}`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setTimeOut(timeOutStr);
+      setIsTimedOut(true);
+      setAttendanceStatus('Completed');
+      
+      alert(`Timed out successfully at ${timeOutStr}`);
+      
+      await fetchMgdhAttendance(mgdhEmployeeData.id);
+      
+    } catch (error) {
+      console.error('Error timing out:', error);
+      alert('Failed to time out. Please try again.');
+    } finally {
+      setAttendanceLoading(false);
+    }
+  };
+
+  // ====== ATTENDANCE STATUS BADGE ======
+  const getAttendanceStatusBadge = (status) => {
+    switch(status) {
+      case 'On Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> On Time</span>;
+      case 'Late':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Late</span>;
+      case 'Timed In':
+        return <span className="status-badge info"><AccessTimeIcon style={{ fontSize: 14, marginRight: 4 }} /> Timed In</span>;
+      case 'Completed':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Completed</span>;
+      default:
+        return <span className="status-badge secondary">{status}</span>;
+    }
+  };
+
+  // ====== ATTENDANCE TAB ======
+  const renderAttendance = () => (
+    <div className="mgdh-attendance-content">
+      <div className="section-header">
+        <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+        <span className="stats-badge">{new Date().toLocaleDateString()}</span>
+      </div>
+
+      <div className="stats-row">
+        <div className="stat-card">
+          <div className="stat-icon blue"><EventNoteIcon /></div>
+          <div className="stat-info">
+            <h3>Total Days</h3>
+            <p>{attendanceSummary.totalDays}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon green"><CheckCircleIcon /></div>
+          <div className="stat-info">
+            <h3>Present</h3>
+            <p>{attendanceSummary.presentDays}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon orange"><WarningIcon /></div>
+          <div className="stat-info">
+            <h3>Late</h3>
+            <p>{attendanceSummary.lateDays}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon red"><CancelIcon /></div>
+          <div className="stat-info">
+            <h3>Absent</h3>
+            <p>{attendanceSummary.absentDays}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="form-card-modern">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <AccessTimeIcon />
+          Today's Attendance
+        </h3>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '15px',
+          padding: '10px 0'
+        }}>
+          <div>
+            <p style={{ margin: '5px 0' }}>
+              <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
+            </p>
+            {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
+            {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
+            <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
+              <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {!isTimedIn && (
+              <button 
+                onClick={handleTimeIn} 
+                className="btn-time-in"
+                disabled={attendanceLoading}
+                style={{
+                  padding: '12px 30px',
+                  background: '#4a6fa5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}
+              >
+                <LoginIcon style={{ fontSize: 20 }} />
+                {attendanceLoading ? 'Processing...' : 'Time In'}
+              </button>
+            )}
+            {isTimedIn && !isTimedOut && (
+              <button 
+                onClick={handleTimeOut} 
+                className="btn-time-out"
+                disabled={attendanceLoading}
+                style={{
+                  padding: '12px 30px',
+                  background: '#e67e22',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}
+              >
+                <Logout style={{ fontSize: 20 }} />
+                {attendanceLoading ? 'Processing...' : 'Time Out'}
+              </button>
+            )}
+            {isTimedIn && isTimedOut && (
+              <span style={{ 
+                padding: '12px 30px',
+                background: '#27ae60',
+                color: 'white',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}>
+                <CheckCircleIcon style={{ fontSize: 20 }} />
+                Day Complete
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="form-card-modern">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <TimelineIcon />
+          Attendance History
+        </h3>
+        <div className="table-container">
+          <table className="attendance-table-modern">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendanceRecords.length > 0 ? (
+                [...attendanceRecords]
+                  .sort((a, b) => b.date.localeCompare(a.date))
+                  .slice(0, 20)
+                  .map(record => (
+                    <tr key={record.id} className={record.status === 'Late' ? 'late-row' : ''}>
+                      <td>{record.date}</td>
+                      <td className="time-cell">{record.timeIn || '—'}</td>
+                      <td className="time-cell">{record.timeOut || '—'}</td>
+                      <td>
+                        <span className={`status-badge ${record.status === 'On Time' || record.status === 'Present' ? 'success' : 'warning'}`}>
+                          {record.status === 'On Time' || record.status === 'Present' ? (
+                            <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                          ) : (
+                            <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                          )}
+                          {record.status || 'Present'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+              ) : (
+                <tr>
+                  <td colSpan="4" className="empty-state">
+                    <p>No attendance records found</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ====== FETCH MGDH DATA WITH DEPARTMENT ORGANIZATION ======
   const fetchMGDHData = async () => {
     setLoading(true);
     try {
@@ -115,6 +622,11 @@ function MGDHDashboard() {
       const userDepartment = userData.department || userData.dept || '';
       setDepartment(userDepartment);
 
+      console.log(`👤 MGDH User: ${userName}, Department: ${userDepartment}`);
+
+      // Fetch MGDH employee data for attendance
+      await fetchMgdhEmployeeData(user.email);
+
       // Get ALL users from users collection
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const allUsers = usersSnapshot.docs.map(doc => ({ 
@@ -123,17 +635,54 @@ function MGDHDashboard() {
       }));
       setSystemUsers(allUsers);
 
-      // If MGDH has a department, filter team members by department
+      // Get ALL employees from employees collection
+      const empSnapshot = await getDocs(collection(db, 'employees'));
+      const allEmployeesData = empSnapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+      setAllEmployees(allEmployeesData);
+
+      console.log(`📊 Total users: ${allUsers.length}, Total employees: ${allEmployeesData.length}`);
+
+      // ====== ORGANIZE EMPLOYEES BY DEPARTMENT ======
       let teamList = [];
+      
       if (userDepartment && userDepartment.trim() !== '') {
-        teamList = allUsers.filter(u => 
-          (u.department === userDepartment || u.dept === userDepartment) && 
-          u.id !== userId // Exclude the MGDH themselves
+        // Find employees from the same department
+        // First try to match by department field in employees collection
+        const departmentEmployees = allEmployeesData.filter(emp => 
+          emp.department === userDepartment || 
+          emp.dept === userDepartment ||
+          (emp.department && emp.department.toLowerCase() === userDepartment.toLowerCase())
         );
+        
+        // Also check users with the same department
+        const departmentUsers = allUsers.filter(u => 
+          (u.department === userDepartment || u.dept === userDepartment) &&
+          u.id !== userId
+        );
+        
+        // Combine and deduplicate
+        const combinedTeam = [...departmentEmployees, ...departmentUsers];
+        const uniqueTeam = combinedTeam.filter((item, index, self) => 
+          index === self.findIndex(t => t.id === item.id)
+        );
+        
+        // Remove the MGDH themselves from the team list
+        teamList = uniqueTeam.filter(member => member.id !== userId);
+        
+        console.log(`✅ Found ${teamList.length} team members in department: ${userDepartment}`);
       } else {
-        // If no department, show all users except the MGDH
-        teamList = allUsers.filter(u => u.id !== userId);
-        console.warn('MGDH user has no department assigned. Showing all users.');
+        // If no department, show all employees except the MGDH
+        teamList = allEmployeesData.filter(emp => emp.id !== userId);
+        // Also add users that don't have employee records but have accounts
+        const usersWithoutEmployees = allUsers.filter(u => 
+          u.id !== userId && 
+          !allEmployeesData.some(e => e.id === u.id)
+        );
+        teamList = [...teamList, ...usersWithoutEmployees];
+        console.warn('⚠️ MGDH user has no department assigned. Showing all users.');
       }
       
       setTeamMembers(teamList);
@@ -143,9 +692,20 @@ function MGDHDashboard() {
       const teamIds = teamList.map(member => member.id);
       setTeamMemberIds(teamIds);
 
-      // Get all departments
-      const allDepts = [...new Set(allUsers.map(u => u.department || u.dept).filter(Boolean))];
-      setDepartments(allDepts.map(dept => ({ id: dept, name: dept })));
+      // Get all departments with user counts
+      const deptMap = {};
+      allUsers.forEach(u => {
+        const dept = u.department || u.dept || 'Unknown';
+        if (!deptMap[dept]) deptMap[dept] = 0;
+        deptMap[dept]++;
+      });
+      
+      const deptList = Object.keys(deptMap).map(dept => ({
+        id: dept,
+        name: dept,
+        userCount: deptMap[dept]
+      }));
+      setDepartments(deptList);
 
       // Get leave requests for team members
       const leaveSnapshot = await getDocs(collection(db, 'leaveRequests'));
@@ -156,7 +716,6 @@ function MGDHDashboard() {
       if (teamIds.length > 0) {
         teamLeaves = allLeaves.filter(leave => teamIds.includes(leave.employeeId));
       } else {
-        // If no team members, show all leaves
         teamLeaves = allLeaves;
       }
       
@@ -231,7 +790,6 @@ function MGDHDashboard() {
       let allNotifs = [];
       
       if (userDepartment && userDepartment.trim() !== '') {
-        // Get notifications for this department
         const notifQuery = query(
           collection(db, 'notifications'), 
           where('department', '==', userDepartment)
@@ -239,12 +797,10 @@ function MGDHDashboard() {
         const notifSnapshot = await getDocs(notifQuery);
         allNotifs = notifSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       } else {
-        // If no department, get all notifications
         const notifSnapshot = await getDocs(collection(db, 'notifications'));
         allNotifs = notifSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       }
       
-      // Filter notifications for MGDH
       const mgdhNotifs = allNotifs.filter(notif => 
         notif.forMGDH === true || 
         notif.type === 'leave_request' ||
@@ -254,7 +810,6 @@ function MGDHDashboard() {
       
       setAllNotifications(mgdhNotifs);
 
-      // Also get notifications that mention this MGDH by name
       const nameQuery = query(
         collection(db, 'notifications'),
         where('reviewedBy', '==', userName)
@@ -262,7 +817,6 @@ function MGDHDashboard() {
       const nameSnapshot = await getDocs(nameQuery);
       const nameNotifs = nameSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Combine and deduplicate
       const combinedNotifs = [...mgdhNotifs, ...nameNotifs];
       const uniqueNotifs = combinedNotifs.filter((notif, index, self) => 
         index === self.findIndex(n => n.id === notif.id)
@@ -270,7 +824,6 @@ function MGDHDashboard() {
       
       setAllNotifications(uniqueNotifs);
 
-      // Check for new notifications
       const unreadNotifs = uniqueNotifs.filter(n => !n.read);
       if (unreadNotifs.length > 0) {
         const latest = unreadNotifs[0];
@@ -296,33 +849,18 @@ function MGDHDashboard() {
     }
   };
 
+  // ====== REALTIME LISTENERS ======
   const setupRealtimeListeners = () => {
     const user = auth.currentUser;
     if (!user) return;
 
-    // Listen to all users changes
-    onSnapshot(collection(db, 'users'), () => {
-      fetchMGDHData();
-    });
-    
-    // Listen to leave requests
-    onSnapshot(collection(db, 'leaveRequests'), () => {
-      fetchMGDHData();
-    });
-    
-    // Listen to attendance changes
-    onSnapshot(collection(db, 'attendance'), () => {
-      fetchMGDHData();
-    });
-    
-    // Listen to document changes
-    onSnapshot(collection(db, 'documents'), () => {
-      fetchMGDHData();
-    });
-
-    // Listen to notifications
-    onSnapshot(collection(db, 'notifications'), () => {
-      fetchMGDHData();
+    // Listen to all changes - this will auto-update when new users register
+    const collections = ['users', 'employees', 'leaveRequests', 'attendance', 'documents', 'notifications'];
+    collections.forEach(collectionName => {
+      onSnapshot(collection(db, collectionName), () => {
+        console.log(`🔄 ${collectionName} collection changed, refreshing MGDH data...`);
+        fetchMGDHData();
+      });
     });
   };
 
@@ -338,8 +876,6 @@ function MGDHDashboard() {
   };
 
   // ====== NOTIFICATION FUNCTIONS ======
-  
-  // Mark a single notification as read
   const markNotificationAsRead = async (notificationId) => {
     try {
       await updateDoc(doc(db, 'notifications', notificationId), {
@@ -353,7 +889,6 @@ function MGDHDashboard() {
     }
   };
 
-  // Mark a single notification as unread
   const markNotificationAsUnread = async (notificationId) => {
     try {
       await updateDoc(doc(db, 'notifications', notificationId), {
@@ -367,7 +902,6 @@ function MGDHDashboard() {
     }
   };
 
-  // Mark all notifications as read
   const markAllAsRead = async () => {
     try {
       const unreadNotifs = allNotifications.filter(n => !n.read);
@@ -384,7 +918,6 @@ function MGDHDashboard() {
     }
   };
 
-  // Mark all notifications as unread
   const markAllAsUnread = async () => {
     try {
       for (const notif of allNotifications) {
@@ -422,7 +955,6 @@ function MGDHDashboard() {
         reviewedAt: new Date().toISOString()
       });
 
-      // ====== NOTIFICATION FOR EMPLOYEE ======
       await addDoc(collection(db, 'notifications'), {
         employeeId: leaveData.employeeId,
         employeeName: leaveData.employeeName || 'Employee',
@@ -440,7 +972,6 @@ function MGDHDashboard() {
         createdAt: new Date().toISOString()
       });
 
-      // ====== NOTIFICATION FOR MGDH ======
       await addDoc(collection(db, 'notifications'), {
         employeeId: leaveData.employeeId,
         employeeName: leaveData.employeeName || 'Employee',
@@ -484,7 +1015,7 @@ function MGDHDashboard() {
 
   const getEmployeeName = (employeeId) => {
     const emp = teamMembers.find(e => e.id === employeeId);
-    if (emp) return emp.name || emp.fullName || 'Unknown';
+    if (emp) return emp.fullName || emp.name || 'Unknown';
     const user = systemUsers.find(u => u.id === employeeId);
     return user ? user.name || user.fullName || 'Unknown' : 'Unknown';
   };
@@ -494,6 +1025,13 @@ function MGDHDashboard() {
     if (emp) return emp.position || 'N/A';
     const user = systemUsers.find(u => u.id === employeeId);
     return user ? user.position || 'N/A' : 'N/A';
+  };
+
+  const getEmployeeDepartment = (employeeId) => {
+    const emp = teamMembers.find(e => e.id === employeeId);
+    if (emp) return emp.department || emp.dept || 'N/A';
+    const user = systemUsers.find(u => u.id === employeeId);
+    return user ? user.department || user.dept || 'N/A' : 'N/A';
   };
 
   const getAttendanceStatus = (employeeId) => {
@@ -543,6 +1081,14 @@ function MGDHDashboard() {
         >
           <DashboardIcon style={{ fontSize: 20, marginRight: 12 }} />
           Dashboard
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('attendance'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'attendance' ? 'active' : ''}`}
+        >
+          <AccessTimeIcon style={{ fontSize: 20, marginRight: 12 }} />
+          Attendance
         </button>
         
         <button 
@@ -821,10 +1367,10 @@ function MGDHDashboard() {
           return (
             <div key={member.id} className="team-member-card">
               <div className="member-avatar">
-                {member.name?.charAt(0) || member.fullName?.charAt(0) || '?'}
+                {member.fullName?.charAt(0) || member.name?.charAt(0) || '?'}
               </div>
               <div className="member-info">
-                <h4>{member.name || member.fullName || 'Unknown'}</h4>
+                <h4>{member.fullName || member.name || 'Unknown'}</h4>
                 <p>{member.position || 'N/A'}</p>
               </div>
               <div className="member-stats">
@@ -1076,6 +1622,7 @@ function MGDHDashboard() {
 
       <div className={`mgdh-main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
         {activeTab === 'dashboard' && renderDashboard()}
+        {activeTab === 'attendance' && renderAttendance()}
         {activeTab === 'leave' && renderLeaveManagement()}
         {activeTab === 'team' && renderTeamOverview()}
         {activeTab === 'notifications' && renderNotifications()}

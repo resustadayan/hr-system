@@ -1,5 +1,5 @@
 // src/components/AnalyticsDashboard.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { 
@@ -8,6 +8,9 @@ import {
   CartesianGrid, Area, AreaChart, RadarChart, PolarGrid, 
   PolarAngleAxis, PolarRadiusAxis, Radar 
 } from 'recharts';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Material-UI Icons
 import BarChartIcon from '@mui/icons-material/BarChart';
@@ -19,6 +22,10 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DonutLargeIcon from '@mui/icons-material/DonutLarge';
+import DownloadIcon from '@mui/icons-material/Download';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import PrintIcon from '@mui/icons-material/Print';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 
 function AnalyticsDashboard() {
   const [employeeData, setEmployeeData] = useState([]);
@@ -33,6 +40,7 @@ function AnalyticsDashboard() {
     complianceRate: 0,
     totalLeaves: 0
   });
+  const dashboardRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -121,12 +129,449 @@ function AnalyticsDashboard() {
   const COLORS = ['#4a6fa5', '#27ae60', '#e67e22', '#7c3aed', '#e74c3c', '#1abc9c'];
   const CHART_COLORS = ['#4a6fa5', '#27ae60', '#e67e22', '#7c3aed', '#e74c3c', '#1abc9c', '#f39c12', '#3498db'];
 
+  // Export to Excel
+  const exportToExcel = () => {
+    try {
+      // Prepare data for Excel
+      const excelData = [
+        {
+          'Metric': 'Total Employees',
+          'Value': summary.totalEmployees
+        },
+        {
+          'Metric': 'Total Departments',
+          'Value': summary.totalDepartments
+        },
+        {
+          'Metric': 'Compliance Rate',
+          'Value': `${summary.complianceRate}%`
+        },
+        {
+          'Metric': 'Total Leave Requests',
+          'Value': summary.totalLeaves
+        }
+      ];
+
+      // Add department data
+      departmentStats.forEach(dept => {
+        excelData.push({
+          'Metric': `Department: ${dept.name}`,
+          'Value': `${dept.value} employees`
+        });
+      });
+
+      // Add compliance breakdown
+      complianceData.forEach(item => {
+        excelData.push({
+          'Metric': `Compliance: ${item.name}`,
+          'Value': `${item.value} documents`
+        });
+      });
+
+      // Add leave breakdown
+      leaveData.forEach(item => {
+        excelData.push({
+          'Metric': `Leave: ${item.name}`,
+          'Value': `${item.value} requests`
+        });
+      });
+
+      // Add attendance data
+      attendanceData.forEach(day => {
+        excelData.push({
+          'Metric': `Attendance (${day.formattedDate})`,
+          'Value': `${day.present} present`
+        });
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 40 },
+        { wch: 20 }
+      ];
+      
+      XLSX.utils.book_append_sheet(wb, ws, 'Analytics');
+      
+      // Generate Excel file
+      const filename = `Analytics_Dashboard_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('Failed to export Excel file. Please try again.');
+    }
+  };
+
+  // Direct PDF Download using jsPDF
+  const exportToPDF = () => {
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Header
+      doc.setFontSize(20);
+      doc.setTextColor(44, 62, 80);
+      doc.text('HR Analytics Dashboard', pageWidth / 2, 20, { align: 'center' });
+      
+      doc.setFontSize(12);
+      doc.setTextColor(74, 111, 165);
+      doc.text('Human Resource Management - Pagbilao, Quezon', pageWidth / 2, 28, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.setTextColor(127, 140, 141);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 35, { align: 'center' });
+      
+      doc.setDrawColor(74, 111, 165);
+      doc.setLineWidth(0.5);
+      doc.line(20, 40, pageWidth - 20, 40);
+      
+      let yPosition = 48;
+      
+      // Summary Cards as a table
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Summary', 20, yPosition);
+      yPosition += 8;
+      
+      const summaryRows = [
+        ['Total Employees', summary.totalEmployees.toString()],
+        ['Total Departments', summary.totalDepartments.toString()],
+        ['Compliance Rate', `${summary.complianceRate}%`],
+        ['Total Leave Requests', summary.totalLeaves.toString()]
+      ];
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Metric', 'Value']],
+        body: summaryRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 },
+        columnStyles: {
+          0: { cellWidth: 80 },
+          1: { cellWidth: 80 }
+        }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 12;
+      
+      // Check if we need a new page
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Department Distribution
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Department Distribution', 20, yPosition);
+      yPosition += 8;
+      
+      const deptRows = departmentStats.map(dept => [
+        dept.name, 
+        dept.value.toString(),
+        `${Math.round((dept.value / summary.totalEmployees) * 100)}%`
+      ]);
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Department', 'Employees', 'Percentage']],
+        body: deptRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 12;
+      
+      // Check if we need a new page
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Attendance Trend
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Attendance Trend (Last 7 Days)', 20, yPosition);
+      yPosition += 8;
+      
+      const attendanceRows = attendanceData.map(day => [
+        day.formattedDate, 
+        day.present.toString()
+      ]);
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Date', 'Present Employees']],
+        body: attendanceRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 12;
+      
+      // Check if we need a new page
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Leave Requests
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Leave Requests Status', 20, yPosition);
+      yPosition += 8;
+      
+      const leaveRows = leaveData.map(leave => [
+        leave.name, 
+        leave.value.toString()
+      ]);
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Status', 'Count']],
+        body: leaveRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 12;
+      
+      // Check if we need a new page
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Compliance Status
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Compliance Status', 20, yPosition);
+      yPosition += 8;
+      
+      const complianceRows = complianceData.map(comp => [
+        comp.name, 
+        comp.value.toString()
+      ]);
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Status', 'Documents']],
+        body: complianceRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 }
+      });
+      
+      // Footer on all pages
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Page ${i} of ${pageCount} | HR Analytics Report | ${new Date().toLocaleDateString()}`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      // Direct download
+      doc.save(`HR_Analytics_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+    } catch (error) {
+      console.error('Error exporting to PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
+  // Handle Print (opens print dialog)
+  const handlePrint = () => {
+    try {
+      // Use the same content as PDF but with print media
+      const printContent = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto;">
+          <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #4a6fa5;">
+            <h1 style="color: #2c3e50; font-size: 28px; margin: 0;">Human Resource Management</h1>
+            <h2 style="color: #4a6fa5; font-size: 20px; margin: 5px 0;">Pagbilao, Quezon</h2>
+            <h3 style="color: #34495e; font-size: 18px; margin: 10px 0;">Analytics Dashboard Report</h3>
+            <p style="color: #7f8c8d; font-size: 14px;">
+              Generated: ${new Date().toLocaleString()}
+            </p>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+            <div style="background: #4a6fa5; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${summary.totalEmployees}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Total Employees</div>
+            </div>
+            <div style="background: #7c3aed; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${summary.totalDepartments}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Departments</div>
+            </div>
+            <div style="background: #27ae60; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${summary.complianceRate}%</div>
+              <div style="font-size: 14px; opacity: 0.9;">Compliance Rate</div>
+            </div>
+            <div style="background: #f39c12; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${summary.totalLeaves}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Total Leave Requests</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 30px;">
+            <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Department Breakdown</h4>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+              <thead>
+                <tr style="background: #4a6fa5; color: white;">
+                  <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Department</th>
+                  <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Number of Employees</th>
+                  <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Percentage</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${departmentStats.map(dept => `
+                  <tr style="background: ${departmentStats.indexOf(dept) % 2 === 0 ? '#f8f9fa' : 'white'};">
+                    <td style="padding: 10px; border: 1px solid #ddd;">${dept.name}</td>
+                    <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${dept.value}</td>
+                    <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${Math.round((dept.value / summary.totalEmployees) * 100)}%</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+            <div>
+              <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Compliance Status</h4>
+              <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                ${complianceData.map(item => `
+                  <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ecf0f1;">
+                    <span>${item.name}</span>
+                    <span style="font-weight: bold;">${item.value} documents</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            <div>
+              <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Leave Requests Status</h4>
+              <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                ${leaveData.map(item => `
+                  <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ecf0f1;">
+                    <span>${item.name}</span>
+                    <span style="font-weight: bold;">${item.value} requests</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 30px;">
+            <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Attendance Trend (Last 7 Days)</h4>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+              <thead>
+                <tr style="background: #4a6fa5; color: white;">
+                  <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Date</th>
+                  <th style="padding: 10px; text-align: right; border: 1px solid #ddd;">Present Employees</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${attendanceData.map(day => `
+                  <tr style="background: ${attendanceData.indexOf(day) % 2 === 0 ? '#f8f9fa' : 'white'};">
+                    <td style="padding: 10px; border: 1px solid #ddd;">${day.formattedDate}</td>
+                    <td style="padding: 10px; text-align: right; border: 1px solid #ddd;">${day.present}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #ecf0f1; text-align: center; color: #7f8c8d; font-size: 12px;">
+            <p>This report is auto-generated from HRM Pagbilao System</p>
+            <p>Document ID: HR-ANALYTICS-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}</p>
+            <p>© ${new Date().getFullYear()} HRM Pagbilao, Quezon</p>
+          </div>
+        </div>
+      `;
+
+      const printWindow = window.open('', '_blank', 'width=1200,height=800');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Analytics Dashboard Report</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+                @media print {
+                  body { padding: 0; }
+                  .no-print { display: none; }
+                }
+              </style>
+            </head>
+            <body>
+              ${printContent}
+              <script>
+                window.onload = function() {
+                  window.print();
+                  setTimeout(function() {
+                    window.close();
+                  }, 1000);
+                };
+              <\/script>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    } catch (error) {
+      console.error('Error printing:', error);
+      alert('Failed to print. Please try again.');
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading analytics data...</div>;
   }
 
   return (
-    <div className="analytics-container">
+    <div className="analytics-container" ref={dashboardRef}>
 
       {/* Page Header */}
       <div className="page-header-modern">
@@ -137,10 +582,60 @@ function AnalyticsDashboard() {
           </h2>
           <p className="header-subtitle">Real-time HR metrics and workforce insights</p>
         </div>
-        <button onClick={fetchData} className="btn-add-modern" style={{ background: '#4a6fa5' }}>
-          <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-          Refresh
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button onClick={fetchData} className="btn-add-modern" style={{ background: '#4a6fa5' }}>
+            <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+            Refresh
+          </button>
+          <button onClick={exportToExcel} className="btn-export excel" style={{
+            background: '#217346',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <FileDownloadIcon style={{ fontSize: 18 }} />
+            Excel
+          </button>
+          <button onClick={exportToPDF} className="btn-export pdf" style={{
+            background: '#dc3545',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <PictureAsPdfIcon style={{ fontSize: 18 }} />
+            PDF
+          </button>
+          <button onClick={handlePrint} className="btn-export print" style={{
+            background: '#6c757d',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <PrintIcon style={{ fontSize: 18 }} />
+            Print
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}

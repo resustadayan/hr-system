@@ -2679,19 +2679,9 @@ function EmployeePortal() {
           gap: '20px',
           alignItems: 'center'
         }}>
-          <span>🔍 Employee ID: <strong>{employee?.id || 'N/A'}</strong></span>
-          <span>📊 History Records: <strong>{allPayrollHistory.length}</strong></span>
-          <span>📄 Current Payroll: <strong>{employeePayroll ? 'Yes' : 'No'}</strong></span>
-          {!hasCurrentPayroll && !hasHistory && (
-            <span style={{ color: '#e67e22' }}>
-              ⚠️ No payroll records found. Click "Process Payroll" in the HR dashboard.
-            </span>
-          )}
-          {allPayrollHistory.length > 0 && (
-            <span style={{ color: '#27ae60' }}>
-              ✅ Found {allPayrollHistory.length} payroll record(s)
-            </span>
-          )}
+          <span>Employee ID: <strong>{employee?.id || 'N/A'}</strong></span>
+          <span>History Records: <strong>{allPayrollHistory.length}</strong></span>
+           
         </div>
 
         {/* Payroll Summary Cards */}
@@ -2886,44 +2876,10 @@ function EmployeePortal() {
             <p style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
               Payroll is typically processed at the end of each month.
             </p>
-            <button 
-              onClick={refreshPayrollData}
-              disabled={isRefreshingPayroll}
-              style={{
-                marginTop: '16px',
-                padding: '8px 20px',
-                background: '#4a6fa5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '6px',
-                cursor: isRefreshingPayroll ? 'not-allowed' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
-            >
-              <RefreshIcon style={{ fontSize: 16 }} />
-              {isRefreshingPayroll ? 'Refreshing...' : 'Refresh Now'}
-            </button>
+            
           </div>
         )}
 
-        {/* Connection Status with Payroll.js */}
-        <div style={{ 
-          marginTop: '20px', 
-          padding: '12px 16px', 
-          background: '#e8f0fe', 
-          borderRadius: '8px',
-          fontSize: '13px',
-          color: '#4a6fa5',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          border: '1px solid #d0e0f8'
-        }}>
-          <RefreshIcon style={{ fontSize: 18 }} />
-          <span>Payroll data is synced with HR system. Changes made in Payroll Management will appear here automatically.</span>
-        </div>
       </div>
     );
   };

@@ -49,6 +49,7 @@ function Navbar() {
           <Link to="/leave" className="sidebar-link">Leave Request</Link>
           <Link to="/compliance" className="sidebar-link">Compliance</Link>
           <Link to="/payroll" className="sidebar-link">Payroll</Link>
+          {/* <Link to="/interventions" className="sidebar-link">Interventions</Link> */}
           <Link to="/analytics" className="sidebar-link">Analytics</Link>
           <Link to="/users" className="sidebar-link">Users</Link>
           <button onClick={handleLogout} className="logout-btn">Logout</button>
@@ -89,6 +90,9 @@ function Navbar() {
           <Link to="/payroll" onClick={() => setIsMobileMenuOpen(false)}>
             <span></span> Payroll
           </Link>
+          {/* <Link to="/interventions" onClick={() => setIsMobileMenuOpen(false)}>
+          <span></span>
+          </Link> */}
           <Link to="/analytics" onClick={() => setIsMobileMenuOpen(false)}>
             <span></span> Analytics
           </Link>
