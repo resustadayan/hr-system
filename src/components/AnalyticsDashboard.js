@@ -130,79 +130,79 @@ function AnalyticsDashboard() {
   const CHART_COLORS = ['#4a6fa5', '#27ae60', '#e67e22', '#7c3aed', '#e74c3c', '#1abc9c', '#f39c12', '#3498db'];
 
   // Export to Excel
-  const exportToExcel = () => {
-    try {
-      // Prepare data for Excel
-      const excelData = [
-        {
-          'Metric': 'Total Employees',
-          'Value': summary.totalEmployees
-        },
-        {
-          'Metric': 'Total Departments',
-          'Value': summary.totalDepartments
-        },
-        {
-          'Metric': 'Compliance Rate',
-          'Value': `${summary.complianceRate}%`
-        },
-        {
-          'Metric': 'Total Leave Requests',
-          'Value': summary.totalLeaves
-        }
-      ];
+  // const exportToExcel = () => {
+  //   try {
+  //     // Prepare data for Excel
+  //     const excelData = [
+  //       {
+  //         'Metric': 'Total Employees',
+  //         'Value': summary.totalEmployees
+  //       },
+  //       {
+  //         'Metric': 'Total Departments',
+  //         'Value': summary.totalDepartments
+  //       },
+  //       {
+  //         'Metric': 'Compliance Rate',
+  //         'Value': `${summary.complianceRate}%`
+  //       },
+  //       {
+  //         'Metric': 'Total Leave Requests',
+  //         'Value': summary.totalLeaves
+  //       }
+  //     ];
 
-      // Add department data
-      departmentStats.forEach(dept => {
-        excelData.push({
-          'Metric': `Department: ${dept.name}`,
-          'Value': `${dept.value} employees`
-        });
-      });
+  //     // Add department data
+  //     departmentStats.forEach(dept => {
+  //       excelData.push({
+  //         'Metric': `Department: ${dept.name}`,
+  //         'Value': `${dept.value} employees`
+  //       });
+  //     });
 
-      // Add compliance breakdown
-      complianceData.forEach(item => {
-        excelData.push({
-          'Metric': `Compliance: ${item.name}`,
-          'Value': `${item.value} documents`
-        });
-      });
+  //     // Add compliance breakdown
+  //     complianceData.forEach(item => {
+  //       excelData.push({
+  //         'Metric': `Compliance: ${item.name}`,
+  //         'Value': `${item.value} documents`
+  //       });
+  //     });
 
-      // Add leave breakdown
-      leaveData.forEach(item => {
-        excelData.push({
-          'Metric': `Leave: ${item.name}`,
-          'Value': `${item.value} requests`
-        });
-      });
+  //     // Add leave breakdown
+  //     leaveData.forEach(item => {
+  //       excelData.push({
+  //         'Metric': `Leave: ${item.name}`,
+  //         'Value': `${item.value} requests`
+  //       });
+  //     });
 
-      // Add attendance data
-      attendanceData.forEach(day => {
-        excelData.push({
-          'Metric': `Attendance (${day.formattedDate})`,
-          'Value': `${day.present} present`
-        });
-      });
+  //     // Add attendance data
+  //     attendanceData.forEach(day => {
+  //       excelData.push({
+  //         'Metric': `Attendance (${day.formattedDate})`,
+  //         'Value': `${day.present} present`
+  //       });
+  //     });
 
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(excelData);
+  //     const wb = XLSX.utils.book_new();
+  //     const ws = XLSX.utils.json_to_sheet(excelData);
       
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 40 },
-        { wch: 20 }
-      ];
+  //     // Set column widths
+  //     ws['!cols'] = [
+  //       { wch: 40 },
+  //       { wch: 20 }
+  //     ];
       
-      XLSX.utils.book_append_sheet(wb, ws, 'Analytics');
+  //     XLSX.utils.book_append_sheet(wb, ws, 'Analytics');
       
-      // Generate Excel file
-      const filename = `Analytics_Dashboard_${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, filename);
-    } catch (error) {
-      console.error('Error exporting to Excel:', error);
-      alert('Failed to export Excel file. Please try again.');
-    }
-  };
+  //     // Generate Excel file
+  //     const filename = `Analytics_Dashboard_${new Date().toISOString().split('T')[0]}.xlsx`;
+  //     XLSX.writeFile(wb, filename);
+  //   } catch (error) {
+  //     console.error('Error exporting to Excel:', error);
+  //     alert('Failed to export Excel file. Please try again.');
+  //   }
+  // };
 
   // Direct PDF Download using jsPDF
   const exportToPDF = () => {
@@ -583,11 +583,11 @@ function AnalyticsDashboard() {
           <p className="header-subtitle">Real-time HR metrics and workforce insights</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <button onClick={fetchData} className="btn-add-modern" style={{ background: '#4a6fa5' }}>
+          {/* <button onClick={fetchData} className="btn-add-modern" style={{ background: '#4a6fa5' }}>
             <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
             Refresh
-          </button>
-          <button onClick={exportToExcel} className="btn-export excel" style={{
+          </button> */}
+          {/* <button onClick={exportToExcel} className="btn-export excel" style={{
             background: '#217346',
             color: 'white',
             border: 'none',
@@ -602,7 +602,7 @@ function AnalyticsDashboard() {
           }}>
             <FileDownloadIcon style={{ fontSize: 18 }} />
             Excel
-          </button>
+          </button> */}
           <button onClick={exportToPDF} className="btn-export pdf" style={{
             background: '#dc3545',
             color: 'white',

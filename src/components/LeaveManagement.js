@@ -1,7 +1,10 @@
 // src/components/LeaveManagement.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, addDoc, updateDoc, doc, query, where } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Material-UI Icons
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -23,6 +26,10 @@ import WarningIcon from '@mui/icons-material/Warning';
 import ChildCareIcon from '@mui/icons-material/ChildCare';
 import ManIcon from '@mui/icons-material/Man';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import PrintIcon from '@mui/icons-material/Print';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 function LeaveManagement() {
   const [leaveRequests, setLeaveRequests] = useState([]);
@@ -37,6 +44,8 @@ function LeaveManagement() {
     reason: ''
   });
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const leaveRef = useRef(null);
 
   useEffect(() => {
     fetchEmployees();
@@ -54,6 +63,13 @@ function LeaveManagement() {
     const querySnapshot = await getDocs(q);
     const requests = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setLeaveRequests(requests);
+  };
+
+  const refreshData = async () => {
+    setRefreshing(true);
+    await fetchEmployees();
+    await fetchLeaveRequests();
+    setRefreshing(false);
   };
 
   const submitLeave = async () => {
@@ -139,8 +155,339 @@ function LeaveManagement() {
     return icons[type] || <MoreHorizIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />;
   };
 
+  // ===== EXPORT FUNCTIONS =====
+
+  // Export to Excel
+  // const exportToExcel = () => {
+  //   try {
+  //     const summaryData = {
+  //       'Metric': 'Leave Summary',
+  //       'Total Requests': leaveRequests.length,
+  //       'Pending': leaveRequests.filter(r => r.status === 'Pending').length,
+  //       'Approved': leaveRequests.filter(r => r.status === 'Approved').length,
+  //       'Rejected': leaveRequests.filter(r => r.status === 'Rejected').length
+  //     };
+
+  //     const excelData = [summaryData, {}];
+
+  //     // Add leave records
+  //     filteredRequests.forEach((req, index) => {
+  //       excelData.push({
+  //         '#': index + 1,
+  //         'Employee': getEmployeeName(req.employeeId),
+  //         'Department': getEmployeeDepartment(req.employeeId),
+  //         'Leave Type': req.type || 'Vacation',
+  //         'Start Date': req.startDate || '—',
+  //         'End Date': req.endDate || '—',
+  //         'Days': req.days || 0,
+  //         'Status': req.status || 'Pending',
+  //         'Reason': req.reason || '—'
+  //       });
+  //     });
+
+  //     if (filteredRequests.length === 0) {
+  //       excelData.push({
+  //         '#': '—',
+  //         'Employee': 'No leave requests found',
+  //         'Department': '—',
+  //         'Leave Type': '—',
+  //         'Start Date': '—',
+  //         'End Date': '—',
+  //         'Days': '—',
+  //         'Status': '—',
+  //         'Reason': '—'
+  //       });
+  //     }
+
+  //     const wb = XLSX.utils.book_new();
+  //     const ws = XLSX.utils.json_to_sheet(excelData);
+      
+  //     ws['!cols'] = [
+  //       { wch: 6 },
+  //       { wch: 25 },
+  //       { wch: 18 },
+  //       { wch: 16 },
+  //       { wch: 14 },
+  //       { wch: 14 },
+  //       { wch: 8 },
+  //       { wch: 14 },
+  //       { wch: 30 }
+  //     ];
+      
+  //     XLSX.utils.book_append_sheet(wb, ws, 'Leave Requests');
+      
+  //     const filename = `Leave_Requests_${new Date().toISOString().split('T')[0]}.xlsx`;
+  //     XLSX.writeFile(wb, filename);
+  //   } catch (error) {
+  //     console.error('Error exporting to Excel:', error);
+  //     alert('Failed to export Excel file. Please try again.');
+  //   }
+  // };
+
+  // Export to PDF
+  const exportToPDF = () => {
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Header
+      doc.setFontSize(20);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Leave Management Report', pageWidth / 2, 20, { align: 'center' });
+      
+      doc.setFontSize(12);
+      doc.setTextColor(74, 111, 165);
+      doc.text('Human Resource Management - Pagbilao, Quezon', pageWidth / 2, 28, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.setTextColor(127, 140, 141);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 35, { align: 'center' });
+      
+      doc.setDrawColor(74, 111, 165);
+      doc.setLineWidth(0.5);
+      doc.line(20, 40, pageWidth - 20, 40);
+      
+      let yPosition = 48;
+      
+      // Summary Cards as a table
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Summary', 20, yPosition);
+      yPosition += 8;
+      
+      const pendingCount = leaveRequests.filter(r => r.status === 'Pending').length;
+      const approvedCount = leaveRequests.filter(r => r.status === 'Approved').length;
+      const rejectedCount = leaveRequests.filter(r => r.status === 'Rejected').length;
+      
+      const summaryRows = [
+        ['Total Requests', leaveRequests.length.toString()],
+        ['Pending', pendingCount.toString()],
+        ['Approved', approvedCount.toString()],
+        ['Rejected', rejectedCount.toString()]
+      ];
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Metric', 'Count']],
+        body: summaryRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 12;
+      
+      // Check if we need a new page
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Leave Records
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Leave Requests', 20, yPosition);
+      yPosition += 8;
+      
+      if (filteredRequests.length > 0) {
+        const leaveRows = filteredRequests.map((req) => [
+          getEmployeeName(req.employeeId),
+          getEmployeeDepartment(req.employeeId),
+          req.type || 'Vacation',
+          req.startDate || '—',
+          req.endDate || '—',
+          (req.days || 0).toString(),
+          req.status || 'Pending'
+        ]);
+        
+        autoTable(doc, {
+          startY: yPosition,
+          head: [['Employee', 'Department', 'Leave Type', 'Start', 'End', 'Days', 'Status']],
+          body: leaveRows,
+          theme: 'striped',
+          headStyles: { 
+            fillColor: [74, 111, 165], 
+            textColor: [255, 255, 255],
+            fontSize: 10,
+            fontStyle: 'bold'
+          },
+          styles: { fontSize: 9 },
+          margin: { left: 20, right: 20 },
+          columnStyles: {
+            0: { cellWidth: 35 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 20 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 12 },
+            6: { cellWidth: 22 }
+          }
+        });
+      } else {
+        doc.setFontSize(12);
+        doc.setTextColor(127, 140, 141);
+        doc.text('No leave requests found.', pageWidth / 2, yPosition + 10, { align: 'center' });
+      }
+      
+      // Footer on all pages
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Page ${i} of ${pageCount} | Leave Management Report | ${new Date().toLocaleDateString()}`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      doc.save(`Leave_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+    } catch (error) {
+      console.error('Error exporting to PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
+  // Handle Print
+  const handlePrint = () => {
+    try {
+      const pendingCount = leaveRequests.filter(r => r.status === 'Pending').length;
+      const approvedCount = leaveRequests.filter(r => r.status === 'Approved').length;
+      const rejectedCount = leaveRequests.filter(r => r.status === 'Rejected').length;
+
+      const printContent = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto;">
+          <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #4a6fa5;">
+            <h1 style="color: #2c3e50; font-size: 28px; margin: 0;">Human Resource Management</h1>
+            <h2 style="color: #4a6fa5; font-size: 20px; margin: 5px 0;">Pagbilao, Quezon</h2>
+            <h3 style="color: #34495e; font-size: 18px; margin: 10px 0;">Leave Management Report</h3>
+            <p style="color: #7f8c8d; font-size: 14px;">
+              Generated: ${new Date().toLocaleString()}
+            </p>
+            <p style="color: #7f8c8d; font-size: 12px;">
+              Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}
+            </p>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+            <div style="background: #4a6fa5; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${leaveRequests.length}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Total Requests</div>
+            </div>
+            <div style="background: #e67e22; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${pendingCount}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Pending</div>
+            </div>
+            <div style="background: #27ae60; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${approvedCount}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Approved</div>
+            </div>
+            <div style="background: #e74c3c; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${rejectedCount}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Rejected</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 30px;">
+            <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Leave Requests</h4>
+            ${filteredRequests.length > 0 ? `
+              <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                  <tr style="background: #4a6fa5; color: white;">
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">#</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Employee</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Department</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Leave Type</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Start Date</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">End Date</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Days</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${filteredRequests.map((req, index) => `
+                    <tr style="background: ${index % 2 === 0 ? '#f8f9fa' : 'white'};">
+                      <td style="padding: 10px; border: 1px solid #ddd;">${index + 1}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">${getEmployeeName(req.employeeId)}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">${getEmployeeDepartment(req.employeeId)}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">${req.type || 'Vacation'}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">${req.startDate || '—'}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">${req.endDate || '—'}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${req.days || 0}</td>
+                      <td style="padding: 10px; border: 1px solid #ddd;">
+                        <span style="background: ${req.status === 'Approved' ? '#27ae60' : req.status === 'Rejected' ? '#e74c3c' : '#e67e22'}; 
+                                     color: white; 
+                                     padding: 4px 12px; 
+                                     border-radius: 4px; 
+                                     font-size: 12px;
+                                     font-weight: 600;">
+                          ${req.status || 'Pending'}
+                        </span>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            ` : `
+              <p style="text-align: center; color: #7f8c8d; padding: 30px 0;">No leave requests found.</p>
+            `}
+          </div>
+
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #ecf0f1; text-align: center; color: #7f8c8d; font-size: 12px;">
+            <p>This report is auto-generated from HRM Pagbilao System</p>
+            <p>Document ID: HR-LEAVE-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}</p>
+            <p>© ${new Date().getFullYear()} HRM Pagbilao, Quezon</p>
+          </div>
+        </div>
+      `;
+
+      const printWindow = window.open('', '_blank', 'width=1200,height=800');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Leave Management Report</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+                @media print {
+                  body { padding: 0; }
+                  .no-print { display: none; }
+                }
+              </style>
+            </head>
+            <body>
+              ${printContent}
+              <script>
+                window.onload = function() {
+                  window.print();
+                  setTimeout(function() {
+                    window.close();
+                  }, 1000);
+                };
+              <\/script>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    } catch (error) {
+      console.error('Error printing:', error);
+      alert('Failed to print. Please try again.');
+    }
+  };
+
   return (
-    <div className="leave-management">
+    <div className="leave-management" ref={leaveRef}>
 
       {/* Page Header */}
       <div className="page-header-modern">
@@ -151,13 +498,67 @@ function LeaveManagement() {
           </h2>
           <p className="header-subtitle">Manage and track employee leave requests</p>
         </div>
-        <button 
-          onClick={() => setShowForm(true)} 
-          className="btn-add-modern"
-        >
-          <AddIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-          New Leave Request
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* <button onClick={refreshData} className="btn-add-modern" style={{ background: '#4a6fa5' }} disabled={refreshing}>
+            <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button> */}
+          {/* <button onClick={exportToExcel} className="btn-export excel" style={{
+            background: '#217346',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <FileDownloadIcon style={{ fontSize: 18 }} />
+            Excel
+          </button> */}
+          <button onClick={exportToPDF} className="btn-export pdf" style={{
+            background: '#dc3545',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <PictureAsPdfIcon style={{ fontSize: 18 }} />
+            PDF
+          </button>
+          <button onClick={handlePrint} className="btn-export print" style={{
+            background: '#6c757d',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <PrintIcon style={{ fontSize: 18 }} />
+            Print
+          </button>
+          <button 
+            onClick={() => setShowForm(true)} 
+            className="btn-add-modern"
+          >
+            <AddIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+            New Leave Request
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}

@@ -3,6 +3,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, updateDoc, doc, query, where, onSnapshot, addDoc } from 'firebase/firestore';
 import { useLocation } from 'react-router-dom';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Material-UI Icons
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -17,6 +20,10 @@ import CloseIcon from '@mui/icons-material/Close';
 import CancelIcon from '@mui/icons-material/Cancel';
 import EventIcon from '@mui/icons-material/Event';
 import NotificationImportantIcon from '@mui/icons-material/NotificationImportant';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import PrintIcon from '@mui/icons-material/Print';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 function ComplianceMonitoring() {
   const location = useLocation();
@@ -31,7 +38,9 @@ function ComplianceMonitoring() {
   const [previewFile, setPreviewFile] = useState(false);
   const [previewFileUrl, setPreviewFileUrl] = useState('');
   const [previewFileName, setPreviewFileName] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const notificationRef = useRef(null);
+  const complianceRef = useRef(null);
 
   // ====== SMART FILE VIEWER ======
   const openFileViewer = (fileUrl, fileName) => {
@@ -187,6 +196,13 @@ function ComplianceMonitoring() {
     setPendingCount(pending);
   };
 
+  const refreshData = async () => {
+    setRefreshing(true);
+    await fetchEmployees();
+    await fetchDocuments();
+    setRefreshing(false);
+  };
+
   // ====== UPDATE DOCUMENT STATUS WITH NOTIFICATION ======
   const updateDocumentStatus = async (docId, newStatus) => {
     setLoading(true);
@@ -258,8 +274,340 @@ function ComplianceMonitoring() {
   const fullyCompliant = employees.filter(emp => getComplianceStatus(emp.id).percentage === 100).length;
   const missingDocs = employees.filter(emp => getComplianceStatus(emp.id).pending > 0).length;
 
+  // ===== EXPORT FUNCTIONS =====
+
+  // Export to Excel
+  // const exportToExcel = () => {
+  //   try {
+  //     const summaryData = {
+  //       'Metric': 'Compliance Summary',
+  //       'Total Employees': totalEmployees,
+  //       'Fully Compliant': fullyCompliant,
+  //       'Pending Review': pendingCount,
+  //       'Need Attention': missingDocs
+  //     };
+
+  //     const excelData = [summaryData, {}];
+
+  //     // Add employee compliance data
+  //     employees.forEach((emp, index) => {
+  //       const status = getComplianceStatus(emp.id);
+  //       const pendingDocs = getPendingDocuments(emp.id);
+  //       const pendingDocNames = pendingDocs.map(d => d.documentType).join(', ') || 'None';
+        
+  //       excelData.push({
+  //         '#': index + 1,
+  //         'Employee': emp.fullName || 'Unknown',
+  //         'Department': emp.department || 'N/A',
+  //         'Total Documents': status.total,
+  //         'Complete': status.complete,
+  //         'Pending': status.pending,
+  //         'Compliance Rate': `${status.percentage}%`,
+  //         'Pending Documents': pendingDocNames,
+  //         'Status': status.percentage === 100 ? 'Compliant' : 'In Progress'
+  //       });
+  //     });
+
+  //     if (employees.length === 0) {
+  //       excelData.push({
+  //         '#': '—',
+  //         'Employee': 'No employees found',
+  //         'Department': '—',
+  //         'Total Documents': '—',
+  //         'Complete': '—',
+  //         'Pending': '—',
+  //         'Compliance Rate': '—',
+  //         'Pending Documents': '—',
+  //         'Status': '—'
+  //       });
+  //     }
+
+  //     const wb = XLSX.utils.book_new();
+  //     const ws = XLSX.utils.json_to_sheet(excelData);
+      
+  //     ws['!cols'] = [
+  //       { wch: 6 },
+  //       { wch: 25 },
+  //       { wch: 18 },
+  //       { wch: 15 },
+  //       { wch: 12 },
+  //       { wch: 12 },
+  //       { wch: 16 },
+  //       { wch: 30 },
+  //       { wch: 16 }
+  //     ];
+      
+  //     XLSX.utils.book_append_sheet(wb, ws, 'Compliance');
+      
+  //     const filename = `Compliance_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+  //     XLSX.writeFile(wb, filename);
+  //   } catch (error) {
+  //     console.error('Error exporting to Excel:', error);
+  //     alert('Failed to export Excel file. Please try again.');
+  //   }
+  // };
+
+  // Export to PDF
+  const exportToPDF = () => {
+    try {
+      const doc = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Header
+      doc.setFontSize(20);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Compliance Monitoring Report', pageWidth / 2, 20, { align: 'center' });
+      
+      doc.setFontSize(12);
+      doc.setTextColor(74, 111, 165);
+      doc.text('Human Resource Management - Pagbilao, Quezon', pageWidth / 2, 28, { align: 'center' });
+      
+      doc.setFontSize(10);
+      doc.setTextColor(127, 140, 141);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, pageWidth / 2, 35, { align: 'center' });
+      doc.text(`Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}`, pageWidth / 2, 42, { align: 'center' });
+      
+      doc.setDrawColor(74, 111, 165);
+      doc.setLineWidth(0.5);
+      doc.line(20, 47, pageWidth - 20, 47);
+      
+      let yPosition = 55;
+      
+      // Summary Cards as a table
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Summary', 20, yPosition);
+      yPosition += 8;
+      
+      const summaryRows = [
+        ['Total Employees', totalEmployees.toString()],
+        ['Fully Compliant', fullyCompliant.toString()],
+        ['Pending Review', pendingCount.toString()],
+        ['Need Attention', missingDocs.toString()]
+      ];
+      
+      autoTable(doc, {
+        startY: yPosition,
+        head: [['Metric', 'Count']],
+        body: summaryRows,
+        theme: 'striped',
+        headStyles: { 
+          fillColor: [74, 111, 165], 
+          textColor: [255, 255, 255],
+          fontSize: 11,
+          fontStyle: 'bold'
+        },
+        styles: { fontSize: 10 },
+        margin: { left: 20, right: 20 }
+      });
+      
+      yPosition = doc.lastAutoTable.finalY + 12;
+      
+      // Check if we need a new page
+      if (yPosition > 240) {
+        doc.addPage();
+        yPosition = 20;
+      }
+      
+      // Compliance Records
+      doc.setFontSize(14);
+      doc.setTextColor(44, 62, 80);
+      doc.text('Employee Compliance Status', 20, yPosition);
+      yPosition += 8;
+      
+      if (filteredEmployees.length > 0) {
+        const complianceRows = filteredEmployees.map((emp) => {
+          const status = getComplianceStatus(emp.id);
+          return [
+            emp.fullName || 'Unknown',
+            emp.department || 'N/A',
+            status.total.toString(),
+            status.complete.toString(),
+            status.pending.toString(),
+            `${status.percentage}%`
+          ];
+        });
+        
+        autoTable(doc, {
+          startY: yPosition,
+          head: [['Employee', 'Department', 'Total', 'Complete', 'Pending', 'Rate']],
+          body: complianceRows,
+          theme: 'striped',
+          headStyles: { 
+            fillColor: [74, 111, 165], 
+            textColor: [255, 255, 255],
+            fontSize: 10,
+            fontStyle: 'bold'
+          },
+          styles: { fontSize: 9 },
+          margin: { left: 20, right: 20 },
+          columnStyles: {
+            0: { cellWidth: 40 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 15 },
+            3: { cellWidth: 15 },
+            4: { cellWidth: 15 },
+            5: { cellWidth: 20 }
+          }
+        });
+      } else {
+        doc.setFontSize(12);
+        doc.setTextColor(127, 140, 141);
+        doc.text('No employees found matching the filter.', pageWidth / 2, yPosition + 10, { align: 'center' });
+      }
+      
+      // Footer on all pages
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setTextColor(150, 150, 150);
+        doc.text(
+          `Page ${i} of ${pageCount} | Compliance Report | ${new Date().toLocaleDateString()}`,
+          pageWidth / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: 'center' }
+        );
+      }
+      
+      doc.save(`Compliance_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+      
+    } catch (error) {
+      console.error('Error exporting to PDF:', error);
+      alert('Failed to export PDF. Please try again.');
+    }
+  };
+
+  // Handle Print
+  const handlePrint = () => {
+    try {
+      const printContent = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto;">
+          <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #4a6fa5;">
+            <h1 style="color: #2c3e50; font-size: 28px; margin: 0;">Human Resource Management</h1>
+            <h2 style="color: #4a6fa5; font-size: 20px; margin: 5px 0;">Pagbilao, Quezon</h2>
+            <h3 style="color: #34495e; font-size: 18px; margin: 10px 0;">Compliance Monitoring Report</h3>
+            <p style="color: #7f8c8d; font-size: 14px;">
+              Generated: ${new Date().toLocaleString()}
+            </p>
+            <p style="color: #7f8c8d; font-size: 12px;">
+              Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}
+            </p>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+            <div style="background: #4a6fa5; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${totalEmployees}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Total Employees</div>
+            </div>
+            <div style="background: #27ae60; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${fullyCompliant}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Fully Compliant</div>
+            </div>
+            <div style="background: #e67e22; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${pendingCount}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Pending Review</div>
+            </div>
+            <div style="background: #e74c3c; padding: 15px; border-radius: 8px; color: white; text-align: center;">
+              <div style="font-size: 28px; font-weight: bold;">${missingDocs}</div>
+              <div style="font-size: 14px; opacity: 0.9;">Need Attention</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 30px;">
+            <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Employee Compliance Status</h4>
+            ${filteredEmployees.length > 0 ? `
+              <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                  <tr style="background: #4a6fa5; color: white;">
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">#</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Employee</th>
+                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Department</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Total</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Complete</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Pending</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Rate</th>
+                    <th style="padding: 10px; text-align: center; border: 1px solid #ddd;">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${filteredEmployees.map((emp, index) => {
+                    const status = getComplianceStatus(emp.id);
+                    return `
+                      <tr style="background: ${index % 2 === 0 ? '#f8f9fa' : 'white'};">
+                        <td style="padding: 10px; border: 1px solid #ddd;">${index + 1}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${emp.fullName || 'Unknown'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd;">${emp.department || 'N/A'}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${status.total}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${status.complete}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${status.pending}</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${status.percentage}%</td>
+                        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">
+                          <span style="background: ${status.percentage === 100 ? '#27ae60' : '#e67e22'}; 
+                                       color: white; 
+                                       padding: 4px 12px; 
+                                       border-radius: 4px; 
+                                       font-size: 12px;
+                                       font-weight: 600;">
+                            ${status.percentage === 100 ? 'Compliant' : 'In Progress'}
+                          </span>
+                        </td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            ` : `
+              <p style="text-align: center; color: #7f8c8d; padding: 30px 0;">No employees found matching the filter.</p>
+            `}
+          </div>
+
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #ecf0f1; text-align: center; color: #7f8c8d; font-size: 12px;">
+            <p>This report is auto-generated from HRM Pagbilao System</p>
+            <p>Document ID: HR-COMPLIANCE-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}</p>
+            <p>© ${new Date().getFullYear()} HRM Pagbilao, Quezon</p>
+          </div>
+        </div>
+      `;
+
+      const printWindow = window.open('', '_blank', 'width=1200,height=800');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <title>Compliance Monitoring Report</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+                @media print {
+                  body { padding: 0; }
+                  .no-print { display: none; }
+                }
+              </style>
+            </head>
+            <body>
+              ${printContent}
+              <script>
+                window.onload = function() {
+                  window.print();
+                  setTimeout(function() {
+                    window.close();
+                  }, 1000);
+                };
+              <\/script>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+      }
+    } catch (error) {
+      console.error('Error printing:', error);
+      alert('Failed to print. Please try again.');
+    }
+  };
+
   return (
-    <div className="compliance-container">
+    <div className="compliance-container" ref={complianceRef}>
       {/* Toast Notification */}
       {toastMessage && (
         <div className="toast-notification" style={{
@@ -308,26 +656,80 @@ function ComplianceMonitoring() {
           </h2>
           <p className="header-subtitle">Track and manage employee document compliance</p>
         </div>
-        <div className="stats-badge" style={{
-          background: pendingCount > 0 ? '#e74c3c' : '#27ae60',
-          padding: '8px 16px',
-          borderRadius: '20px',
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          {pendingCount > 0 ? (
-            <>
-              <WarningIcon style={{ fontSize: 18 }} />
-              {pendingCount} Pending Review
-            </>
-          ) : (
-            <>
-              <CheckCircleIcon style={{ fontSize: 18 }} />
-              All Reviewed
-            </>
-          )}
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* <button onClick={refreshData} className="btn-add-modern" style={{ background: '#4a6fa5' }} disabled={refreshing}>
+            <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button> */}
+          {/* <button onClick={exportToExcel} className="btn-export excel" style={{
+            background: '#217346',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <FileDownloadIcon style={{ fontSize: 18 }} />
+            Excel
+          </button> */}
+          <button onClick={exportToPDF} className="btn-export pdf" style={{
+            background: '#dc3545',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <PictureAsPdfIcon style={{ fontSize: 18 }} />
+            PDF
+          </button>
+          <button onClick={handlePrint} className="btn-export print" style={{
+            background: '#6c757d',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '14px',
+            fontWeight: '500'
+          }}>
+            <PrintIcon style={{ fontSize: 18 }} />
+            Print
+          </button>
+          <div className="stats-badge" style={{
+            background: pendingCount > 0 ? '#e74c3c' : '#27ae60',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            {pendingCount > 0 ? (
+              <>
+                <WarningIcon style={{ fontSize: 18 }} />
+                {pendingCount} Pending Review
+              </>
+            ) : (
+              <>
+                <CheckCircleIcon style={{ fontSize: 18 }} />
+                All Reviewed
+              </>
+            )}
+          </div>
         </div>
       </div>
 
