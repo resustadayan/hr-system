@@ -210,6 +210,33 @@ function EmployeePortal() {
     }
   }, [authUser, authLoading]);
 
+  // Add this after the existing useEffects in EmployeePortal.js
+
+// ====== REAL-TIME EMPLOYEE DATA LISTENER ======
+useEffect(() => {
+  if (employee && employee.id) {
+    // Set up real-time listener for employee data changes
+    const employeeDocRef = doc(db, 'employees', employee.id);
+    const unsubscribe = onSnapshot(employeeDocRef, (docSnapshot) => {
+      if (docSnapshot.exists()) {
+        const updatedData = { id: docSnapshot.id, ...docSnapshot.data() };
+        setEmployee(updatedData);
+        console.log('🔄 Employee data updated in real-time:', updatedData);
+        
+        // If salary changed, also refresh payroll data
+        if (updatedData.salary !== employee.salary) {
+          console.log('💰 Salary updated from', employee.salary, 'to', updatedData.salary);
+          fetchEmployeePayroll();
+        }
+      }
+    }, (error) => {
+      console.error('Error listening to employee updates:', error);
+    });
+    
+    return () => unsubscribe();
+  }
+}, [employee?.id]);
+
   // ====== REFRESH PAYROLL FUNCTION ======
   const refreshPayrollData = async () => {
     if (!employee) {

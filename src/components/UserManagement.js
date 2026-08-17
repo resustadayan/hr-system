@@ -162,6 +162,48 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
+  // ====== NEW: Sync employee collection ======
+  const syncEmployeeCollection = async (userId, userData) => {
+    try {
+      // First, try to find existing employee by email
+      const employeeQuery = query(collection(db, 'employees'), where('email', '==', userData.email));
+      const employeeSnapshot = await getDocs(employeeQuery);
+      
+      const employeeData = {
+        fullName: userData.name,
+        email: userData.email,
+        department: userData.department,
+        position: userData.position || '',
+        phone: userData.phone || '',
+        dateHired: userData.dateHired || '',
+        salary: userData.salary || '',
+        status: 'Active',
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!employeeSnapshot.empty) {
+        // Update existing employee document
+        const employeeDoc = employeeSnapshot.docs[0];
+        await updateDoc(doc(db, 'employees', employeeDoc.id), employeeData);
+        console.log('✅ Employee collection updated for: ' + userData.name);
+        return employeeDoc.id;
+      } else {
+        // Create new employee document
+        const newEmployeeData = {
+          ...employeeData,
+          createdAt: new Date().toISOString(),
+          employeeId: userId
+        };
+        const docRef = await addDoc(collection(db, 'employees'), newEmployeeData);
+        console.log('✅ Employee collection created for: ' + userData.name);
+        return docRef.id;
+      }
+    } catch (error) {
+      console.error('Error syncing employee collection:', error);
+      return null;
+    }
+  };
+
   const handleEdit = (user) => {
     setEditingId(user.id);
     setFormData({
@@ -177,6 +219,7 @@ function UserManagement({ refreshTrigger }) {
     setShowForm(true);
   };
 
+  // ====== UPDATED: addUser with employee sync ======
   const addUser = async () => {
     if (!formData.name || !formData.email || !formData.department || !formData.role) {
       alert('Please fill all required fields');
@@ -203,6 +246,9 @@ function UserManagement({ refreshTrigger }) {
       
       const docRef = await addDoc(collection(db, 'users'), userData);
       
+      // ====== SYNC TO EMPLOYEES COLLECTION ======
+      await syncEmployeeCollection(docRef.id, userData);
+      
       if (formData.salary && formData.salary > 0) {
         await createPayrollRecord(
           docRef.id,
@@ -224,6 +270,7 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
+  // ====== UPDATED: updateUser with employee sync ======
   const updateUser = async () => {
     if (!formData.name || !formData.email || !formData.department || !formData.role) {
       alert('Please fill all required fields');
@@ -245,6 +292,9 @@ function UserManagement({ refreshTrigger }) {
       };
       
       await updateDoc(userRef, updateData);
+      
+      // ====== SYNC TO EMPLOYEES COLLECTION ======
+      await syncEmployeeCollection(editingId, updateData);
       
       if (formData.salary && formData.salary > 0) {
         await createPayrollRecord(
@@ -268,18 +318,28 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
+  // ====== UPDATED: deleteUser with employee sync ======
   const deleteUser = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete user "${name}"? This will also remove their payroll records.`)) {
       try {
+        // Delete payroll records
         const payrollQuery = query(collection(db, 'payroll'), where('employeeId', '==', id));
         const payrollSnapshot = await getDocs(payrollQuery);
         payrollSnapshot.docs.forEach(async (doc) => {
           await deleteDoc(doc.ref);
         });
         
+        // Delete from employees collection
+        const employeeQuery = query(collection(db, 'employees'), where('employeeId', '==', id));
+        const employeeSnapshot = await getDocs(employeeQuery);
+        employeeSnapshot.docs.forEach(async (doc) => {
+          await deleteDoc(doc.ref);
+        });
+        
+        // Delete from users collection
         await deleteDoc(doc(db, 'users', id));
         await fetchUsers();
-        alert('✅ User and associated payroll records deleted successfully');
+        alert('✅ User and associated records deleted successfully');
       } catch (error) {
         console.error('Error deleting user:', error);
         alert('❌ Failed to delete user');
