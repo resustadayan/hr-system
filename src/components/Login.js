@@ -220,7 +220,7 @@ function Login() {
         <div className="cover-content">
           <img src={coverImage} alt="Cover" className="cover-image" />
           <div className="cover-overlay">
-            <h1>HR System</h1>
+            <h1>Human Resource Management Office</h1>
             <p>Pagbilao, Quezon LGU</p>
           </div>
         </div>

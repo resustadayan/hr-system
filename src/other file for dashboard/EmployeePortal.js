@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/contexts/AuthContext';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
-
+import html2pdf from 'html2pdf.js';
 // Material-UI Icons
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -1234,271 +1234,310 @@ useEffect(() => {
     }).format(parseFloat(amount));
   };
 
-  // ====== GENERATE PAYSLIP PDF ======
-  const generatePayslipPDF = (payrollData) => {
-    const payslipHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Payslip - ${employee?.fullName || 'Employee'}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            background: #f5f7fa; 
-            padding: 40px; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-          }
-          .payslip-container {
-            max-width: 800px;
-            width: 100%;
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-          }
-          .payslip-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 3px solid #4a6fa5;
-            padding-bottom: 20px;
-            margin-bottom: 20px;
-          }
-          .payslip-header .title h1 {
-            color: #1a2a4a;
-            font-size: 28px;
-            margin: 0;
-          }
-          .payslip-header .title p {
-            color: #6b7a8f;
-            font-size: 14px;
-            margin: 4px 0 0;
-          }
-          .payslip-header .logo {
-            text-align: right;
-          }
-          .payslip-header .logo h3 {
-            color: #4a6fa5;
-            margin: 0;
-          }
-          .payslip-header .logo p {
-            font-size: 12px;
-            color: #8a9bb5;
-            margin: 2px 0 0;
-          }
-          .employee-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            background: #f8fafd;
-            padding: 16px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-          }
-          .employee-info .info-item {
-            display: flex;
-            flex-direction: column;
-          }
-          .employee-info .info-item label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #8a9bb5;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-          }
-          .employee-info .info-item span {
-            font-size: 15px;
-            font-weight: 600;
-            color: #1a2a4a;
-          }
-          .payslip-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-          }
-          .payslip-table th {
-            background: #4a6fa5;
-            color: white;
-            padding: 12px 16px;
-            text-align: left;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .payslip-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #eef2f7;
-            font-size: 14px;
-          }
-          .payslip-table tr:last-child td {
-            border-bottom: none;
-          }
-          .payslip-table .amount {
-            text-align: right;
-            font-weight: 500;
-          }
-          .payslip-table .total-row {
-            background: #f0f4fe;
-            font-weight: 700;
-          }
-          .payslip-table .total-row td {
-            font-size: 16px;
-          }
-          .payslip-table .deduction-row td {
-            color: #e74c3c;
-          }
-          .payslip-footer {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #eef2f7;
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: #8a9bb5;
-          }
-          .payslip-footer .status-badge {
-            padding: 4px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .payslip-footer .status-badge.paid {
-            background: #e4f5e9;
-            color: #27ae60;
-          }
-          .payslip-footer .status-badge.pending {
-            background: #fef0e0;
-            color: #e67e22;
-          }
-          .late-warning {
-            background: #fef9f0;
-            border-left: 4px solid #e67e22;
-            padding: 10px 16px;
-            margin: 10px 0;
-            border-radius: 4px;
-            font-size: 13px;
-            color: #856404;
-          }
-          @media print {
-            body { padding: 20px; background: white; }
-            .payslip-container { box-shadow: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="payslip-container">
-          <div class="payslip-header">
-            <div class="title">
-              <h1>PAYSLIP</h1>
-              <p>Municipality of Pagbilao, Quezon</p>
-            </div>
-            <div class="logo">
-              <h3>HR Management System</h3>
-              <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
-            </div>
+  // ====== GENERATE PAYSLIP PDF (True Download) ======
+const generatePayslipPDF = (payrollData) => {
+  // Show loading indicator
+  const loadingMsg = document.createElement('div');
+  loadingMsg.style.cssText = `
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: white; padding: 20px 40px; border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2); z-index: 9999;
+    font-size: 18px; font-weight: 600; color: #4a6fa5;
+    display: flex; align-items: center; gap: 12px;
+  `;
+  loadingMsg.innerHTML = `
+    <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+    Generating payslip...
+  `;
+  document.body.appendChild(loadingMsg);
+
+  const payslipHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payslip - ${employee?.fullName || 'Employee'}</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+          font-family: 'Segoe UI', Arial, sans-serif; 
+          background: #f5f7fa; 
+          padding: 40px; 
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+        }
+        .payslip-container {
+          max-width: 800px;
+          width: 100%;
+          background: white;
+          border-radius: 16px;
+          padding: 40px;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+        }
+        .payslip-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          border-bottom: 3px solid #4a6fa5;
+          padding-bottom: 20px;
+          margin-bottom: 20px;
+        }
+        .payslip-header .title h1 {
+          color: #1a2a4a;
+          font-size: 28px;
+          margin: 0;
+        }
+        .payslip-header .title p {
+          color: #6b7a8f;
+          font-size: 14px;
+          margin: 4px 0 0;
+        }
+        .payslip-header .logo {
+          text-align: right;
+        }
+        .payslip-header .logo h3 {
+          color: #4a6fa5;
+          margin: 0;
+        }
+        .payslip-header .logo p {
+          font-size: 12px;
+          color: #8a9bb5;
+          margin: 2px 0 0;
+        }
+        .employee-info {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          background: #f8fafd;
+          padding: 16px 20px;
+          border-radius: 10px;
+          margin-bottom: 20px;
+        }
+        .employee-info .info-item {
+          display: flex;
+          flex-direction: column;
+        }
+        .employee-info .info-item label {
+          font-size: 11px;
+          text-transform: uppercase;
+          color: #8a9bb5;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+        }
+        .employee-info .info-item span {
+          font-size: 15px;
+          font-weight: 600;
+          color: #1a2a4a;
+        }
+        .payslip-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin: 20px 0;
+        }
+        .payslip-table th {
+          background: #4a6fa5;
+          color: white;
+          padding: 12px 16px;
+          text-align: left;
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .payslip-table td {
+          padding: 12px 16px;
+          border-bottom: 1px solid #eef2f7;
+          font-size: 14px;
+        }
+        .payslip-table tr:last-child td {
+          border-bottom: none;
+        }
+        .payslip-table .amount {
+          text-align: right;
+          font-weight: 500;
+        }
+        .payslip-table .total-row {
+          background: #f0f4fe;
+          font-weight: 700;
+        }
+        .payslip-table .total-row td {
+          font-size: 16px;
+        }
+        .payslip-table .deduction-row td {
+          color: #e74c3c;
+        }
+        .payslip-footer {
+          margin-top: 20px;
+          padding-top: 20px;
+          border-top: 2px solid #eef2f7;
+          display: flex;
+          justify-content: space-between;
+          font-size: 13px;
+          color: #8a9bb5;
+        }
+        .payslip-footer .status-badge {
+          padding: 4px 16px;
+          border-radius: 20px;
+          font-size: 13px;
+          font-weight: 600;
+        }
+        .payslip-footer .status-badge.paid {
+          background: #e4f5e9;
+          color: #27ae60;
+        }
+        .payslip-footer .status-badge.pending {
+          background: #fef0e0;
+          color: #e67e22;
+        }
+        .late-warning {
+          background: #fef9f0;
+          border-left: 4px solid #e67e22;
+          padding: 10px 16px;
+          margin: 10px 0;
+          border-radius: 4px;
+          font-size: 13px;
+          color: #856404;
+        }
+        @media print {
+          body { padding: 20px; background: white; }
+          .payslip-container { box-shadow: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="payslip-container" id="payslip-container">
+        <div class="payslip-header">
+          <div class="title">
+            <h1>PAYSLIP</h1>
+            <p>Municipality of Pagbilao, Quezon</p>
           </div>
-
-          <div class="employee-info">
-            <div class="info-item">
-              <label>Employee Name</label>
-              <span>${employee?.fullName || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Employee ID</label>
-              <span>${employee?.id || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Department</label>
-              <span>${employee?.department || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Position</label>
-              <span>${employee?.position || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Pay Period</label>
-              <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
-            </div>
-            <div class="info-item">
-              <label>Status</label>
-              <span>
-                <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
-                  ${payrollData.status || 'Pending'}
-                </span>
-              </span>
-            </div>
-          </div>
-
-          ${payrollData.lateDays > 0 ? `
-            <div class="late-warning">
-              ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
-              Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
-            </div>
-          ` : ''}
-
-          <table class="payslip-table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th style="text-align:right;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Basic Salary</td>
-                <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
-              </tr>
-              ${payrollData.lateDays > 0 ? `
-                <tr class="deduction-row">
-                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
-                  <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
-                </tr>
-              ` : ''}
-              ${(payrollData.originalDeductions || 0) > 0 ? `
-                <tr class="deduction-row">
-                  <td>Other Deductions</td>
-                  <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
-                </tr>
-              ` : ''}
-              <tr class="total-row">
-                <td><strong>Net Pay</strong></td>
-                <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="payslip-footer">
-            <div>
-              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-            </div>
-            <div>
-              <p>${employee?.fullName || 'Employee'} - Payslip</p>
-            </div>
+          <div class="logo">
+            <h3>HR Management System</h3>
+            <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
           </div>
         </div>
-        <script>
-          window.onload = function() {
-            window.print();
-          }
-        </script>
-      </body>
-      </html>
-    `;
 
-    const printWindow = window.open('', '_blank', 'width=900,height=700');
-    if (printWindow) {
-      printWindow.document.write(payslipHTML);
-      printWindow.document.close();
-      setTimeout(() => {
-        printWindow.print();
-      }, 500);
-    } else {
-      alert('Please allow popups to download payslip');
-    }
-  };
+        <div class="employee-info">
+          <div class="info-item">
+            <label>Employee Name</label>
+            <span>${employee?.fullName || 'N/A'}</span>
+          </div>
+          <div class="info-item">
+            <label>Employee ID</label>
+            <span>${employee?.id || 'N/A'}</span>
+          </div>
+          <div class="info-item">
+            <label>Department</label>
+            <span>${employee?.department || 'N/A'}</span>
+          </div>
+          <div class="info-item">
+            <label>Position</label>
+            <span>${employee?.position || 'N/A'}</span>
+          </div>
+          <div class="info-item">
+            <label>Pay Period</label>
+            <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
+          </div>
+          <div class="info-item">
+            <label>Status</label>
+            <span>
+              <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
+                ${payrollData.status || 'Pending'}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        ${payrollData.lateDays > 0 ? `
+          <div class="late-warning">
+            ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
+            Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
+          </div>
+        ` : ''}
+
+        <table class="payslip-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th style="text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Basic Salary</td>
+              <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
+            </tr>
+            ${payrollData.lateDays > 0 ? `
+              <tr class="deduction-row">
+                <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
+                <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
+              </tr>
+            ` : ''}
+            ${(payrollData.originalDeductions || 0) > 0 ? `
+              <tr class="deduction-row">
+                <td>Other Deductions</td>
+                <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
+              </tr>
+            ` : ''}
+            <tr class="total-row">
+              <td><strong>Net Pay</strong></td>
+              <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="payslip-footer">
+          <div>
+            <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+          </div>
+          <div>
+            <p>${employee?.fullName || 'Employee'} - Payslip</p>
+          </div>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  // Create a temporary container
+  const container = document.createElement('div');
+  container.innerHTML = payslipHTML;
+  document.body.appendChild(container);
+
+  const element = container.querySelector('.payslip-container');
+
+  // Generate filename
+  const fileName = `Payslip_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${payrollData.periodMonth || ''}_${payrollData.periodYear || ''}.pdf`;
+
+  // Generate PDF and download
+  html2pdf()
+    .set({
+      margin: 10,
+      filename: fileName,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { 
+        scale: 2, 
+        useCORS: true,
+        letterRendering: true
+      },
+      jsPDF: { 
+        unit: 'mm', 
+        format: 'a4', 
+        orientation: 'portrait' 
+      }
+    })
+    .from(element)
+    .save()
+    .then(() => {
+      document.body.removeChild(container);
+      document.body.removeChild(loadingMsg);
+    })
+    .catch((error) => {
+      console.error('PDF generation failed:', error);
+      document.body.removeChild(container);
+      document.body.removeChild(loadingMsg);
+      alert('Failed to generate PDF. Please try again.');
+    });
+};
 
   // ====== PREVIEW MODAL ======
   const renderPreviewModal = () => {
@@ -2604,7 +2643,7 @@ useEffect(() => {
                 }}
               >
                 <PrintIcon style={{ fontSize: 18 }} />
-                Download / Print Payslip
+                Print Payslip
               </button>
               <button 
                 onClick={() => setShowPayslipModal(false)}
