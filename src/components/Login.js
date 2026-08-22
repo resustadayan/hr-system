@@ -382,6 +382,31 @@ function Login() {
               </>
             )}
 
+           {/* Forgot Password button &*/}
+            {isLogin && !isRegistered && (
+              <div style={{
+                textAlign: 'right',
+                marginBottom: '15px',
+                marginTop: '20px'
+              }}>
+                <button
+                type="button"
+                onClick={() => navigate('/forgot-password')}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#4a6fa5',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  textDecoration: 'underline',
+                  padding: '0'
+                }}
+                >
+                  Forgot Password?
+                </button>
+              </div>
+            )}
+
             {/* Show a "Go to Login" button after registration */}
             {isRegistered && (
               <button 
@@ -423,7 +448,7 @@ function Login() {
 
           {isLogin && !isRegistered && (
             <div className="demo-credentials">
-              <p><strong>Demo Credentials:</strong></p>
+              <p><strong>©2026 – HRMO Pagbilao, Quezon, Philippines</strong></p>
               <p>HR Admin: admin@pagbilao.gov.ph / admin123</p>
               <p>MGDH: mgdh@pagbilao.gov.ph / mgdh123</p>
             </div>

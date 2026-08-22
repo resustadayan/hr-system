@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Login from './components/Login';
+import ForgotPassword from './components/ForgotPassword';
+import ResetPassword from './components/ResetPassword';
 import Dashboard from './components/Dashboard';
 import EmployeeRecords from './components/EmployeeRecords';
 import Attendance from './components/Attendance';
@@ -37,8 +39,9 @@ function AppContent() {
   const location = useLocation();
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   
-  // Check if current route is login page
-  const isLoginPage = location.pathname === '/login';
+  // Define routes that should NOT show the Navbar (sidebar)
+  const publicRoutes = ['/login', '/forgot-password', '/reset-password', '/register'];
+  const isPublicRoute = publicRoutes.includes(location.pathname);
   
   // Check if current route is employee portal or mgdh dashboard (they have their own sidebar)
   const isPortalRoute = location.pathname === '/employee-portal' || location.pathname === '/mgdh-dashboard';
@@ -54,14 +57,26 @@ function AppContent() {
 
   return (
     <>
-      {/* Only render Navbar if NOT on login page AND NOT on portal routes */}
-      {!isLoginPage && !isPortalRoute && <Navbar />}
+      {/* Only render Navbar if NOT on public routes AND NOT on portal routes */}
+      {!isPublicRoute && !isPortalRoute && <Navbar />}
       
-      <div className={isLoginPage ? 'full-width-content' : 'main-content'}>
+      {/* 
+        IMPORTANT: 
+        - Public routes: full-width-content (no sidebar margin)
+        - Portal routes: portal-content (no extra margin, portal handles its own layout)
+        - All other routes: main-content (with sidebar margin)
+      */}
+      <div className={
+        isPublicRoute ? 'full-width-content' : 
+        isPortalRoute ? 'portal-content' : 
+        'main-content'
+      }>
         <Routes>
-          {/* Public Routes */}
+          {/* Public Routes - No Navbar */}
           <Route path="/login" element={<Login />} />
-          
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+
           {/* Protected Routes - All Authenticated Users */}
           <Route path="/" element={<Navigate to="/dashboard" />} />
           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />

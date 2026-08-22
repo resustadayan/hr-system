@@ -4879,3 +4879,83 @@ body.printing-pdf .user-management .users-table-modern tbody td:last-child {
     font-size: 11px;
   }
 }
+
+/* Add to your styles.css */
+
+/* Portal routes should NOT have any extra margin or padding from App */
+.portal-content {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #f0f2f5;
+}
+
+/* Ensure portal components take full width */
+.portal-content .employee-portal,
+.portal-content .mgdh-dashboard {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Make sure portal sidebars are positioned correctly */
+.portal-content .employee-sidebar,
+.portal-content .mgdh-sidebar {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+}
+
+/* Portal main content should have proper spacing */
+.portal-content .employee-main-content,
+.portal-content .mgdh-main-content {
+  margin-left: 280px !important;
+  padding: 24px !important;
+  min-height: 100vh;
+  width: auto !important;
+  max-width: none !important;
+}
+
+/* Mobile fix for portal */
+@media (max-width: 768px) {
+  .portal-content .employee-main-content,
+  .portal-content .mgdh-main-content {
+    margin-left: 0 !important;
+    padding: 80px 16px 16px !important;
+  }
+}
+
+/* Public routes - full width, no navbar */
+.full-width-content {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Main content for routes WITH navbar */
+.main-content {
+  margin-left: 280px;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+/* Override the portal.css fix that was causing issues */
+.employee-main-content,
+.mgdh-main-content {
+  margin-left: 280px !important;
+  padding: 24px !important;
+  width: auto !important;
+  max-width: none !important;
+}
+
+@media (max-width: 768px) {
+  .employee-main-content,
+  .mgdh-main-content {
+    margin-left: 0 !important;
+    padding: 80px 16px 16px !important;
+  }
+}
