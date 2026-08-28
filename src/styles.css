@@ -4959,3 +4959,1113 @@ body.printing-pdf .user-management .users-table-modern tbody td:last-child {
     padding: 80px 16px 16px !important;
   }
 }
+
+/* ========================================
+   MOBILE RESPONSIVENESS - COMPLETE FIX
+   For all dashboards and tabs
+======================================== */
+
+/* Mobile-first improvements for all dashboards */
+@media screen and (max-width: 768px) {
+  
+  /* ===== GENERAL MOBILE IMPROVEMENTS ===== */
+  .main-content {
+    padding: 12px !important;
+    margin-left: 0 !important;
+    margin-top: 56px !important;
+    width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .dashboard-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    padding: 16px !important;
+    gap: 12px !important;
+  }
+
+  .header-left h1 {
+    font-size: 20px !important;
+  }
+
+  .header-right {
+    width: 100% !important;
+  }
+
+  .header-right .date-badge {
+    width: 100% !important;
+    text-align: center !important;
+    font-size: 12px !important;
+  }
+
+  /* ===== STATS CARDS ===== */
+  .stats-row {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 16px !important;
+  }
+
+  .stat-card {
+    padding: 12px 14px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  .stat-card .stat-icon {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 18px !important;
+    min-width: 36px !important;
+  }
+
+  .stat-card .stat-info h3 {
+    font-size: 10px !important;
+    letter-spacing: 0.3px !important;
+  }
+
+  .stat-card .stat-info p {
+    font-size: 18px !important;
+  }
+
+  /* ===== DASHBOARD GRID ===== */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-box {
+    padding: 16px !important;
+  }
+
+  .dashboard-box h2 {
+    font-size: 15px !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* ===== ACTIONS GRID ===== */
+  .actions-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .action-btn {
+    padding: 10px 12px !important;
+    font-size: 12px !important;
+    min-height: 40px !important;
+  }
+
+  /* ===== TABLES ===== */
+  .table-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    margin: 0 -4px !important;
+    padding: 0 4px !important;
+    border-radius: 10px !important;
+  }
+
+  table {
+    font-size: 12px !important;
+    min-width: 500px !important;
+    display: block !important;
+    overflow-x: auto !important;
+  }
+
+  table thead {
+    display: table-header-group !important;
+  }
+
+  table tbody {
+    display: table-row-group !important;
+  }
+
+  table th,
+  table td {
+    padding: 8px 10px !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+  }
+
+  table th {
+    font-size: 10px !important;
+    padding: 8px 10px !important;
+  }
+
+  /* ===== PAGE HEADERS ===== */
+  .page-header-modern {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    padding: 16px !important;
+    gap: 12px !important;
+  }
+
+  .page-header-modern h2 {
+    font-size: 18px !important;
+  }
+
+  .header-subtitle {
+    font-size: 13px !important;
+  }
+
+  .btn-add-modern {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px !important;
+    font-size: 13px !important;
+  }
+
+  /* ===== SEARCH FILTER BAR ===== */
+  .search-filter-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 12px !important;
+    gap: 10px !important;
+  }
+
+  .search-group {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+
+  .search-input {
+    font-size: 14px !important;
+    padding: 10px 14px !important;
+  }
+
+  .filter-select {
+    width: 100% !important;
+    min-width: unset !important;
+    padding: 10px 14px !important;
+  }
+
+  .stats-badge {
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  /* ===== MODAL ===== */
+  .modal-overlay {
+    padding: 16px !important;
+  }
+
+  .modal-form {
+    padding: 20px !important;
+    width: 95% !important;
+    margin: 0 auto !important;
+    max-height: 90vh !important;
+  }
+
+  .modal-header h3 {
+    font-size: 18px !important;
+  }
+
+  .employee-form .form-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .form-actions {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .btn-save,
+  .btn-cancel {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* ===== ATTENDANCE SPECIFIC ===== */
+  .form-card-modern {
+    padding: 16px !important;
+  }
+
+  .form-grid-inline {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .form-grid-inline .btn-group {
+    grid-column: span 1 !important;
+  }
+
+  .filter-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .filter-controls {
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .filter-date {
+    width: 100% !important;
+  }
+
+  .date-display {
+    width: 100% !important;
+  }
+
+  .date-badge {
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  /* ===== LEAVE MANAGEMENT SPECIFIC ===== */
+  .leave-table {
+    display: block !important;
+    overflow-x: auto !important;
+    font-size: 12px !important;
+  }
+
+  .leave-table thead th,
+  .leave-table tbody td {
+    padding: 8px 10px !important;
+  }
+
+  .action-group {
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .btn-action.approve,
+  .btn-action.reject {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 6px 10px !important;
+    font-size: 11px !important;
+  }
+
+  .date-range {
+    font-size: 11px !important;
+  }
+
+  .days-badge {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+  }
+
+  .leave-form .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .leave-form .form-group.full-width {
+    grid-column: span 1 !important;
+  }
+
+  /* ===== COMPLIANCE SPECIFIC ===== */
+  .filter-bar-modern {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 12px !important;
+    gap: 8px !important;
+  }
+
+  .filter-btn {
+    width: 100% !important;
+    text-align: center !important;
+    padding: 8px !important;
+  }
+
+  .filter-count {
+    margin-left: 0 !important;
+    text-align: center !important;
+  }
+
+  .compliance-table-modern {
+    display: block !important;
+    overflow-x: auto !important;
+    font-size: 12px !important;
+  }
+
+  .compliance-table-modern thead th,
+  .compliance-table-modern tbody td {
+    padding: 8px 10px !important;
+  }
+
+  .progress-bar-modern {
+    width: 80px !important;
+    height: 18px !important;
+  }
+
+  .progress-fill span {
+    font-size: 9px !important;
+  }
+
+  .doc-card {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    padding: 12px !important;
+  }
+
+  .doc-info {
+    width: 100% !important;
+  }
+
+  .doc-details {
+    width: 100% !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  .doc-status-select {
+    width: 100% !important;
+  }
+
+  /* ===== PAYROLL SPECIFIC ===== */
+  .payroll-table-modern {
+    display: block !important;
+    overflow-x: auto !important;
+    font-size: 12px !important;
+  }
+
+  .payroll-table-modern thead th,
+  .payroll-table-modern tbody td {
+    padding: 8px 10px !important;
+  }
+
+  .period-cell {
+    font-size: 11px !important;
+  }
+
+  .net-pay-cell {
+    font-size: 13px !important;
+  }
+
+  .chart-section-modern {
+    padding: 16px !important;
+  }
+
+  .dept-fill-modern {
+    font-size: 10px !important;
+    padding-right: 6px !important;
+  }
+
+  /* ===== ANALYTICS SPECIFIC ===== */
+  .charts-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+
+  .chart-card.full-width {
+    grid-column: 1 !important;
+  }
+
+  .chart-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+    padding: 12px 14px !important;
+  }
+
+  .chart-header h3 {
+    font-size: 13px !important;
+  }
+
+  .chart-body {
+    padding: 10px 12px !important;
+  }
+
+  .pie-center-label .label-value {
+    font-size: 20px !important;
+  }
+
+  .dept-summary-item-modern {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+    padding: 6px 0 !important;
+  }
+
+  .dept-summary-left {
+    min-width: unset !important;
+    width: 100% !important;
+  }
+
+  /* ===== INTERVENTIONS SPECIFIC ===== */
+  .intervention-card {
+    padding: 12px !important;
+  }
+
+  .intervention-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+  }
+
+  .intervention-actions-header {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .intervention-meta {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    font-size: 12px !important;
+  }
+
+  .intervention-footer {
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+
+  .btn-action.in-progress,
+  .btn-action.resolve {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .resolved-badge {
+    width: 100% !important;
+    text-align: center !important;
+  }
+
+  /* ===== USER MANAGEMENT SPECIFIC ===== */
+  .users-table-modern {
+    display: block !important;
+    overflow-x: auto !important;
+    font-size: 12px !important;
+  }
+
+  .users-table-modern thead th,
+  .users-table-modern tbody td {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+
+  .role-select-modern {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+  }
+
+  .role-badge {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+  }
+
+  /* ===== NOTIFICATIONS ===== */
+  .notification-item {
+    padding: 12px 14px !important;
+  }
+
+  .notification-content p {
+    font-size: 13px !important;
+  }
+
+  .notification-actions {
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .notification-actions button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* ===== PROFILE ===== */
+  .profile-card {
+    flex-direction: column !important;
+    align-items: center !important;
+    text-align: center !important;
+    padding: 20px !important;
+  }
+
+  .profile-avatar {
+    width: 80px !important;
+    height: 80px !important;
+    font-size: 32px !important;
+  }
+
+  .profile-details h3 {
+    font-size: 20px !important;
+  }
+
+  .profile-details p {
+    justify-content: center !important;
+    font-size: 13px !important;
+  }
+
+  /* ===== LEAVE BALANCE ===== */
+  .balance-grid {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .balance-item {
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 6px 0 !important;
+    border-bottom: 1px solid #f0f2f7 !important;
+  }
+
+  .balance-item:last-child {
+    border-bottom: none !important;
+  }
+
+  .balance-label {
+    font-size: 13px !important;
+  }
+
+  .balance-value {
+    font-size: 16px !important;
+  }
+
+  /* ===== COMPLIANCE PROGRESS ===== */
+  .compliance-progress-card {
+    padding: 16px !important;
+  }
+
+  .progress-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 4px !important;
+  }
+
+  .progress-percentage {
+    font-size: 18px !important;
+  }
+
+  /* ===== DOCUMENTS LIST ===== */
+  .doc-item-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  .doc-item-info {
+    width: 100% !important;
+  }
+
+  .doc-item-actions {
+    width: 100% !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  .btn-view-doc {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* ===== EMPLOYEE TABLE ===== */
+  .employee-table {
+    display: block !important;
+    overflow-x: auto !important;
+    font-size: 12px !important;
+  }
+
+  .employee-table thead th,
+  .employee-table tbody td {
+    padding: 8px 10px !important;
+  }
+
+  .employee-info {
+    gap: 8px !important;
+  }
+
+  .employee-avatar {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 12px !important;
+  }
+
+  .employee-name {
+    font-size: 13px !important;
+  }
+
+  .employee-id {
+    font-size: 11px !important;
+  }
+
+  .dept-tag {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+  }
+
+  .btn-action.edit,
+  .btn-action.delete {
+    padding: 4px 8px !important;
+    font-size: 11px !important;
+  }
+
+  /* ===== SECTION HEADERS ===== */
+  .section-header {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .section-header h2 {
+    font-size: 18px !important;
+  }
+
+  .section-header .btn-add-modern {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* ===== STATS BADGE ===== */
+  .stats-badge {
+    font-size: 12px !important;
+    padding: 4px 12px !important;
+    align-self: flex-start !important;
+  }
+
+  /* ===== EXPORT BUTTONS ===== */
+  .export-group {
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+  }
+
+  .btn-export {
+    flex: 1 !important;
+    min-width: 60px !important;
+    font-size: 11px !important;
+    padding: 6px 10px !important;
+    justify-content: center !important;
+  }
+
+  /* ===== MGDH SPECIFIC ===== */
+  .mgdh-stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .mgdh-stat-card {
+    padding: 12px !important;
+  }
+
+  .mgdh-stat-card .stat-icon-wrapper {
+    width: 36px !important;
+    height: 36px !important;
+  }
+
+  .mgdh-stat-card .stat-icon-wrapper .stat-icon {
+    font-size: 18px !important;
+  }
+
+  .mgdh-stat-card .stat-text .stat-number {
+    font-size: 18px !important;
+  }
+
+  .mgdh-stat-card .stat-text h4 {
+    font-size: 9px !important;
+  }
+
+  .mgdh-dashboard-content .welcome-header h1 {
+    font-size: 22px !important;
+  }
+
+  .team-summary-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .mgdh-team-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .team-member-card {
+    flex-wrap: wrap !important;
+    padding: 12px !important;
+  }
+
+  .member-stats {
+    flex-direction: row !important;
+    width: 100% !important;
+    justify-content: space-around !important;
+    padding-top: 6px !important;
+    border-top: 1px solid #f0f2f7 !important;
+  }
+
+  .member-avatar {
+    width: 40px !important;
+    height: 40px !important;
+    font-size: 16px !important;
+  }
+
+  .member-info h4 {
+    font-size: 13px !important;
+  }
+
+  .member-stat {
+    font-size: 11px !important;
+  }
+
+  /* ===== PENDING ITEMS ===== */
+  .pending-item {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    padding: 8px 0 !important;
+  }
+
+  .pending-info {
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .pending-name {
+    font-size: 13px !important;
+  }
+
+  .pending-type {
+    font-size: 11px !important;
+    padding: 2px 8px !important;
+  }
+
+  .pending-days {
+    font-size: 11px !important;
+  }
+
+  .pending-actions {
+    width: 100% !important;
+    justify-content: flex-end !important;
+    gap: 4px !important;
+  }
+
+  .btn-approve,
+  .btn-reject {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 14px !important;
+  }
+
+  /* ===== TABLES IN MGDH ===== */
+  .leave-table-mgdh {
+    display: block !important;
+    overflow-x: auto !important;
+    font-size: 12px !important;
+  }
+
+  .leave-table-mgdh thead th,
+  .leave-table-mgdh tbody td {
+    padding: 8px 10px !important;
+  }
+
+  /* ===== EMPLOYEE PORTAL SPECIFIC ===== */
+  .employee-dashboard-content .welcome-header h1 {
+    font-size: 22px !important;
+  }
+
+  .employee-dashboard-content .stat-card {
+    padding: 12px !important;
+  }
+
+  .employee-dashboard-content .stat-icon {
+    width: 36px !important;
+    height: 36px !important;
+    font-size: 18px !important;
+  }
+
+  .employee-dashboard-content .stat-info h3 {
+    font-size: 10px !important;
+  }
+
+  .employee-dashboard-content .stat-info p {
+    font-size: 18px !important;
+  }
+
+  .leave-balance-card {
+    padding: 16px !important;
+  }
+
+  /* ===== SIDEBAR IMPROVEMENTS ===== */
+  .employee-sidebar,
+  .mgdh-sidebar {
+    width: 280px !important;
+    transform: translateX(-100%) !important;
+    padding-top: 60px !important;
+  }
+
+  .employee-sidebar.open,
+  .mgdh-sidebar.open {
+    transform: translateX(0) !important;
+  }
+
+  .employee-main-content,
+  .mgdh-main-content {
+    margin-left: 0 !important;
+    padding: 16px !important;
+    padding-top: 76px !important;
+  }
+}
+
+/* ===== EXTRA SMALL PHONES (max-width: 480px) ===== */
+@media screen and (max-width: 480px) {
+  .stats-row {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .actions-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stat-card {
+    padding: 10px 12px !important;
+  }
+
+  .stat-card .stat-icon {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 16px !important;
+    min-width: 32px !important;
+  }
+
+  .stat-card .stat-info p {
+    font-size: 16px !important;
+  }
+
+  .dashboard-box {
+    padding: 12px !important;
+  }
+
+  .dashboard-box h2 {
+    font-size: 14px !important;
+  }
+
+  .mgdh-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  .mgdh-stat-card {
+    padding: 8px 10px !important;
+  }
+
+  .mgdh-stat-card .stat-icon-wrapper {
+    width: 28px !important;
+    height: 28px !important;
+  }
+
+  .mgdh-stat-card .stat-icon-wrapper .stat-icon {
+    font-size: 14px !important;
+  }
+
+  .mgdh-stat-card .stat-text .stat-number {
+    font-size: 14px !important;
+  }
+
+  .mgdh-stat-card .stat-text h4 {
+    font-size: 7px !important;
+  }
+
+  .modal-form {
+    padding: 16px !important;
+    width: 98% !important;
+    max-height: 95vh !important;
+  }
+
+  .page-header-modern h2 {
+    font-size: 16px !important;
+  }
+
+  .btn-add-modern {
+    font-size: 12px !important;
+    padding: 8px !important;
+  }
+
+  .employee-dashboard-content .welcome-header h1,
+  .mgdh-dashboard-content .welcome-header h1 {
+    font-size: 20px !important;
+  }
+
+  .section-header h2 {
+    font-size: 16px !important;
+  }
+
+  .team-member-card {
+    padding: 10px !important;
+  }
+
+  .member-avatar {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 14px !important;
+  }
+
+  .member-info h4 {
+    font-size: 12px !important;
+  }
+
+  .member-stat {
+    font-size: 10px !important;
+  }
+
+  .mgdh-leave-content .section-header h2,
+  .mgdh-team-content .section-header h2,
+  .mgdh-notifications-content .section-header h2 {
+    font-size: 16px !important;
+  }
+
+  /* Table font sizes on very small screens */
+  table th,
+  table td {
+    font-size: 10px !important;
+    padding: 6px 8px !important;
+  }
+
+  table th {
+    font-size: 9px !important;
+    padding: 6px 8px !important;
+  }
+
+  .employee-table thead th,
+  .employee-table tbody td {
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .leave-table thead th,
+  .leave-table tbody td {
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .compliance-table-modern thead th,
+  .compliance-table-modern tbody td {
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .payroll-table-modern thead th,
+  .payroll-table-modern tbody td {
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .users-table-modern thead th,
+  .users-table-modern tbody td {
+    padding: 6px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .pending-name {
+    font-size: 12px !important;
+  }
+
+  .btn-approve,
+  .btn-reject {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 12px !important;
+  }
+}
+
+/* ===== TABLET IMPROVEMENTS (769px - 1024px) ===== */
+@media screen and (min-width: 769px) and (max-width: 1024px) {
+  .stats-row {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 16px !important;
+  }
+
+  .mgdh-stats-grid {
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  .main-content {
+    padding: 16px !important;
+  }
+}
+
+/* ========================================
+   TOUCH-FRIENDLY IMPROVEMENTS
+======================================== */
+
+/* Make buttons and interactive elements larger for touch */
+@media (max-width: 768px) {
+  button,
+  .btn-action,
+  .action-btn,
+  .login-btn,
+  .toggle-btn,
+  .btn-add-modern,
+  .btn-save,
+  .btn-cancel,
+  .btn-export,
+  .btn-view-doc,
+  .btn-view-details {
+    min-height: 44px !important;
+    touch-action: manipulation !important;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+    min-height: 44px !important;
+  }
+
+  /* Prevent zoom on focus for iOS */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Make scrollable areas smoother */
+  .table-container,
+  .doc-status-grid,
+  .notifications-list {
+    -webkit-overflow-scrolling: touch !important;
+    scroll-behavior: smooth !important;
+  }
+}
+
+/* ========================================
+   DARK OVERLAY FOR BETTER READABILITY
+======================================== */
+
+.mobile-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 998;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ========================================
+   SCROLLBAR STYLING FOR MOBILE
+======================================== */
+
+@media (max-width: 768px) {
+  .table-container::-webkit-scrollbar {
+    height: 4px !important;
+  }
+
+  .table-container::-webkit-scrollbar-track {
+    background: #f0f2f5 !important;
+    border-radius: 10px !important;
+  }
+
+  .table-container::-webkit-scrollbar-thumb {
+    background: #4a6fa5 !important;
+    border-radius: 10px !important;
+  }
+
+  .table-container::-webkit-scrollbar-thumb:hover {
+    background: #3a5a8a !important;
+  }
+}

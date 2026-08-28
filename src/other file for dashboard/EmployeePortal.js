@@ -52,7 +52,7 @@ function EmployeePortal() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [employee, setEmployee] = useState(null);
-  const [leaveBalance, setLeaveBalance] = useState({ sickLeave: 0, vacationLeave: 0 });
+  const [leaveBalance, setLeaveBalance] = useState({ sickLeave: 0, vacationLeave: 0, maternityLeave: 0, paternityLeave: 0 });
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -93,13 +93,15 @@ function EmployeePortal() {
   const [timeIn, setTimeIn] = useState(null);
   const [timeOut, setTimeOut] = useState(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [officeStartTime, setOfficeStartTime] = useState('08:00');
-  const [officeEndTime, setOfficeEndTime] = useState('5:00');
+  const [officeStartTime, setOfficeStartTime] = useState('07:00');
+  const [officeEndTime, setOfficeEndTime] = useState('06:00');
   const [attendanceSummary, setAttendanceSummary] = useState({
     totalDays: 0,
     presentDays: 0,
     lateDays: 0,
-    absentDays: 0
+    absentDays: 0,
+    underTimeDays: 0,
+    overTimeDays: 0
   });
 
   // ====== PAYROLL STATES ======
@@ -210,32 +212,28 @@ function EmployeePortal() {
     }
   }, [authUser, authLoading]);
 
-  // Add this after the existing useEffects in EmployeePortal.js
-
-// ====== REAL-TIME EMPLOYEE DATA LISTENER ======
-useEffect(() => {
-  if (employee && employee.id) {
-    // Set up real-time listener for employee data changes
-    const employeeDocRef = doc(db, 'employees', employee.id);
-    const unsubscribe = onSnapshot(employeeDocRef, (docSnapshot) => {
-      if (docSnapshot.exists()) {
-        const updatedData = { id: docSnapshot.id, ...docSnapshot.data() };
-        setEmployee(updatedData);
-        console.log('🔄 Employee data updated in real-time:', updatedData);
-        
-        // If salary changed, also refresh payroll data
-        if (updatedData.salary !== employee.salary) {
-          console.log('💰 Salary updated from', employee.salary, 'to', updatedData.salary);
-          fetchEmployeePayroll();
+  // ====== REAL-TIME EMPLOYEE DATA LISTENER ======
+  useEffect(() => {
+    if (employee && employee.id) {
+      const employeeDocRef = doc(db, 'employees', employee.id);
+      const unsubscribe = onSnapshot(employeeDocRef, (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const updatedData = { id: docSnapshot.id, ...docSnapshot.data() };
+          setEmployee(updatedData);
+          console.log('🔄 Employee data updated in real-time:', updatedData);
+          
+          if (updatedData.salary !== employee.salary) {
+            console.log('💰 Salary updated from', employee.salary, 'to', updatedData.salary);
+            fetchEmployeePayroll();
+          }
         }
-      }
-    }, (error) => {
-      console.error('Error listening to employee updates:', error);
-    });
-    
-    return () => unsubscribe();
-  }
-}, [employee?.id]);
+      }, (error) => {
+        console.error('Error listening to employee updates:', error);
+      });
+      
+      return () => unsubscribe();
+    }
+  }, [employee?.id]);
 
   // ====== REFRESH PAYROLL FUNCTION ======
   const refreshPayrollData = async () => {
@@ -273,7 +271,6 @@ useEffect(() => {
 
       console.log(`📅 Current period: ${startDate} to ${endDate}`);
 
-      // Query payroll for this specific employee
       const payrollQuery = query(
         collection(db, 'payroll'),
         where('employeeId', '==', employee.id),
@@ -297,7 +294,6 @@ useEffect(() => {
         setEmployeeLateDeduction(0);
       }
 
-      // Fetch all payroll history for this employee
       const allPayrollQuery = query(
         collection(db, 'payroll'),
         where('employeeId', '==', employee.id)
@@ -306,11 +302,9 @@ useEffect(() => {
       const history = allPayrollSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       console.log(`📊 Found ${history.length} total payroll records for this employee`);
       
-      // Sort by periodStart (newest first)
       history.sort((a, b) => b.periodStart?.localeCompare(a.periodStart) || 0);
       setAllPayrollHistory(history);
 
-      // Calculate summary
       const summary = history.reduce((acc, record) => ({
         totalEarned: acc.totalEarned + (record.basicSalary || 0),
         totalDeductions: acc.totalDeductions + (record.totalDeductions || 0),
@@ -341,14 +335,12 @@ useEffect(() => {
       let empData = null;
       let empId = null;
 
-      // First, try to find employee by email in the employees collection
       const empQuery = query(collection(db, 'employees'), where('email', '==', authUser.email));
       const empSnapshot = await getDocs(empQuery);
       
       console.log('📊 Employees found:', empSnapshot.size);
       
       if (!empSnapshot.empty) {
-        // Use the employee document ID from the employees collection
         const docRef = empSnapshot.docs[0];
         empData = { id: docRef.id, ...docRef.data() };
         empId = docRef.id;
@@ -357,7 +349,6 @@ useEffect(() => {
       } else {
         console.log('⚠️ No employee document found for email:', authUser.email);
         
-        // Try to create employee from auth user data
         const userDoc = await getDoc(doc(db, 'users', authUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
@@ -375,7 +366,6 @@ useEffect(() => {
           empId = empData.id;
           console.log('Created employee data from user document:', empData);
           
-          // Optionally save this to employees collection
           try {
             await addDoc(collection(db, 'employees'), {
               ...empData,
@@ -392,8 +382,6 @@ useEffect(() => {
 
       if (empData) {
         setEmployee(empData);
-
-        // Debug: Check what ID we're using
         console.log('🎯 Using employee ID for queries:', empId);
 
         // Fetch leave balance
@@ -405,18 +393,22 @@ useEffect(() => {
           setLeaveBalanceId(balanceId);
           setLeaveBalance({ 
             sickLeave: balanceData.sickLeave || 0, 
-            vacationLeave: balanceData.vacationLeave || 0 
+            vacationLeave: balanceData.vacationLeave || 0,
+            maternityLeave: balanceData.maternityLeave || 0,
+            paternityLeave: balanceData.paternityLeave || 0 
           });
         } else {
           const defaultBalance = {
             employeeId: empId,
-            sickLeave: 15,
-            vacationLeave: 15,
+            sickLeave: 5,
+            vacationLeave: 5,
+            maternityLeave: 105,
+            paternityLeave: 7,
             createdAt: new Date().toISOString()
           };
           const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), defaultBalance);
           setLeaveBalanceId(newBalanceRef.id);
-          setLeaveBalance({ sickLeave: 15, vacationLeave: 15 });
+          setLeaveBalance({ sickLeave: 5, vacationLeave: 5, maternityLeave: 105, paternityLeave: 7 });
         }
 
         // Fetch leave requests
@@ -462,7 +454,7 @@ useEffect(() => {
           }
           
           if (Notification.permission === 'granted') {
-            new Notification('📢 Leave Request Update', {
+            new Notification('Leave Request Update', {
               body: latest.message,
               icon: '/favicon.ico'
             });
@@ -484,198 +476,316 @@ useEffect(() => {
   };
 
   // ====== ATTENDANCE FUNCTIONS ======
-  const fetchAttendanceData = async (empId) => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
+const fetchAttendanceData = async (empId) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const todayQuery = query(
+      collection(db, 'attendance'), 
+      where('employeeId', '==', empId),
+      where('date', '==', today)
+    );
+    const todaySnapshot = await getDocs(todayQuery);
+    
+    if (!todaySnapshot.empty) {
+      // Get the most recent entry for today
+      const allDocs = todaySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort by entry number or by timeIn
+      const sortedDocs = allDocs.sort((a, b) => {
+        if (a.entryNumber && b.entryNumber) return b.entryNumber - a.entryNumber;
+        return (b.timeIn || '').localeCompare(a.timeIn || '');
+      });
+      const latestDoc = sortedDocs[0];
+      const todayData = latestDoc;
+      const todayId = latestDoc.id;
       
-      const todayQuery = query(
-        collection(db, 'attendance'), 
-        where('employeeId', '==', empId),
-        where('date', '==', today)
-      );
-      const todaySnapshot = await getDocs(todayQuery);
+      setTodayAttendance({ id: todayId, ...todayData });
+      setTimeIn(todayData.timeIn || null);
+      setTimeOut(todayData.timeOut || null);
+      setIsTimedIn(!!todayData.timeIn);
+      setIsTimedOut(!!todayData.timeOut);
       
-      if (!todaySnapshot.empty) {
-        const todayData = todaySnapshot.docs[0].data();
-        const todayId = todaySnapshot.docs[0].id;
-        setTodayAttendance({ id: todayId, ...todayData });
-        setTimeIn(todayData.timeIn || null);
-        setTimeOut(todayData.timeOut || null);
-        setIsTimedIn(!!todayData.timeIn);
-        setIsTimedOut(!!todayData.timeOut);
-        
-        if (todayData.timeIn && !todayData.timeOut) {
-          setAttendanceStatus('Timed In');
-        } else if (todayData.timeIn && todayData.timeOut) {
-          setAttendanceStatus('Completed');
-        } else {
-          setAttendanceStatus('Not Timed In');
-        }
+      if (todayData.timeIn && !todayData.timeOut) {
+        setAttendanceStatus('Timed In');
+      } else if (todayData.timeIn && todayData.timeOut) {
+        setAttendanceStatus('Completed');
       } else {
-        setTodayAttendance(null);
-        setTimeIn(null);
-        setTimeOut(null);
-        setIsTimedIn(false);
-        setIsTimedOut(false);
         setAttendanceStatus('Not Timed In');
       }
-
-      const allQuery = query(
-        collection(db, 'attendance'), 
-        where('employeeId', '==', empId)
-      );
-      const allSnapshot = await getDocs(allQuery);
-      const records = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAttendanceRecords(records);
-
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      const monthRecords = records.filter(record => {
-        const recordDate = new Date(record.date);
-        return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
-      });
-
-      const totalDays = monthRecords.length;
-      const presentDays = monthRecords.filter(r => r.status === 'Present' || r.status === 'On Time').length;
-      const lateDays = monthRecords.filter(r => r.status === 'Late').length;
-      
-      setAttendanceSummary({
-        totalDays: totalDays || 0,
-        presentDays: presentDays || 0,
-        lateDays: lateDays || 0,
-        absentDays: Math.max(0, totalDays - presentDays - lateDays)
-      });
-
-    } catch (error) {
-      console.error('Error fetching attendance:', error);
+    } else {
+      setTodayAttendance(null);
+      setTimeIn(null);
+      setTimeOut(null);
+      setIsTimedIn(false);
+      setIsTimedOut(false);
+      setAttendanceStatus('Not Timed In');
     }
-  };
 
-  const handleTimeIn = async () => {
-    if (!employee) return;
+    const allQuery = query(
+      collection(db, 'attendance'), 
+      where('employeeId', '==', empId)
+    );
+    const allSnapshot = await getDocs(allQuery);
+    const records = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setAttendanceRecords(records);
+
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const monthRecords = records.filter(record => {
+      const recordDate = new Date(record.date);
+      return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
+    });
+
+    const totalDays = monthRecords.length;
+    const presentDays = monthRecords.filter(r => r.status === 'Present' || r.status === 'On Time').length;
+    const lateDays = monthRecords.filter(r => r.status === 'Late').length;
+    const underTimeDays = monthRecords.filter(r => r.status === 'Under Time').length;
+    const overTimeDays = monthRecords.filter(r => r.status === 'Over Time').length;
     
-    setAttendanceLoading(true);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const currentTime = new Date();
-      const timeInStr = currentTime.toTimeString().slice(0, 5);
-      
-      const existingQuery = query(
-        collection(db, 'attendance'),
-        where('employeeId', '==', employee.id),
-        where('date', '==', today)
-      );
-      const existingSnapshot = await getDocs(existingQuery);
-      
-      if (!existingSnapshot.empty) {
-        alert('You have already timed in today!');
-        setAttendanceLoading(false);
-        return;
+    setAttendanceSummary({
+      totalDays: totalDays || 0,
+      presentDays: presentDays || 0,
+      lateDays: lateDays || 0,
+      absentDays: Math.max(0, totalDays - presentDays - lateDays - underTimeDays - overTimeDays),
+      underTimeDays: underTimeDays || 0,
+      overTimeDays: overTimeDays || 0
+    });
+
+  } catch (error) {
+    console.error('Error fetching attendance:', error);
+  }
+};
+
+// Helper function to parse time string to minutes
+const timeToMinutes = (timeStr) => {
+  if (!timeStr) return 0;
+  const parts = timeStr.split(':');
+  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+};
+
+// Helper function to format time from Date object
+const formatTime = (date) => {
+  if (!date) return null;
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const handleTimeIn = async () => {
+  if (!employee) return;
+  
+  setAttendanceLoading(true);
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const currentTime = new Date();
+    const timeInStr = formatTime(currentTime);
+    
+    // Check existing entries for today
+    const existingQuery = query(
+      collection(db, 'attendance'),
+      where('employeeId', '==', employee.id),
+      where('date', '==', today)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
+    const existingDocs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Find if there's an incomplete entry (has timeIn but no timeOut)
+    const incompleteEntry = existingDocs.find(doc => doc.timeIn && !doc.timeOut);
+    
+    if (incompleteEntry) {
+      alert('You have an incomplete attendance entry. Please time out first.');
+      setAttendanceLoading(false);
+      return;
+    }
+
+    // Determine entry number
+    const entryNumber = existingDocs.length + 1;
+    
+    // Determine status based on office start time
+    const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
+
+    await addDoc(collection(db, 'attendance'), {
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      department: employee.department,
+      date: today,
+      timeIn: timeInStr,
+      timeOut: null,
+      status: status,
+      entryNumber: entryNumber,
+      recordedAt: new Date().toISOString(),
+      timestamp: Timestamp.now()
+    });
+
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      department: employee.department,
+      type: 'attendance_timein',
+      message: `${employee.fullName} timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
+      read: false,
+      forAdmin: true,
+      forEmployee: false,
+      createdAt: new Date().toISOString()
+    });
+
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      type: 'attendance_confirmation',
+      message: `You have successfully timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
+      read: false,
+      forEmployee: true,
+      forAdmin: false,
+      createdAt: new Date().toISOString()
+    });
+
+    setTimeIn(timeInStr);
+    setIsTimedIn(true);
+    setAttendanceStatus('Timed In');
+    
+    const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
+    alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}\nEntry ${entryNumber}`);
+    
+    await fetchAttendanceData(employee.id);
+    
+  } catch (error) {
+    console.error('Error timing in:', error);
+    alert('Failed to time in. Please try again.');
+  } finally {
+    setAttendanceLoading(false);
+  }
+};
+
+const handleTimeOut = async () => {
+  if (!employee) return;
+  
+  setAttendanceLoading(true);
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const currentTime = new Date();
+    const timeOutStr = formatTime(currentTime);
+    
+    // Find the most recent attendance record for today that has timeIn but no timeOut
+    const existingQuery = query(
+      collection(db, 'attendance'),
+      where('employeeId', '==', employee.id),
+      where('date', '==', today)
+    );
+    const existingSnapshot = await getDocs(existingQuery);
+    
+    if (existingSnapshot.empty) {
+      alert('You have not timed in today.');
+      setAttendanceLoading(false);
+      return;
+    }
+
+    // Find the record with timeIn but no timeOut (most recent incomplete entry)
+    let recordToUpdate = null;
+    let recordId = null;
+    
+    const docs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // Sort by entry number descending to get the latest
+    docs.sort((a, b) => (b.entryNumber || 0) - (a.entryNumber || 0));
+    
+    for (const doc of docs) {
+      if (doc.timeIn && !doc.timeOut) {
+        recordToUpdate = doc;
+        recordId = doc.id;
+        break;
       }
-
-      const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
-
-      await addDoc(collection(db, 'attendance'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department,
-        date: today,
-        timeIn: timeInStr,
-        timeOut: null,
-        status: status,
-        recordedAt: new Date().toISOString(),
-        timestamp: Timestamp.now()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department,
-        type: 'attendance_timein',
-        message: `${employee.fullName} timed in at ${timeInStr} (${status})`,
-        read: false,
-        forAdmin: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        type: 'attendance_confirmation',
-        message: `You have successfully timed in at ${timeInStr} (${status})`,
-        read: false,
-        forEmployee: true,
-        forAdmin: false,
-        createdAt: new Date().toISOString()
-      });
-
-      setTimeIn(timeInStr);
-      setIsTimedIn(true);
-      setAttendanceStatus('Timed In');
-      
-      const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
-      alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}`);
-      
-      await fetchAttendanceData(employee.id);
-      
-    } catch (error) {
-      console.error('Error timing in:', error);
-      alert('Failed to time in. Please try again.');
-    } finally {
-      setAttendanceLoading(false);
     }
-  };
 
-  const handleTimeOut = async () => {
-    if (!employee || !todayAttendance) return;
+    if (!recordToUpdate) {
+      alert('All your entries for today are already completed. Please time in first if you want to record another entry.');
+      setAttendanceLoading(false);
+      return;
+    }
+
+    // Determine if this is under time or over time
+    const officeEndMinutes = timeToMinutes(officeEndTime);
+    const timeOutMinutes = timeToMinutes(timeOutStr);
+    const timeInMinutes = timeToMinutes(recordToUpdate.timeIn);
     
-    setAttendanceLoading(true);
-    try {
-      const currentTime = new Date();
-      const timeOutStr = currentTime.toTimeString().slice(0, 5);
-      
-      await updateDoc(doc(db, 'attendance', todayAttendance.id), {
-        timeOut: timeOutStr,
-        updatedAt: new Date().toISOString()
-      });
+    let status = recordToUpdate.status || 'Present';
+    let overtimeMinutes = 0;
+    let undertimeMinutes = 0;
 
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department,
-        type: 'attendance_timeout',
-        message: ` ${employee.fullName} timed out at ${timeOutStr}`,
-        read: false,
-        forAdmin: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        type: 'attendance_confirmation',
-        message: `You have successfully timed out at ${timeOutStr}`,
-        read: false,
-        forEmployee: true,
-        forAdmin: false,
-        createdAt: new Date().toISOString()
-      });
-
-      setTimeOut(timeOutStr);
-      setIsTimedOut(true);
-      setAttendanceStatus('Completed');
-      
-      alert(`Timed out successfully at ${timeOutStr}`);
-      
-      await fetchAttendanceData(employee.id);
-      
-    } catch (error) {
-      console.error('Error timing out:', error);
-      alert('Failed to time out. Please try again.');
-    } finally {
-      setAttendanceLoading(false);
+    // Check if timed out early (undertime)
+    if (timeOutMinutes < officeEndMinutes) {
+      const diffMinutes = officeEndMinutes - timeOutMinutes;
+      if (diffMinutes >= 15) { // 15 minutes threshold
+        status = 'Under Time';
+        undertimeMinutes = diffMinutes;
+      } else {
+        // If less than 15 minutes early, still considered on time
+        status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+      }
+    } 
+    // Check if timed out late (overtime)
+    else if (timeOutMinutes > officeEndMinutes) {
+      const diffMinutes = timeOutMinutes - officeEndMinutes;
+      if (diffMinutes >= 15) { // 15 minutes threshold
+        status = 'Over Time';
+        overtimeMinutes = diffMinutes;
+      } else {
+        status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+      }
+    } else {
+      status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
     }
-  };
+
+    await updateDoc(doc(db, 'attendance', recordId), {
+      timeOut: timeOutStr,
+      status: status,
+      overtimeMinutes: overtimeMinutes,
+      undertimeMinutes: undertimeMinutes,
+      updatedAt: new Date().toISOString()
+    });
+
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      department: employee.department,
+      type: 'attendance_timeout',
+      message: `${employee.fullName} timed out at ${timeOutStr} (${status})${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
+      read: false,
+      forAdmin: true,
+      forEmployee: false,
+      createdAt: new Date().toISOString()
+    });
+
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      type: 'attendance_confirmation',
+      message: `You have successfully timed out at ${timeOutStr}\nStatus: ${status}${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
+      read: false,
+      forEmployee: true,
+      forAdmin: false,
+      createdAt: new Date().toISOString()
+    });
+
+    setTimeOut(timeOutStr);
+    setIsTimedOut(true);
+    setAttendanceStatus('Completed');
+    
+    let alertMessage = `Timed out successfully at ${timeOutStr}\nStatus: ${status}`;
+    if (overtimeMinutes > 0) {
+      alertMessage += `\n🕐 Overtime: ${overtimeMinutes} minutes`;
+    }
+    if (undertimeMinutes > 0) {
+      alertMessage += `\n⚠️ Undertime: ${undertimeMinutes} minutes`;
+    }
+    alert(alertMessage);
+    
+    await fetchAttendanceData(employee.id);
+    
+  } catch (error) {
+    console.error('Error timing out:', error);
+    alert('Failed to time out. Please try again.');
+  } finally {
+    setAttendanceLoading(false);
+  }
+};
 
   // ====== SETUP REALTIME LISTENERS ======
   const setupRealtimeListeners = () => {
@@ -737,7 +847,6 @@ useEffect(() => {
       setNotifications(employeeNotifs);
     });
 
-    // ====== PAYROLL REAL-TIME LISTENER (Connects to Payroll.js) ======
     const payrollQuery = query(
       collection(db, 'payroll'),
       where('employeeId', '==', employee.id)
@@ -761,162 +870,189 @@ useEffect(() => {
     }
   };
 
+  //===leave management====//
   const handleLeaveSubmit = async (e) => {
-    e.preventDefault();
-    if (!leaveFormData.startDate || !leaveFormData.endDate) {
-      alert('Please fill all required fields');
-      return;
-    }
+  e.preventDefault();
+  if (!leaveFormData.startDate || !leaveFormData.endDate) {
+    alert('Please fill all required fields');
+    return;
+  }
 
-    setSubmitting(true);
-    try {
-      const days = calculateDays(leaveFormData.startDate, leaveFormData.endDate);
+  setSubmitting(true);
+  try {
+    const days = calculateDays(leaveFormData.startDate, leaveFormData.endDate);
+    
+    // Get the correct current balance based on leave type
+    const currentBalance = leaveFormData.type === 'Vacation' 
+      ? leaveBalance.vacationLeave
+      : leaveFormData.type === 'Maternity'
+      ? leaveBalance.maternityLeave
+      : leaveFormData.type === 'Paternity'
+      ? leaveBalance.paternityLeave
+      : leaveBalance.sickLeave;
       
-      const currentBalance = leaveFormData.type === 'Vacation' 
-        ? leaveBalance.vacationLeave 
-        : leaveBalance.sickLeave;
-        
-      if (days > currentBalance) {
-        alert(`Insufficient ${leaveFormData.type} leave balance. Available: ${currentBalance} days`);
-        setSubmitting(false);
-        return;
-      }
-
-      const leaveRef = await addDoc(collection(db, 'leaveRequests'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        type: leaveFormData.type,
-        startDate: leaveFormData.startDate,
-        endDate: leaveFormData.endDate,
-        days: days,
-        reason: leaveFormData.reason || '',
-        status: 'Pending',
-        department: employee.department,
-        dateSubmitted: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department,
-        leaveId: leaveRef.id,
-        leaveType: leaveFormData.type,
-        leaveDays: days,
-        message: `${employee.fullName} submitted a ${leaveFormData.type} leave request for ${days} days`,
-        type: 'leave_request',
-        read: false,
-        forMGDH: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        leaveId: leaveRef.id,
-        message: `Your ${leaveFormData.type} leave request for ${days} days has been submitted and is pending approval.`,
-        type: 'leave_confirmation',
-        read: false,
-        forEmployee: true,
-        forMGDH: false,
-        createdAt: new Date().toISOString()
-      });
-
-      const updatedBalance = { ...leaveBalance };
-      if (leaveFormData.type === 'Vacation') {
-        updatedBalance.vacationLeave = currentBalance - days;
-      } else {
-        updatedBalance.sickLeave = currentBalance - days;
-      }
-
-      if (leaveBalanceId) {
-        await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
-          vacationLeave: updatedBalance.vacationLeave,
-          sickLeave: updatedBalance.sickLeave,
-          updatedAt: new Date().toISOString()
-        });
-      } else {
-        const newBalance = {
-          employeeId: employee.id,
-          vacationLeave: updatedBalance.vacationLeave,
-          sickLeave: updatedBalance.sickLeave,
-          createdAt: new Date().toISOString()
-        };
-        const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), newBalance);
-        setLeaveBalanceId(newBalanceRef.id);
-      }
-
-      setLeaveBalance(updatedBalance);
-
-      alert(`Leave request submitted successfully!\n${days} ${leaveFormData.type} days deducted.\nYour department head has been notified.`);
-      setShowLeaveForm(false);
-      setLeaveFormData({ type: 'Vacation', startDate: '', endDate: '', reason: '' });
-      
-      await fetchEmployeeData();
-    } catch (error) {
-      console.error('Error submitting leave:', error);
-      alert('Failed to submit leave request');
-    } finally {
+    if (days > currentBalance) {
+      alert(`Insufficient ${leaveFormData.type} leave balance. Available: ${currentBalance} days`);
       setSubmitting(false);
-    }
-  };
-
-  const handleCancelLeave = async (leaveId, leaveData) => {
-    if (!window.confirm(`Are you sure you want to cancel your ${leaveData.type} leave request?`)) {
       return;
     }
 
-    try {
-      if (leaveData.status !== 'Pending') {
-        alert('You can only cancel pending leave requests.');
-        return;
-      }
+    const leaveRef = await addDoc(collection(db, 'leaveRequests'), {
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      type: leaveFormData.type,
+      startDate: leaveFormData.startDate,
+      endDate: leaveFormData.endDate,
+      days: days,
+      reason: leaveFormData.reason || '',
+      status: 'Pending',
+      department: employee.department,
+      dateSubmitted: new Date().toISOString()
+    });
 
-      await deleteDoc(doc(db, 'leaveRequests', leaveId));
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      department: employee.department,
+      leaveId: leaveRef.id,
+      leaveType: leaveFormData.type,
+      leaveDays: days,
+      message: `${employee.fullName} submitted a ${leaveFormData.type} leave request for ${days} days`,
+      type: 'leave_request',
+      read: false,
+      forMGDH: true,
+      forEmployee: false,
+      createdAt: new Date().toISOString()
+    });
 
-      const currentBalance = leaveData.type === 'Vacation' 
-        ? leaveBalance.vacationLeave 
-        : leaveBalance.sickLeave;
-      
-      const updatedBalance = { ...leaveBalance };
-      if (leaveData.type === 'Vacation') {
-        updatedBalance.vacationLeave = currentBalance + leaveData.days;
-      } else {
-        updatedBalance.sickLeave = currentBalance + leaveData.days;
-      }
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      leaveId: leaveRef.id,
+      message: `Your ${leaveFormData.type} leave request for ${days} days has been submitted and is pending approval.`,
+      type: 'leave_confirmation',
+      read: false,
+      forEmployee: true,
+      forMGDH: false,
+      createdAt: new Date().toISOString()
+    });
 
-      if (leaveBalanceId) {
-        await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
-          vacationLeave: updatedBalance.vacationLeave,
-          sickLeave: updatedBalance.sickLeave,
-          updatedAt: new Date().toISOString()
-        });
-      }
-
-      setLeaveBalance(updatedBalance);
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department,
-        leaveId: leaveId,
-        leaveType: leaveData.type,
-        leaveDays: leaveData.days,
-        message: `${employee.fullName} cancelled their ${leaveData.type} leave request (${leaveData.days} days).`,
-        type: 'leave_cancelled',
-        read: false,
-        forMGDH: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
-
-      alert(`Leave request cancelled.\n${leaveData.days} ${leaveData.type} days restored.`);
-      
-      await fetchEmployeeData();
-    } catch (error) {
-      console.error('Error cancelling leave:', error);
-      alert('Failed to cancel leave request');
+    // Update balance - using leaveFormData.type (not leaveData)
+    const updatedBalance = { ...leaveBalance };
+    if (leaveFormData.type === 'Vacation') {
+      updatedBalance.vacationLeave = currentBalance - days;
+    } else if (leaveFormData.type === 'Maternity') {
+      updatedBalance.maternityLeave = currentBalance - days;
+    } else if (leaveFormData.type === 'Paternity') {
+      updatedBalance.paternityLeave = currentBalance - days;
+    } else {
+      updatedBalance.sickLeave = currentBalance - days;
     }
-  };
+
+    if (leaveBalanceId) {
+      await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
+        vacationLeave: updatedBalance.vacationLeave,
+        sickLeave: updatedBalance.sickLeave,
+        maternityLeave: updatedBalance.maternityLeave,
+        paternityLeave: updatedBalance.paternityLeave,
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      const newBalance = {
+        employeeId: employee.id,
+        vacationLeave: updatedBalance.vacationLeave,
+        sickLeave: updatedBalance.sickLeave,
+        maternityLeave: updatedBalance.maternityLeave,
+        paternityLeave: updatedBalance.paternityLeave,
+        createdAt: new Date().toISOString()
+      };
+      const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), newBalance);
+      setLeaveBalanceId(newBalanceRef.id);
+    }
+
+    setLeaveBalance(updatedBalance);
+
+    alert(`Leave request submitted successfully!\n${days} ${leaveFormData.type} days deducted.\nYour department head has been notified.`);
+    setShowLeaveForm(false);
+    setLeaveFormData({ type: 'Vacation', startDate: '', endDate: '', reason: '' });
+    
+    await fetchEmployeeData();
+  } catch (error) {
+    console.error('Error submitting leave:', error);
+    alert('Failed to submit leave request');
+  } finally {
+    setSubmitting(false);
+  }
+};
+
+ const handleCancelLeave = async (leaveId, leaveData) => {
+  if (!window.confirm(`Are you sure you want to cancel your ${leaveData.type} leave request?`)) {
+    return;
+  }
+
+  try {
+    if (leaveData.status !== 'Pending') {
+      alert('You can only cancel pending leave requests.');
+      return;
+    }
+
+    await deleteDoc(doc(db, 'leaveRequests', leaveId));
+
+    // Get the correct current balance based on leaveData.type
+    const currentBalance = leaveData.type === 'Vacation' 
+      ? leaveBalance.vacationLeave
+      : leaveData.type === 'Maternity'
+      ? leaveBalance.maternityLeave
+      : leaveData.type === 'Paternity'
+      ? leaveBalance.paternityLeave
+      : leaveBalance.sickLeave;
+    
+    // Restore days - using leaveData (not leaveFormData)
+    const updatedBalance = { ...leaveBalance };
+    if (leaveData.type === 'Vacation') {
+      updatedBalance.vacationLeave = currentBalance + leaveData.days;
+    } else if (leaveData.type === 'Maternity') {
+      updatedBalance.maternityLeave = currentBalance + leaveData.days;
+    } else if (leaveData.type === 'Paternity') {
+      updatedBalance.paternityLeave = currentBalance + leaveData.days;
+    } else {
+      updatedBalance.sickLeave = currentBalance + leaveData.days;
+    }
+
+    if (leaveBalanceId) {
+      await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
+        vacationLeave: updatedBalance.vacationLeave,
+        sickLeave: updatedBalance.sickLeave,
+        maternityLeave: updatedBalance.maternityLeave,
+        paternityLeave: updatedBalance.paternityLeave,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    setLeaveBalance(updatedBalance);
+
+    await addDoc(collection(db, 'notifications'), {
+      employeeId: employee.id,
+      employeeName: employee.fullName,
+      department: employee.department,
+      leaveId: leaveId,
+      leaveType: leaveData.type,
+      leaveDays: leaveData.days,
+      message: `${employee.fullName} cancelled their ${leaveData.type} leave request (${leaveData.days} days).`,
+      type: 'leave_cancelled',
+      read: false,
+      forMGDH: true,
+      forEmployee: false,
+      createdAt: new Date().toISOString()
+    });
+
+    alert(`Leave request cancelled.\n${leaveData.days} ${leaveData.type} days restored.`);
+    
+    await fetchEmployeeData();
+  } catch (error) {
+    console.error('Error cancelling leave:', error);
+    alert('Failed to cancel leave request');
+  }
+};
 
   // ====== NOTIFICATION FUNCTIONS ======
   const markNotificationAsRead = async (notificationId) => {
@@ -1204,6 +1340,10 @@ useEffect(() => {
         return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> On Time</span>;
       case 'Late':
         return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Late</span>;
+      case 'Under Time':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Under Time</span>;
+      case 'Over Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Over Time</span>;
       case 'Timed In':
         return <span className="status-badge info"><AccessTimeIcon style={{ fontSize: 14, marginRight: 4 }} /> Timed In</span>;
       case 'Completed':
@@ -1234,9 +1374,8 @@ useEffect(() => {
     }).format(parseFloat(amount));
   };
 
-  // ====== GENERATE PAYSLIP PDF (True Download) ======
-const generatePayslipPDF = (payrollData) => {
-  // Show loading indicator
+  // ====== GENERATE ATTENDANCE PDF (TRUE DOWNLOAD) ======
+const generateAttendancePDF = async () => {
   const loadingMsg = document.createElement('div');
   loadingMsg.style.cssText = `
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -1247,15 +1386,17 @@ const generatePayslipPDF = (payrollData) => {
   `;
   loadingMsg.innerHTML = `
     <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
-    Generating payslip...
+    Generating attendance report...
   `;
   document.body.appendChild(loadingMsg);
 
-  const payslipHTML = `
+  const sortedRecords = [...attendanceRecords].sort((a, b) => b.date.localeCompare(a.date));
+
+  const attendanceHTML = `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Payslip - ${employee?.fullName || 'Employee'}</title>
+      <title>Attendance Report - ${employee?.fullName || 'Employee'}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -1264,18 +1405,16 @@ const generatePayslipPDF = (payrollData) => {
           padding: 40px; 
           display: flex;
           justify-content: center;
-          align-items: center;
-          min-height: 100vh;
         }
-        .payslip-container {
-          max-width: 800px;
+        .report-container {
+          max-width: 1000px;
           width: 100%;
           background: white;
           border-radius: 16px;
           padding: 40px;
           box-shadow: 0 10px 40px rgba(0,0,0,0.15);
         }
-        .payslip-header {
+        .report-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
@@ -1283,40 +1422,32 @@ const generatePayslipPDF = (payrollData) => {
           padding-bottom: 20px;
           margin-bottom: 20px;
         }
-        .payslip-header .title h1 {
+        .report-header .title h1 {
           color: #1a2a4a;
           font-size: 28px;
           margin: 0;
         }
-        .payslip-header .title p {
+        .report-header .title p {
           color: #6b7a8f;
           font-size: 14px;
           margin: 4px 0 0;
         }
-        .payslip-header .logo {
-          text-align: right;
-        }
-        .payslip-header .logo h3 {
+        .report-header .logo h3 {
           color: #4a6fa5;
           margin: 0;
         }
-        .payslip-header .logo p {
-          font-size: 12px;
+        .report-header .logo p {
           color: #8a9bb5;
-          margin: 2px 0 0;
+          font-size: 12px;
         }
         .employee-info {
           display: grid;
-          grid-template-columns: 1fr 1fr;
+          grid-template-columns: 1fr 1fr 1fr;
           gap: 12px;
           background: #f8fafd;
           padding: 16px 20px;
           border-radius: 10px;
           margin-bottom: 20px;
-        }
-        .employee-info .info-item {
-          display: flex;
-          flex-direction: column;
         }
         .employee-info .info-item label {
           font-size: 11px;
@@ -1330,42 +1461,69 @@ const generatePayslipPDF = (payrollData) => {
           font-weight: 600;
           color: #1a2a4a;
         }
-        .payslip-table {
+        .summary-grid {
+          display: grid;
+          grid-template-columns: repeat(6, 1fr);
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        .summary-card {
+          background: #f8fafd;
+          padding: 12px 16px;
+          border-radius: 8px;
+          text-align: center;
+        }
+        .summary-card .number {
+          font-size: 22px;
+          font-weight: 700;
+          color: #4a6fa5;
+        }
+        .summary-card .label {
+          font-size: 11px;
+          color: #8a9bb5;
+          text-transform: uppercase;
+        }
+        .summary-card.green .number { color: #27ae60; }
+        .summary-card.orange .number { color: #e67e22; }
+        .summary-card.red .number { color: #e74c3c; }
+        .summary-card.purple .number { color: #8e44ad; }
+        .summary-card.success .number { color: #2ecc71; }
+        .attendance-table {
           width: 100%;
           border-collapse: collapse;
-          margin: 20px 0;
+          margin-top: 10px;
         }
-        .payslip-table th {
+        .attendance-table th {
           background: #4a6fa5;
           color: white;
-          padding: 12px 16px;
+          padding: 10px 14px;
           text-align: left;
           font-size: 13px;
           font-weight: 600;
         }
-        .payslip-table td {
-          padding: 12px 16px;
+        .attendance-table td {
+          padding: 10px 14px;
           border-bottom: 1px solid #eef2f7;
-          font-size: 14px;
+          font-size: 13px;
         }
-        .payslip-table tr:last-child td {
-          border-bottom: none;
+        .attendance-table tr:nth-child(even) {
+          background: #fafbfd;
         }
-        .payslip-table .amount {
-          text-align: right;
-          font-weight: 500;
+        .attendance-table .status-badge {
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 12px;
+          font-weight: 600;
+          display: inline-block;
         }
-        .payslip-table .total-row {
-          background: #f0f4fe;
-          font-weight: 700;
-        }
-        .payslip-table .total-row td {
-          font-size: 16px;
-        }
-        .payslip-table .deduction-row td {
-          color: #e74c3c;
-        }
-        .payslip-footer {
+        .status-badge.success { background: #d4edda; color: #155724; }
+        .status-badge.warning { background: #fff3cd; color: #856404; }
+        .status-badge.danger { background: #f8d7da; color: #721c24; }
+        .status-badge.info { background: #d1ecf1; color: #0c5460; }
+        .status-badge.secondary { background: #e2e3e5; color: #383d41; }
+        .status-badge.undertime { background: #fef3cd; color: #856404; }
+        .status-badge.overtime { background: #d4edda; color: #155724; }
+        .report-footer {
           margin-top: 20px;
           padding-top: 20px;
           border-top: 2px solid #eef2f7;
@@ -1374,45 +1532,26 @@ const generatePayslipPDF = (payrollData) => {
           font-size: 13px;
           color: #8a9bb5;
         }
-        .payslip-footer .status-badge {
-          padding: 4px 16px;
-          border-radius: 20px;
-          font-size: 13px;
+        .report-footer .total-records {
           font-weight: 600;
-        }
-        .payslip-footer .status-badge.paid {
-          background: #e4f5e9;
-          color: #27ae60;
-        }
-        .payslip-footer .status-badge.pending {
-          background: #fef0e0;
-          color: #e67e22;
-        }
-        .late-warning {
-          background: #fef9f0;
-          border-left: 4px solid #e67e22;
-          padding: 10px 16px;
-          margin: 10px 0;
-          border-radius: 4px;
-          font-size: 13px;
-          color: #856404;
+          color: #4a6fa5;
         }
         @media print {
           body { padding: 20px; background: white; }
-          .payslip-container { box-shadow: none; }
+          .report-container { box-shadow: none; }
         }
       </style>
     </head>
     <body>
-      <div class="payslip-container" id="payslip-container">
-        <div class="payslip-header">
+      <div class="report-container" id="report-container">
+        <div class="report-header">
           <div class="title">
-            <h1>PAYSLIP</h1>
+            <h1>ATTENDANCE REPORT</h1>
             <p>Municipality of Pagbilao, Quezon</p>
           </div>
           <div class="logo">
             <h3>HR Management System</h3>
-            <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
+            <p>${new Date().toLocaleDateString()}</p>
           </div>
         </div>
 
@@ -1422,10 +1561,6 @@ const generatePayslipPDF = (payrollData) => {
             <span>${employee?.fullName || 'N/A'}</span>
           </div>
           <div class="info-item">
-            <label>Employee ID</label>
-            <span>${employee?.id || 'N/A'}</span>
-          </div>
-          <div class="info-item">
             <label>Department</label>
             <span>${employee?.department || 'N/A'}</span>
           </div>
@@ -1433,64 +1568,97 @@ const generatePayslipPDF = (payrollData) => {
             <label>Position</label>
             <span>${employee?.position || 'N/A'}</span>
           </div>
-          <div class="info-item">
-            <label>Pay Period</label>
-            <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="number">${attendanceSummary.totalDays}</div>
+            <div class="label">Total Days</div>
           </div>
-          <div class="info-item">
-            <label>Status</label>
-            <span>
-              <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
-                ${payrollData.status || 'Pending'}
-              </span>
-            </span>
+          <div class="summary-card green">
+            <div class="number">${attendanceSummary.presentDays || 0}</div>
+            <div class="label">Present</div>
+          </div>
+          <div class="summary-card orange">
+            <div class="number">${attendanceSummary.lateDays || 0}</div>
+            <div class="label">Late</div>
+          </div>
+          <div class="summary-card purple">
+            <div class="number">${attendanceSummary.underTimeDays || 0}</div>
+            <div class="label">Under Time</div>
+          </div>
+          <div class="summary-card success">
+            <div class="number">${attendanceSummary.overTimeDays || 0}</div>
+            <div class="label">Over Time</div>
+          </div>
+          <div class="summary-card red">
+            <div class="number">${attendanceSummary.absentDays || 0}</div>
+            <div class="label">Absent</div>
           </div>
         </div>
 
-        ${payrollData.lateDays > 0 ? `
-          <div class="late-warning">
-            ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
-            Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
-          </div>
-        ` : ''}
-
-        <table class="payslip-table">
+        <table class="attendance-table">
           <thead>
             <tr>
-              <th>Description</th>
-              <th style="text-align:right;">Amount</th>
+              <th>Date</th>
+              <th>Time In</th>
+              <th>Time Out</th>
+              <th>Status</th>
+              <th>Remarks</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td>Basic Salary</td>
-              <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
-            </tr>
-            ${payrollData.lateDays > 0 ? `
-              <tr class="deduction-row">
-                <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
-                <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
+            ${sortedRecords.map(record => {
+              let remarks = '';
+              let statusClass = 'secondary';
+              if (record.status === 'On Time') {
+                statusClass = 'success';
+                remarks = 'On time';
+              } else if (record.status === 'Late') {
+                statusClass = 'warning';
+                remarks = 'Late arrival';
+              } else if (record.status === 'Under Time') {
+                statusClass = 'undertime';
+                remarks = record.undertimeMinutes ? `Undertime: ${record.undertimeMinutes} mins` : 'Undertime';
+              } else if (record.status === 'Over Time') {
+                statusClass = 'overtime';
+                remarks = record.overtimeMinutes ? `Overtime: ${record.overtimeMinutes} mins` : 'Overtime';
+              } else if (record.status === 'Present') {
+                statusClass = 'success';
+                remarks = 'Present';
+              }
+              return `
+                <tr>
+                  <td>${record.date}</td>
+                  <td>${record.timeIn || '—'}</td>
+                  <td>${record.timeOut || '—'}</td>
+                  <td>
+                    <span class="status-badge ${statusClass}">
+                      ${record.status || 'Present'}
+                    </span>
+                  </td>
+                  <td>${remarks}</td>
+                </tr>
+              `;
+            }).join('')}
+            ${sortedRecords.length === 0 ? `
+              <tr>
+                <td colspan="5" style="text-align:center; color:#8a9bb5; padding:20px;">
+                  No attendance records found
+                </td>
               </tr>
             ` : ''}
-            ${(payrollData.originalDeductions || 0) > 0 ? `
-              <tr class="deduction-row">
-                <td>Other Deductions</td>
-                <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
-              </tr>
-            ` : ''}
-            <tr class="total-row">
-              <td><strong>Net Pay</strong></td>
-              <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
-            </tr>
           </tbody>
         </table>
 
-        <div class="payslip-footer">
+        <div class="report-footer">
           <div>
             <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+            <p>Office Hours: ${officeStartTime} - ${officeEndTime}</p>
           </div>
           <div>
-            <p>${employee?.fullName || 'Employee'} - Payslip</p>
+            <p class="total-records">Total Records: ${sortedRecords.length}</p>
+            <p>${employee?.fullName || 'Employee'} - Attendance Report</p>
           </div>
         </div>
       </div>
@@ -1498,46 +1666,667 @@ const generatePayslipPDF = (payrollData) => {
     </html>
   `;
 
-  // Create a temporary container
+  // Create a temporary container for PDF generation
   const container = document.createElement('div');
-  container.innerHTML = payslipHTML;
+  container.innerHTML = attendanceHTML;
   document.body.appendChild(container);
 
-  const element = container.querySelector('.payslip-container');
+  const element = container.querySelector('.report-container');
 
   // Generate filename
-  const fileName = `Payslip_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${payrollData.periodMonth || ''}_${payrollData.periodYear || ''}.pdf`;
+  const fileName = `Attendance_Report_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`;
 
-  // Generate PDF and download
-  html2pdf()
-    .set({
-      margin: 10,
-      filename: fileName,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { 
-        scale: 2, 
-        useCORS: true,
-        letterRendering: true
-      },
-      jsPDF: { 
-        unit: 'mm', 
-        format: 'a4', 
-        orientation: 'portrait' 
-      }
-    })
-    .from(element)
-    .save()
-    .then(() => {
-      document.body.removeChild(container);
-      document.body.removeChild(loadingMsg);
-    })
-    .catch((error) => {
-      console.error('PDF generation failed:', error);
-      document.body.removeChild(container);
-      document.body.removeChild(loadingMsg);
-      alert('Failed to generate PDF. Please try again.');
-    });
+  // Generate PDF and download using html2pdf
+  try {
+    await html2pdf()
+      .set({
+        margin: 10,
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true,
+          letterRendering: true,
+          logging: false
+        },
+        jsPDF: { 
+          unit: 'mm', 
+          format: 'a4', 
+          orientation: 'landscape' 
+        }
+      })
+      .from(element)
+      .save();
+    
+    document.body.removeChild(container);
+    document.body.removeChild(loadingMsg);
+  } catch (error) {
+    console.error('PDF generation failed:', error);
+    document.body.removeChild(container);
+    document.body.removeChild(loadingMsg);
+    alert('Failed to generate PDF. Please try again.');
+  }
 };
+
+  // ====== GENERATE PAYSLIP PDF (True Download) ======
+  const generatePayslipPDF = (payrollData) => {
+    // Show loading indicator
+    const loadingMsg = document.createElement('div');
+    loadingMsg.style.cssText = `
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: white; padding: 20px 40px; border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2); z-index: 9999;
+      font-size: 18px; font-weight: 600; color: #4a6fa5;
+      display: flex; align-items: center; gap: 12px;
+    `;
+    loadingMsg.innerHTML = `
+      <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+      Generating payslip...
+    `;
+    document.body.appendChild(loadingMsg);
+
+    const payslipHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payslip - ${employee?.fullName || 'Employee'}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: #f5f7fa; 
+            padding: 40px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+          }
+          .payslip-container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+          }
+          .payslip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #4a6fa5;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+          }
+          .payslip-header .title h1 {
+            color: #1a2a4a;
+            font-size: 28px;
+            margin: 0;
+          }
+          .payslip-header .title p {
+            color: #6b7a8f;
+            font-size: 14px;
+            margin: 4px 0 0;
+          }
+          .payslip-header .logo {
+            text-align: right;
+          }
+          .payslip-header .logo h3 {
+            color: #4a6fa5;
+            margin: 0;
+          }
+          .payslip-header .logo p {
+            font-size: 12px;
+            color: #8a9bb5;
+            margin: 2px 0 0;
+          }
+          .employee-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            background: #f8fafd;
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+          }
+          .employee-info .info-item {
+            display: flex;
+            flex-direction: column;
+          }
+          .employee-info .info-item label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #8a9bb5;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+          }
+          .employee-info .info-item span {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a2a4a;
+          }
+          .payslip-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+          }
+          .payslip-table th {
+            background: #4a6fa5;
+            color: white;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .payslip-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 14px;
+          }
+          .payslip-table tr:last-child td {
+            border-bottom: none;
+          }
+          .payslip-table .amount {
+            text-align: right;
+            font-weight: 500;
+          }
+          .payslip-table .total-row {
+            background: #f0f4fe;
+            font-weight: 700;
+          }
+          .payslip-table .total-row td {
+            font-size: 16px;
+          }
+          .payslip-table .deduction-row td {
+            color: #e74c3c;
+          }
+          .payslip-footer {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eef2f7;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #8a9bb5;
+          }
+          .payslip-footer .status-badge {
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .payslip-footer .status-badge.paid {
+            background: #e4f5e9;
+            color: #27ae60;
+          }
+          .payslip-footer .status-badge.pending {
+            background: #fef0e0;
+            color: #e67e22;
+          }
+          .late-warning {
+            background: #fef9f0;
+            border-left: 4px solid #e67e22;
+            padding: 10px 16px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #856404;
+          }
+          @media print {
+            body { padding: 20px; background: white; }
+            .payslip-container { box-shadow: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="payslip-container" id="payslip-container">
+          <div class="payslip-header">
+            <div class="title">
+              <h1>PAYSLIP</h1>
+              <p>Municipality of Pagbilao, Quezon</p>
+            </div>
+            <div class="logo">
+              <h3>HR Management System</h3>
+              <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
+            </div>
+          </div>
+
+          <div class="employee-info">
+            <div class="info-item">
+              <label>Employee Name</label>
+              <span>${employee?.fullName || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Employee ID</label>
+              <span>${employee?.id || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Department</label>
+              <span>${employee?.department || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Position</label>
+              <span>${employee?.position || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Pay Period</label>
+              <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
+            </div>
+            <div class="info-item">
+              <label>Status</label>
+              <span>
+                <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
+                  ${payrollData.status || 'Pending'}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          ${payrollData.lateDays > 0 ? `
+            <div class="late-warning">
+              ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
+              Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
+            </div>
+          ` : ''}
+
+          <table class="payslip-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style="text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Basic Salary</td>
+                <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
+              </tr>
+              ${payrollData.lateDays > 0 ? `
+                <tr class="deduction-row">
+                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
+                  <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              ${(payrollData.originalDeductions || 0) > 0 ? `
+                <tr class="deduction-row">
+                  <td>Other Deductions</td>
+                  <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              <tr class="total-row">
+                <td><strong>Net Pay</strong></td>
+                <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="payslip-footer">
+            <div>
+              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+            </div>
+            <div>
+              <p>${employee?.fullName || 'Employee'} - Payslip</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    // Create a temporary container
+    const container = document.createElement('div');
+    container.innerHTML = payslipHTML;
+    document.body.appendChild(container);
+
+    const element = container.querySelector('.payslip-container');
+
+    // Generate filename
+    const fileName = `Payslip_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${payrollData.periodMonth || ''}_${payrollData.periodYear || ''}.pdf`;
+
+    // Generate PDF and download
+    html2pdf()
+      .set({
+        margin: 10,
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true,
+          letterRendering: true
+        },
+        jsPDF: { 
+          unit: 'mm', 
+          format: 'a4', 
+          orientation: 'portrait' 
+        }
+      })
+      .from(element)
+      .save()
+      .then(() => {
+        document.body.removeChild(container);
+        document.body.removeChild(loadingMsg);
+      })
+      .catch((error) => {
+        console.error('PDF generation failed:', error);
+        document.body.removeChild(container);
+        document.body.removeChild(loadingMsg);
+        alert('Failed to generate PDF. Please try again.');
+      });
+  };
+
+  // ====== VIEW/PRINT PAYSLIP (Opens print dialog) ======
+  const viewPayslip = (payrollData) => {
+    const payslipHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payslip - ${employee?.fullName || 'Employee'}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: #f5f7fa; 
+            padding: 40px; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+          }
+          .payslip-container {
+            max-width: 800px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+          }
+          .payslip-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #4a6fa5;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+          }
+          .payslip-header .title h1 {
+            color: #1a2a4a;
+            font-size: 28px;
+            margin: 0;
+          }
+          .payslip-header .title p {
+            color: #6b7a8f;
+            font-size: 14px;
+            margin: 4px 0 0;
+          }
+          .payslip-header .logo {
+            text-align: right;
+          }
+          .payslip-header .logo h3 {
+            color: #4a6fa5;
+            margin: 0;
+          }
+          .payslip-header .logo p {
+            font-size: 12px;
+            color: #8a9bb5;
+            margin: 2px 0 0;
+          }
+          .employee-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            background: #f8fafd;
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+          }
+          .employee-info .info-item {
+            display: flex;
+            flex-direction: column;
+          }
+          .employee-info .info-item label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #8a9bb5;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+          }
+          .employee-info .info-item span {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a2a4a;
+          }
+          .payslip-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+          }
+          .payslip-table th {
+            background: #4a6fa5;
+            color: white;
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .payslip-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 14px;
+          }
+          .payslip-table tr:last-child td {
+            border-bottom: none;
+          }
+          .payslip-table .amount {
+            text-align: right;
+            font-weight: 500;
+          }
+          .payslip-table .total-row {
+            background: #f0f4fe;
+            font-weight: 700;
+          }
+          .payslip-table .total-row td {
+            font-size: 16px;
+          }
+          .payslip-table .deduction-row td {
+            color: #e74c3c;
+          }
+          .payslip-footer {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eef2f7;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #8a9bb5;
+          }
+          .payslip-footer .status-badge {
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .payslip-footer .status-badge.paid {
+            background: #e4f5e9;
+            color: #27ae60;
+          }
+          .payslip-footer .status-badge.pending {
+            background: #fef0e0;
+            color: #e67e22;
+          }
+          .late-warning {
+            background: #fef9f0;
+            border-left: 4px solid #e67e22;
+            padding: 10px 16px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #856404;
+          }
+          .print-btn-container {
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8fafd;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+          }
+          .print-btn-container button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .print-btn-container .btn-print {
+            background: #4a6fa5;
+            color: white;
+          }
+          .print-btn-container .btn-print:hover {
+            background: #3a5f8f;
+          }
+          .print-btn-container .btn-close {
+            background: #6c757d;
+            color: white;
+          }
+          .print-btn-container .btn-close:hover {
+            background: #5a6268;
+          }
+          @media print {
+            body { padding: 20px; background: white; }
+            .payslip-container { box-shadow: none; }
+            .print-btn-container { display: none !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="payslip-container" id="payslip-container">
+          <div class="payslip-header">
+            <div class="title">
+              <h1>PAYSLIP</h1>
+              <p>Municipality of Pagbilao, Quezon</p>
+            </div>
+            <div class="logo">
+              <h3>HR Management System</h3>
+              <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
+            </div>
+          </div>
+
+          <div class="employee-info">
+            <div class="info-item">
+              <label>Employee Name</label>
+              <span>${employee?.fullName || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Employee ID</label>
+              <span>${employee?.id || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Department</label>
+              <span>${employee?.department || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Position</label>
+              <span>${employee?.position || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Pay Period</label>
+              <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
+            </div>
+            <div class="info-item">
+              <label>Status</label>
+              <span>
+                <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
+                  ${payrollData.status || 'Pending'}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          ${payrollData.lateDays > 0 ? `
+            <div class="late-warning">
+              ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
+              Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
+            </div>
+          ` : ''}
+
+          <table class="payslip-table">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style="text-align:right;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Basic Salary</td>
+                <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
+              </tr>
+              ${payrollData.lateDays > 0 ? `
+                <tr class="deduction-row">
+                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
+                  <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              ${(payrollData.originalDeductions || 0) > 0 ? `
+                <tr class="deduction-row">
+                  <td>Other Deductions</td>
+                  <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
+                </tr>
+              ` : ''}
+              <tr class="total-row">
+                <td><strong>Net Pay</strong></td>
+                <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="payslip-footer">
+            <div>
+              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+            </div>
+            <div>
+              <p>${employee?.fullName || 'Employee'} - Payslip</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="print-btn-container">
+          <button class="btn-print" onclick="window.print()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M18 9H6"></path>
+              <path d="M18 16H6"></path>
+              <rect x="4" y="9" width="16" height="10" rx="1" ry="1"></rect>
+              <line x1="8" y1="13" x2="16" y2="13"></line>
+            </svg>
+            Print / Save as PDF
+          </button>
+          <button class="btn-close" onclick="window.close()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            Close
+          </button>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank', 'width=900,height=800');
+    if (printWindow) {
+      printWindow.document.write(payslipHTML);
+      printWindow.document.close();
+      printWindow.focus();
+    } else {
+      alert('Please allow popups to view payslip');
+    }
+  };
 
   // ====== PREVIEW MODAL ======
   const renderPreviewModal = () => {
@@ -1892,189 +2681,228 @@ const generatePayslipPDF = (payrollData) => {
   );
 
   // ====== ATTENDANCE TAB ======
-  const renderAttendance = () => (
-    <div className="employee-attendance-content">
-      <div className="section-header">
-        <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+const renderAttendance = () => (
+  <div className="employee-attendance-content">
+    <div className="section-header">
+      <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <span className="stats-badge">{new Date().toLocaleDateString()}</span>
+        <button 
+          onClick={generateAttendancePDF}
+          className="btn-add-modern"
+          style={{
+            background: '#27ae60',
+            color: 'white',
+            padding: '8px 16px',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <GetAppIcon style={{ fontSize: 18 }} />
+          Download PDF
+        </button>
       </div>
+    </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-icon blue"><EventNoteIcon /></div>
-          <div className="stat-info">
-            <h3>Total Days</h3>
-            <p>{attendanceSummary.totalDays}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon green"><CheckCircleIcon /></div>
-          <div className="stat-info">
-            <h3>Present</h3>
-            <p>{attendanceSummary.presentDays}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon orange"><WarningIcon /></div>
-          <div className="stat-info">
-            <h3>Late</h3>
-            <p>{attendanceSummary.lateDays}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red"><CancelIcon /></div>
-          <div className="stat-info">
-            <h3>Absent</h3>
-            <p>{attendanceSummary.absentDays}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="form-card-modern">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <AccessTimeIcon />
-          Today's Attendance
-        </h3>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '15px',
-          padding: '10px 0'
-        }}>
-          <div>
-            <p style={{ margin: '5px 0' }}>
-              <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
-            </p>
-            {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
-            {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
-            <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
-              <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {!isTimedIn && (
-              <button 
-                onClick={handleTimeIn} 
-                className="btn-time-in"
-                disabled={attendanceLoading}
-                style={{
-                  padding: '12px 30px',
-                  background: '#4a6fa5',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}
-              >
-                <LoginIcon style={{ fontSize: 20 }} />
-                {attendanceLoading ? 'Processing...' : 'Time In'}
-              </button>
-            )}
-            {isTimedIn && !isTimedOut && (
-              <button 
-                onClick={handleTimeOut} 
-                className="btn-time-out"
-                disabled={attendanceLoading}
-                style={{
-                  padding: '12px 30px',
-                  background: '#e67e22',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}
-              >
-                <Logout style={{ fontSize: 20 }} />
-                {attendanceLoading ? 'Processing...' : 'Time Out'}
-              </button>
-            )}
-            {isTimedIn && isTimedOut && (
-              <span style={{ 
-                padding: '12px 30px',
-                background: '#27ae60',
-                color: 'white',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <CheckCircleIcon style={{ fontSize: 20 }} />
-                Day Complete
-              </span>
-            )}
-          </div>
+    <div className="stats-row">
+      <div className="stat-card">
+        <div className="stat-icon blue"><EventNoteIcon /></div>
+        <div className="stat-info">
+          <h3>Total Days</h3>
+          <p>{attendanceSummary.totalDays}</p>
         </div>
       </div>
+      <div className="stat-card">
+        <div className="stat-icon green"><CheckCircleIcon /></div>
+        <div className="stat-info">
+          <h3>Present</h3>
+          <p>{attendanceSummary.presentDays}</p>
+        </div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-icon orange"><WarningIcon /></div>
+        <div className="stat-info">
+          <h3>Late</h3>
+          <p>{attendanceSummary.lateDays}</p>
+        </div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-icon purple"><WarningIcon /></div>
+        <div className="stat-info">
+          <h3>Under Time</h3>
+          <p>{attendanceSummary.underTimeDays || 0}</p>
+        </div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-icon success"><CheckCircleIcon /></div>
+        <div className="stat-info">
+          <h3>Over Time</h3>
+          <p>{attendanceSummary.overTimeDays || 0}</p>
+        </div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-icon red"><CancelIcon /></div>
+        <div className="stat-info">
+          <h3>Absent</h3>
+          <p>{attendanceSummary.absentDays || 0}</p>
+        </div>
+      </div>
+    </div>
 
-      <div className="form-card-modern">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <TimelineIcon />
-          Attendance History
-        </h3>
-        <div className="table-container">
-          <table className="attendance-table-modern">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time In</th>
-                <th>Time Out</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendanceRecords.length > 0 ? (
-                [...attendanceRecords]
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .slice(0, 20)
-                  .map(record => (
-                    <tr key={record.id} className={record.status === 'Late' ? 'late-row' : ''}>
+    <div className="form-card-modern">
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <AccessTimeIcon />
+        Today's Attendance
+      </h3>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '15px',
+        padding: '10px 0'
+      }}>
+        <div>
+          <p style={{ margin: '5px 0' }}>
+            <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
+          </p>
+          {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
+          {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
+          <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
+            <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            onClick={handleTimeIn} 
+            className="btn-time-in"
+            disabled={attendanceLoading}
+            style={{
+              padding: '12px 30px',
+              background: '#4a6fa5',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              opacity: attendanceLoading ? 0.7 : 1
+            }}
+          >
+            <LoginIcon style={{ fontSize: 20 }} />
+            {attendanceLoading ? 'Processing...' : 'Time In'}
+          </button>
+          <button 
+            onClick={handleTimeOut} 
+            className="btn-time-out"
+            disabled={attendanceLoading || !isTimedIn}
+            style={{
+              padding: '12px 30px',
+              background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}
+          >
+            <Logout style={{ fontSize: 20 }} />
+            {attendanceLoading ? 'Processing...' : 'Time Out'}
+          </button>
+        </div>
+      </div>
+      {isTimedIn && isTimedOut && (
+        <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
+          ✅ You have completed your attendance entry. You can time in again if needed.
+        </div>
+      )}
+      {isTimedIn && !isTimedOut && (
+        <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
+          ⏳ You are currently timed in. Click "Time Out" when leaving.
+        </div>
+      )}
+    </div>
+
+    <div className="form-card-modern">
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <TimelineIcon />
+        Attendance History
+      </h3>
+      <div className="table-container">
+        <table className="attendance-table-modern">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Time In</th>
+              <th>Time Out</th>
+              <th>Status</th>
+              <th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {attendanceRecords.length > 0 ? (
+              [...attendanceRecords]
+                .sort((a, b) => b.date.localeCompare(a.date))
+                .slice(0, 20)
+                .map(record => {
+                  let remarks = '';
+                  if (record.status === 'Under Time' && record.undertimeMinutes) {
+                    remarks = `⏱️ Undertime: ${record.undertimeMinutes} mins`;
+                  } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+                    remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
+                  } else if (record.status === 'Late') {
+                    remarks = '⏰ Late arrival';
+                  } else if (record.status === 'On Time') {
+                    remarks = '✅ On time';
+                  }
+                  // For multiple entries, show entry number
+                  if (record.entryNumber && record.entryNumber > 1) {
+                    remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
+                  }
+                  return (
+                    <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''}>
                       <td>{record.date}</td>
                       <td className="time-cell">{record.timeIn || '—'}</td>
                       <td className="time-cell">{record.timeOut || '—'}</td>
                       <td>
-                        <span className={`status-badge ${record.status === 'On Time' || record.status === 'Present' ? 'success' : 'warning'}`}>
-                          {record.status === 'On Time' || record.status === 'Present' ? (
-                            <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                          ) : (
-                            <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                          )}
-                          {record.status || 'Present'}
-                        </span>
+                        {getAttendanceStatusBadge(record.status || 'Present')}
                       </td>
+                      <td style={{ fontSize: '12px', color: '#666' }}>{remarks}</td>
                     </tr>
-                  ))
-              ) : (
-                <tr>
-                  <td colSpan="4" className="empty-state">
-                    <p>No attendance records found</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                  );
+                })
+            ) : (
+              <tr>
+                <td colSpan="5" className="empty-state">
+                  <p>No attendance records found</p>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
-  );
+  </div>
+);
 
+  //====LEAVE MANAGEMENT=====//
   const renderLeave = () => (
     <div className="employee-leave-content">
       <div className="section-header">
-        <h2>Leave Management</h2>
+        <h2>Application for Leave</h2>
         <button onClick={() => setShowLeaveForm(true)} className="btn-add-modern">
           <CalendarTodayIcon style={{ fontSize: 18, marginRight: 8 }} />
           File Leave
@@ -2091,6 +2919,14 @@ const generatePayslipPDF = (payrollData) => {
           <div className="balance-item">
             <span className="balance-label">Sick Leave</span>
             <span className="balance-value">{leaveBalance.sickLeave || 0} days</span>
+          </div>
+          <div clasName="balance-item">
+            <span className="balance-label">Maternity Leave</span>
+            <span className="balance-value">{leaveBalance.maternityLeave || 0}  days</span>
+          </div>
+          <div className="balance-item">
+            <span className="balance-label">Paternity Leave</span>
+            <span className="balance-value">{leaveBalance.paternityLeave || 0} days</span>
           </div>
         </div>
       </div>
@@ -2157,6 +2993,8 @@ const generatePayslipPDF = (payrollData) => {
                   >
                     <option value="Vacation">Vacation Leave</option>
                     <option value="Sick">Sick Leave</option>
+                    <option value="Maternity">Maternity Leave</option>
+                    <option value="Paternity">Paternity Leave</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -2287,12 +3125,14 @@ const generatePayslipPDF = (payrollData) => {
                   required
                 >
                   <option value="">Select Document Type</option>
+                  <option value="Certificates">Certificates</option>
+                  <option value="DTR">Daily Time Record (DTR)</option>
+                  <option value="IPCR">Performance Commitment and Review (IPCR)</option>
+                  <option value="Leave">Leave Form</option>
                   <option value="Personal Data Sheet">Personal Data Sheet</option>
-                  <option value="Medical Certificate">Medical Certificate</option>
-                  <option value="NBI Clearance">NBI Clearance</option>
-                  <option value="Performance Evaluation">Performance Evaluation</option>
-                  <option value="Licenses">Licenses</option>
-                  <option value="Others">Others</option>
+                  <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+                  {/* <option value="Medical Certificate">Medical Certificate</option> */}
+                  {/* <option value="Others">Others</option> */}
                 </select>
               </div>
               <div className="form-group full-width">
@@ -2626,7 +3466,7 @@ const generatePayslipPDF = (payrollData) => {
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button 
-                onClick={() => generatePayslipPDF(payroll)}
+                onClick={() => viewPayslip(payroll)}
                 className="btn-save"
                 style={{
                   background: '#4a6fa5',
@@ -2643,7 +3483,7 @@ const generatePayslipPDF = (payrollData) => {
                 }}
               >
                 <PrintIcon style={{ fontSize: 18 }} />
-                Print Payslip
+                View / Print Payslip
               </button>
               <button 
                 onClick={() => setShowPayslipModal(false)}
@@ -2747,7 +3587,6 @@ const generatePayslipPDF = (payrollData) => {
         }}>
           <span>Employee ID: <strong>{employee?.id || 'N/A'}</strong></span>
           <span>History Records: <strong>{allPayrollHistory.length}</strong></span>
-           
         </div>
 
         {/* Payroll Summary Cards */}
@@ -2942,10 +3781,8 @@ const generatePayslipPDF = (payrollData) => {
             <p style={{ fontSize: '14px', color: '#888', marginTop: '4px' }}>
               Payroll is typically processed at the end of each month.
             </p>
-            
           </div>
         )}
-
       </div>
     );
   };

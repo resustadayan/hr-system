@@ -449,8 +449,8 @@ function Login() {
           {isLogin && !isRegistered && (
             <div className="demo-credentials">
               <p><strong>©2026 – HRMO Pagbilao, Quezon, Philippines</strong></p>
-              <p>HR Admin: admin@pagbilao.gov.ph / admin123</p>
-              <p>MGDH: mgdh@pagbilao.gov.ph / mgdh123</p>
+              {/* <p>HR Admin: admin@pagbilao.gov.ph / admin123</p>
+              <p>MGDH: mgdh@pagbilao.gov.ph / mgdh123</p> */}
             </div>
           )}
         </div>
