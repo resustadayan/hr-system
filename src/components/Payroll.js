@@ -1,4 +1,4 @@
-// src/components/Payroll.js - Enhanced with Position-Based Deductions (Leave Credits Only)
+// src/components/Payroll.js - Enhanced with Position-Based Deductions
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, onSnapshot } from 'firebase/firestore';
@@ -24,17 +24,10 @@ import PrintIcon from '@mui/icons-material/Print';
 import CancelIcon from '@mui/icons-material/Cancel';
 import WorkIcon from '@mui/icons-material/Work';
 
-// ====== CONFIGURATION ======
-// Monetary deduction for Job Order employees
+// ====== CONFIGURATION (Must match EmployeePortal.js) ======
 const MONETARY_DEDUCTION_RATE = 1.50;
-
-// Leave credit deduction rate (for Casual and Regular employees)
-const LEAVE_DEDUCTION_RATE = 0.5; // 0.5 leave credit per late day
-
-// Position types that use leave credits instead of monetary deductions
+const LEAVE_DEDUCTION_RATE = 0.5;
 const LEAVE_CREDIT_POSITIONS = ['Casual', 'Regular', 'Permanent', 'Probationary'];
-
-// Position types that use monetary deductions
 const MONETARY_DEDUCTION_POSITIONS = ['Job Order', 'JO', 'Contractual'];
 
 function Payroll({ refreshTrigger, onPayrollProcessed }) {
@@ -76,7 +69,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      console.log('Fetching payroll data...');
+      console.log('📊 Fetching payroll data...');
       
       const empSnapshot = await getDocs(collection(db, 'employees'));
       const empList = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -129,7 +122,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         const position = emp?.position || emp?.employmentType || 'Unknown';
         const lateDays = lateDaysMap[record.employeeId] || 0;
         
-        // Check if position uses leave credits or monetary deduction
         const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
         const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
         
@@ -138,21 +130,17 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         let deductionType = 'none';
         
         if (usesLeaveCredits && lateDays > 0) {
-          // Use leave credits for Casual, Regular, etc.
           leaveCreditsUsed = lateDays * LEAVE_DEDUCTION_RATE;
           deductionType = 'leave';
           
-          // Deduct from leave balance
           const balance = leaveBalancesMap[record.employeeId];
           if (balance) {
             let remainingDeduction = leaveCreditsUsed;
             let vacationDeduction = Math.min(remainingDeduction, balance.vacationLeave || 0);
             remainingDeduction -= vacationDeduction;
             let sickDeduction = Math.min(remainingDeduction, balance.sickLeave || 0);
-            // Store deduction amounts for display
           }
         } else if (usesMonetaryDeduction && lateDays > 0) {
-          // Monetary deduction for Job Order
           lateDeduction = lateDays * MONETARY_DEDUCTION_RATE;
           deductionType = 'monetary';
         }
@@ -185,33 +173,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getDeductionInfo = (position) => {
-    if (!position) return { type: 'unknown', rate: 0, label: 'Unknown' };
-    const normalizedPosition = position.trim();
-    
-    if (LEAVE_CREDIT_POSITIONS.includes(normalizedPosition)) {
-      return { 
-        type: 'leave', 
-        rate: LEAVE_DEDUCTION_RATE, 
-        label: 'Leave Credits',
-        description: `${LEAVE_DEDUCTION_RATE} day per late`
-      };
-    } else if (MONETARY_DEDUCTION_POSITIONS.includes(normalizedPosition)) {
-      return { 
-        type: 'monetary', 
-        rate: MONETARY_DEDUCTION_RATE, 
-        label: 'Monetary',
-        description: `₱${MONETARY_DEDUCTION_RATE} per late`
-      };
-    }
-    return { 
-      type: 'leave', 
-      rate: LEAVE_DEDUCTION_RATE, 
-      label: 'Leave Credits (Default)',
-      description: `${LEAVE_DEDUCTION_RATE} day per late`
-    };
   };
 
   const calculateSummary = (records, empList, lateDaysMap, leaveBalancesMap) => {
@@ -265,6 +226,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       const payrollRecord = payrollRecords.find(r => r.id === payrollId);
       
       if (payrollRecord) {
+        // Notify employee about payroll status update
         await addDoc(collection(db, 'notifications'), {
           employeeId: payrollRecord.employeeId,
           employeeName: payrollRecord.employeeName,
@@ -414,7 +376,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           let monetaryDeduction = 0;
           let deductionType = 'none';
           
-          // Check if position uses leave credits or monetary deduction
           const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
           const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
           
@@ -514,13 +475,13 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       const totalLateDays = Object.values(lateDaysMap).reduce((sum, val) => sum + val, 0);
       
       const successMessage = 
-        `✅ Payroll processed successfully!\n` +
-        `📝 Created: ${createdCount}, Updated: ${updatedCount}\n` +
-        `📊 Total late days: ${totalLateDays}\n` +
-        `🔄 Leave credits used: ${totalLeaveCreditsUsed.toFixed(1)} days\n` +
-        `💰 Monetary deductions: ₱${totalMonetaryDeductions.toFixed(2)}\n` +
-        `📌 Status set to: Pending (Ready for review)\n` +
-        `📋 Deduction types:\n` +
+        `Payroll processed successfully!\n` +
+        `Created: ${createdCount}, Updated: ${updatedCount}\n` +
+        `Total late days: ${totalLateDays}\n` +
+        `Leave credits used: ${totalLeaveCreditsUsed.toFixed(1)} days\n` +
+        `Monetary deductions: ₱${totalMonetaryDeductions.toFixed(2)}\n` +
+        `Status set to: Pending (Ready for review)\n` +
+        `Deduction types:\n` +
         `   • Casual/Regular: Leave Credits (${LEAVE_DEDUCTION_RATE} day per late)\n` +
         `   • Job Order: Monetary (₱${MONETARY_DEDUCTION_RATE} per late)`;
       
@@ -597,30 +558,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     );
   };
 
-  const getDeductionDisplay = (record) => {
-    const type = record.deductionType || 'unknown';
-    const position = record.position || 'Unknown';
-    
-    if (type === 'leave') {
-      return (
-        <span style={{ fontSize: '12px' }}>
-          <span style={{ color: '#27ae60' }}>Leave Credits: {record.leaveCreditsUsed?.toFixed(1) || 0} days</span>
-          <br />
-          <span style={{ color: '#6c757d', fontSize: '11px' }}>Rate: {LEAVE_DEDUCTION_RATE} day per late</span>
-        </span>
-      );
-    } else if (type === 'monetary') {
-      return (
-        <span style={{ fontSize: '12px' }}>
-          <span style={{ color: '#e74c3c' }}>Monetary: ₱{record.monetaryDeduction?.toFixed(2) || '0'}</span>
-          <br />
-          <span style={{ color: '#6c757d', fontSize: '11px' }}>Rate: ₱{MONETARY_DEDUCTION_RATE} per late</span>
-        </span>
-      );
-    }
-    return <span>No deduction</span>;
-  };
-
   const filteredRecords = payrollRecords.filter(record => {
     const deptMatch = filterDepartment === 'all' || getEmployeeDepartment(record.employeeId) === filterDepartment;
     const statusMatch = filterStatus === 'all' || (record.status || 'Pending') === filterStatus;
@@ -634,7 +571,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
 
   return (
     <div className="payroll-container">
-
       {/* Page Header */}
       <div className="page-header-modern">
         <div className="header-left">
@@ -650,7 +586,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
           </div>
           
-          {/* Mark All as Paid Button */}
           {summary.pendingCount > 0 && (
             <button 
               onClick={markAllAsPaid}
@@ -723,27 +658,21 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       {/* Summary Cards */}
       <div className="stats-row">
         <div className="stat-card blue">
-          <div className="stat-icon">
-            <AttachMoneyIcon style={{ fontSize: 30 }} />
-          </div>
+          <div className="stat-icon"><AttachMoneyIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">
             <h3>Total Payroll</h3>
             <p>₱{summary.totalPayroll.toLocaleString()}</p>
           </div>
         </div>
         <div className="stat-card purple">
-          <div className="stat-icon">
-            <BarChartIcon style={{ fontSize: 30 }} />
-          </div>
+          <div className="stat-icon"><BarChartIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">
             <h3>Average Salary</h3>
             <p>₱{summary.avgSalary.toLocaleString()}</p>
           </div>
         </div>
         <div className="stat-card green">
-          <div className="stat-icon">
-            <CheckCircleIcon style={{ fontSize: 30 }} />
-          </div>
+          <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">
             <h3>Paid</h3>
             <p>{summary.paidCount}</p>
@@ -751,9 +680,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           </div>
         </div>
         <div className="stat-card orange">
-          <div className="stat-icon">
-            <HourglassEmptyIcon style={{ fontSize: 30 }} />
-          </div>
+          <div className="stat-icon"><HourglassEmptyIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">
             <h3>Pending</h3>
             <p>{summary.pendingCount}</p>
@@ -761,9 +688,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           </div>
         </div>
         <div className="stat-card teal">
-          <div className="stat-icon">
-            <PeopleIcon style={{ fontSize: 30 }} />
-          </div>
+          <div className="stat-icon"><PeopleIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">
             <h3>Leave Credits Used</h3>
             <p>{summary.totalLeaveCreditsUsed?.toFixed(1) || 0} days</p>
@@ -772,7 +697,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         </div>
       </div>
 
-      {/* Deduction Rate Info */}
+      {/* Deduction Rules Info
       <div style={{
         padding: '12px 20px',
         background: '#f0f4fe',
@@ -789,7 +714,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         </span>
         <span style={{ color: '#27ae60' }}>✅ Casual & Regular: <strong>Leave Credits</strong> ({LEAVE_DEDUCTION_RATE} day per late)</span>
         <span style={{ color: '#e74c3c' }}>💰 Job Order: <strong>Monetary</strong> (₱{MONETARY_DEDUCTION_RATE} per late)</span>
-      </div>
+      </div> */}
 
       {/* Filter Bar */}
       <div className="search-filter-bar">
@@ -841,15 +766,10 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       {/* Department Breakdown */}
       {summary.departmentBreakdown.length > 0 && (
         <div className="chart-section-modern">
-          <h3>
-            <BarChartIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
-            Payroll by Department
-          </h3>
+          <h3><BarChartIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Payroll by Department</h3>
           <div className="dept-breakdown-modern">
             {summary.departmentBreakdown.map((dept, index) => {
-              const percentage = summary.totalPayroll > 0 
-                ? (dept.amount / summary.totalPayroll) * 100 
-                : 0;
+              const percentage = summary.totalPayroll > 0 ? (dept.amount / summary.totalPayroll) * 100 : 0;
               const colors = ['#4a6fa5', '#27ae60', '#e67e22', '#7c3aed', '#e74c3c', '#1abc9c', '#f39c12', '#3498db'];
               const color = colors[index % colors.length];
               
@@ -860,13 +780,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
                     <span className="dept-percentage">{percentage.toFixed(1)}%</span>
                   </div>
                   <div className="dept-bar-modern">
-                    <div 
-                      className="dept-fill-modern" 
-                      style={{ 
-                        width: `${Math.max(percentage, 2)}%`,
-                        background: color
-                      }}
-                    >
+                    <div className="dept-fill-modern" style={{ width: `${Math.max(percentage, 2)}%`, background: color }}>
                       <span>₱{dept.amount.toLocaleString()}</span>
                     </div>
                   </div>
@@ -900,7 +814,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
               filteredRecords.map(record => {
                 const position = record.position || getEmployeePosition(record.employeeId);
                 const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
-                const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
                 const isLeave = record.deductionType === 'leave';
                 const isMonetary = record.deductionType === 'monetary';
                 

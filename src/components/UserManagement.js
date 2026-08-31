@@ -152,12 +152,12 @@ function UserManagement({ refreshTrigger }) {
           status: 'Pending',
           createdAt: new Date().toISOString()
         });
-        console.log('✅ Payroll record created for: ' + userName);
+        console.log('Payroll record created for: ' + userName);
       }
       
       return true;
     } catch (error) {
-      console.error('❌ Error creating/updating payroll record:', error);
+      console.error('Error creating/updating payroll record:', error);
       return false;
     }
   };
@@ -185,7 +185,7 @@ function UserManagement({ refreshTrigger }) {
         // Update existing employee document
         const employeeDoc = employeeSnapshot.docs[0];
         await updateDoc(doc(db, 'employees', employeeDoc.id), employeeData);
-        console.log('✅ Employee collection updated for: ' + userData.name);
+        console.log('Employee collection updated for: ' + userData.name);
         return employeeDoc.id;
       } else {
         // Create new employee document
@@ -195,7 +195,7 @@ function UserManagement({ refreshTrigger }) {
           employeeId: userId
         };
         const docRef = await addDoc(collection(db, 'employees'), newEmployeeData);
-        console.log('✅ Employee collection created for: ' + userData.name);
+        console.log('Employee collection created for: ' + userData.name);
         return docRef.id;
       }
     } catch (error) {
@@ -261,10 +261,10 @@ function UserManagement({ refreshTrigger }) {
       await fetchUsers();
       resetForm();
       setShowForm(false);
-      alert('✅ User added successfully with payroll record!');
+      alert('User added successfully with payroll record!');
     } catch (error) {
       console.error('Error adding user:', error);
-      alert('❌ Failed to add user: ' + error.message);
+      alert('Failed to add user: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -309,10 +309,10 @@ function UserManagement({ refreshTrigger }) {
       resetForm();
       setShowForm(false);
       setEditingId(null);
-      alert('✅ User and payroll record updated successfully!');
+      alert('User and payroll record updated successfully!');
     } catch (error) {
       console.error('Error updating user:', error);
-      alert('❌ Failed to update user: ' + error.message);
+      alert('Failed to update user: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -339,10 +339,10 @@ function UserManagement({ refreshTrigger }) {
         // Delete from users collection
         await deleteDoc(doc(db, 'users', id));
         await fetchUsers();
-        alert('✅ User and associated records deleted successfully');
+        alert('User and associated records deleted successfully');
       } catch (error) {
         console.error('Error deleting user:', error);
-        alert('❌ Failed to delete user');
+        alert('Failed to delete user');
       }
     }
   };
@@ -431,7 +431,7 @@ function UserManagement({ refreshTrigger }) {
             <PeopleIcon style={{ fontSize: 28, marginRight: 10, verticalAlign: 'middle' }} />
             User Management
           </h2>
-          <p className="header-subtitle">Manage system users and their roles (HR Admin, MGDH, Employee)</p>
+          <p className="header-subtitle">Manage system users and their roles</p>
         </div>
         <button onClick={() => { setShowForm(true); setEditingId(null); resetForm(); }} className="btn-add-modern">
           <AddIcon style={{ fontSize: 20, marginRight: 6, verticalAlign: 'middle' }} />
@@ -721,9 +721,9 @@ function UserManagement({ refreshTrigger }) {
                     value={formData.salary} 
                     onChange={(e) => setFormData({...formData, salary: e.target.value})}
                   />
-                  <small style={{ color: '#8a9bb5', fontSize: 11 }}>
-                    Auto-creates payroll record with deductions (SSS, PhilHealth, Pag-IBIG)
-                  </small>
+                  {/* <small style={{ color: '#8a9bb5', fontSize: 11 }}>
+                    Auto-creates payroll record with deductions 
+                  </small> */}
                 </div>
               </div>
               
