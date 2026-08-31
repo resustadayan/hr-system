@@ -1,4 +1,4 @@
-// src/components/Payroll.js - Enhanced with Position-Based Deductions
+// src/components/Payroll.js - Enhanced with Position-Based Deductions (No Duplicates)
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, onSnapshot } from 'firebase/firestore';
@@ -69,7 +69,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      console.log('📊 Fetching payroll data...');
+      console.log('Fetching payroll data...');
       
       const empSnapshot = await getDocs(collection(db, 'employees'));
       const empList = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -226,7 +226,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       const payrollRecord = payrollRecords.find(r => r.id === payrollId);
       
       if (payrollRecord) {
-        // Notify employee about payroll status update
         await addDoc(collection(db, 'notifications'), {
           employeeId: payrollRecord.employeeId,
           employeeName: payrollRecord.employeeName,
@@ -239,7 +238,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         });
       }
 
-      setProcessMessage(`✅ Payroll status updated to ${newStatus}`);
+      setProcessMessage(`Payroll status updated to ${newStatus}`);
       setProcessSuccess(true);
       
       setTimeout(() => {
@@ -250,7 +249,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       await fetchData();
     } catch (error) {
       console.error('Error updating status:', error);
-      setProcessMessage('❌ Error updating status: ' + error.message);
+      setProcessMessage('Error updating status: ' + error.message);
       setProcessSuccess(false);
     } finally {
       setUpdatingStatus(false);
@@ -291,7 +290,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         updatedCount++;
       }
       
-      setProcessMessage(`✅ Successfully marked ${updatedCount} payroll records as Paid`);
+      setProcessMessage(`Successfully marked ${updatedCount} payroll records as Paid`);
       setProcessSuccess(true);
       
       setTimeout(() => {
@@ -302,17 +301,17 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       await fetchData();
     } catch (error) {
       console.error('Error marking all as paid:', error);
-      setProcessMessage('❌ Error: ' + error.message);
+      setProcessMessage('Error: ' + error.message);
       setProcessSuccess(false);
     } finally {
       setUpdatingStatus(false);
     }
   };
 
-  // ====== PROCESS PAYROLL FUNCTION ======
+  // ====== PROCESS PAYROLL FUNCTION (WITH NO DUPLICATES) ======
   const processPayrollWithLateDeductions = async () => {
     setProcessingPayroll(true);
-    setProcessMessage('⏳ Processing payroll...');
+    setProcessMessage('Processing payroll...');
     setProcessSuccess(false);
     
     try {
@@ -328,7 +327,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       const empList = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       if (empList.length === 0) {
-        setProcessMessage('⚠️ No employees found. Please add employees first.');
+        setProcessMessage('No employees found. Please add employees first.');
         setProcessingPayroll(false);
         return;
       }
@@ -380,13 +379,11 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
           
           if (usesLeaveCredits && lateDays > 0) {
-            // Use leave credits for Casual, Regular, etc.
             leaveCreditsUsed = lateDays * LEAVE_DEDUCTION_RATE;
             deductionType = 'leave';
             
             const balance = leaveBalancesMap[emp.id];
             if (balance) {
-              // Deduct from leave balances
               let remainingDeduction = leaveCreditsUsed;
               let vacationDeduction = Math.min(remainingDeduction, balance.vacationLeave || 0);
               remainingDeduction -= vacationDeduction;
@@ -395,7 +392,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
               
               const actualDeduction = vacationDeduction + sickDeduction;
               
-              // Update leave balances in database
               const updates = {};
               if (vacationDeduction > 0) {
                 updates.vacationLeave = (balance.vacationLeave || 0) - vacationDeduction;
@@ -413,7 +409,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
               }
             }
           } else if (usesMonetaryDeduction && lateDays > 0) {
-            // Monetary deduction for Job Order
             monetaryDeduction = lateDays * MONETARY_DEDUCTION_RATE;
             lateDeduction = monetaryDeduction;
             deductionType = 'monetary';
@@ -450,6 +445,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             processedAt: new Date().toISOString()
           };
 
+          // ====== FIX: Check for existing record using multiple criteria ======
           const existingQuery = query(
             collection(db, 'payroll'),
             where('employeeId', '==', emp.id),
@@ -458,16 +454,44 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           );
           const existingSnapshot = await getDocs(existingQuery);
 
+          // Also check for any records with the same periodMonth and periodYear
+          const fallbackQuery = query(
+            collection(db, 'payroll'),
+            where('employeeId', '==', emp.id),
+            where('periodMonth', '==', monthName),
+            where('periodYear', '==', currentYear)
+          );
+          const fallbackSnapshot = await getDocs(fallbackQuery);
+
+          // Use the more specific query first, then fallback
+          let existingDoc = null;
+          let existingDocId = null;
+          
           if (!existingSnapshot.empty) {
-            const docId = existingSnapshot.docs[0].id;
-            await updateDoc(doc(db, 'payroll', docId), payrollData);
+            existingDoc = existingSnapshot.docs[0];
+            existingDocId = existingDoc.id;
+          } else if (!fallbackSnapshot.empty) {
+            // Check if any fallback record exists for this month/year
+            const fallbackDocs = fallbackSnapshot.docs;
+            // Find one that matches the period dates or use the first one
+            existingDoc = fallbackDocs[0];
+            existingDocId = existingDoc.id;
+            console.log(`Found fallback record for ${employeeName} (${monthName} ${currentYear})`);
+          }
+
+          if (existingDocId) {
+            // Update existing record - prevents duplicates
+            await updateDoc(doc(db, 'payroll', existingDocId), payrollData);
             updatedCount++;
+            console.log(`Updated payroll for ${employeeName}`);
           } else {
+            // Create new record
             await addDoc(collection(db, 'payroll'), payrollData);
             createdCount++;
+            console.log(`Created payroll for ${employeeName}`);
           }
         } catch (error) {
-          console.error(`❌ Error processing payroll for employee ${emp.id}:`, error);
+          console.error(`Error processing payroll for employee ${emp.id}:`, error);
           errorCount++;
         }
       }
@@ -500,8 +524,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       }, 10000);
 
     } catch (error) {
-      console.error('❌ Error processing payroll:', error);
-      setProcessMessage('❌ Error processing payroll: ' + error.message);
+      console.error('Error processing payroll:', error);
+      setProcessMessage('Error processing payroll: ' + error.message);
       setProcessSuccess(false);
     } finally {
       setProcessingPayroll(false);
@@ -696,25 +720,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           </div>
         </div>
       </div>
-
-      {/* Deduction Rules Info
-      <div style={{
-        padding: '12px 20px',
-        background: '#f0f4fe',
-        borderRadius: '8px',
-        marginBottom: '20px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '20px',
-        flexWrap: 'wrap',
-        fontSize: '13px'
-      }}>
-        <span><WorkIcon style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }} /> 
-          <strong>Deduction Rules:</strong>
-        </span>
-        <span style={{ color: '#27ae60' }}>✅ Casual & Regular: <strong>Leave Credits</strong> ({LEAVE_DEDUCTION_RATE} day per late)</span>
-        <span style={{ color: '#e74c3c' }}>💰 Job Order: <strong>Monetary</strong> (₱{MONETARY_DEDUCTION_RATE} per late)</span>
-      </div> */}
 
       {/* Filter Bar */}
       <div className="search-filter-bar">

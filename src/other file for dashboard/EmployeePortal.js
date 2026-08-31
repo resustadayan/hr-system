@@ -7,7 +7,14 @@ import { useAuth } from '../components/contexts/AuthContext';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
 import html2pdf from 'html2pdf.js';
+
+import { PDFDocument } from 'pdf-lib';
+
 // Material-UI Icons
+import EditIcon from '@mui/icons-material/Edit';
+import SaveIcon from '@mui/icons-material/Save';
+import CloseIcon from '@mui/icons-material/Close';
+import TextFieldsIcon from '@mui/icons-material/TextFields';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FolderIcon from '@mui/icons-material/Folder';
@@ -40,7 +47,17 @@ import WarningIcon from '@mui/icons-material/Warning';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import logo from '../assets/hrmo logo.jpg';
+
+// Import documents
+import accomplishmentReport from '../for_comply/ACCOMPLISHMENT REPORT.pdf';
+import ipcr2026 from '../for_comply/IPCR2026.pdf';
+import passSlipForm from '../for_comply/PASS SLIP FORM.pdf';
+import personalDataSheet from '../for_comply/Personal_Data_Sheet.pdf';
+import salnAnnexes from '../for_comply/SALN Annexes 2025.pdf';
 
 // Late deduction rate (matches Payroll.js)
 const MONETARY_DEDUCTION_RATE = 1.50;
@@ -123,6 +140,61 @@ function EmployeePortal() {
   const [isRefreshingPayroll, setIsRefreshingPayroll] = useState(false);
   const [deductionType, setDeductionType] = useState('none');
 
+  // ====== EDITABLE COMPLIANCE STATES ======
+  const [selectedForm, setSelectedForm] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [savedFieldData, setSavedFieldData] = useState({});
+  const [editingFieldData, setEditingFieldData] = useState({ formId: null, fieldKey: null, field: null });
+  const [signatureFile, setSignatureFile] = useState(null);
+  const [signaturePreview, setSignaturePreview] = useState(null);
+  const [signaturePosition, setSignaturePosition] = useState({ x: 100, y: 300 });
+  const [signatureSize, setSignatureSize] = useState({ width: 150, height: 60 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0 });
+  const [signatureScale, setSignatureScale] = useState(1);
+  const [showSignatureControls, setShowSignatureControls] = useState(false);
+  const signatureContainerRef = useRef(null);
+  const signatureImageRef = useRef(null);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [signatureData, setSignatureData] = useState(null);
+
+
+  // ====== COMPLIANCE FILES CONFIGURATION ======
+  const [complianceFiles] = useState([
+    {
+      id: 'accomplishment',
+      name: 'Accomplishment Report',
+      file: accomplishmentReport,
+      type: 'pdf',
+    },
+    {
+      id: 'ipcr',
+      name: 'Performance Commitment and Review (IPCR) 2026',
+      file: ipcr2026,
+      type: 'pdf',
+    },
+    {
+      id: 'passSlip',
+      name: 'Pass Slip',
+      file: passSlipForm,
+      type: 'pdf',
+    },
+    {
+      id: 'pds',
+      name: 'Personal Data Sheet',
+      file: personalDataSheet,
+      type: 'pdf',
+    },
+    {
+      id: 'saln',
+      name: 'Statement of Assets, Liabilities, and Net Wort (SALN) Annexes 2025',
+      file: salnAnnexes,
+      type: 'pdf',
+    }
+  ]);
+
   // ====== SMART FILE VIEWER WITH IMAGE FIX ======
   const openFileViewer = (fileUrl, fileName) => {
     if (!fileUrl) return;
@@ -183,6 +255,41 @@ function EmployeePortal() {
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
     window.open(viewerUrl, '_blank');
   };
+
+  // Add this useEffect in the main component body with your other useEffect hooks
+useEffect(() => {
+  const saved = localStorage.getItem('savedSignature');
+  if (saved) {
+    try {
+      const data = JSON.parse(saved);
+      setSignaturePreview(data.preview);
+      setSignaturePosition(data.position || { x: 100, y: 300 });
+      setSignatureSize(data.size || { width: 150, height: 60 });
+      setSignatureScale(data.scale || 1);
+      setShowSignatureControls(true);
+      setSignatureData(data);
+      console.log('✅ Signature loaded from localStorage');
+    } catch (e) {
+      console.error('Error loading saved signature:', e);
+    }
+  }
+}, []);
+
+// Add this useEffect for container size
+useEffect(() => {
+  const updateSize = () => {
+    const container = document.querySelector('.pdf-viewer-container');
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      setContainerSize({ width: rect.width || 800, height: rect.height || 1000 });
+    }
+  };
+  
+  updateSize();
+  window.addEventListener('resize', updateSize);
+  return () => window.removeEventListener('resize', updateSize);
+}, [showEditModal]);
+
 
   // Handle mobile responsiveness
   useEffect(() => {
@@ -350,10 +457,10 @@ function EmployeePortal() {
         const docRef = empSnapshot.docs[0];
         empData = { id: docRef.id, ...docRef.data() };
         empId = docRef.id;
-        console.log('✅ Employee found with ID:', empId);
-        console.log('📋 Employee data:', empData);
+        console.log('Employee found with ID:', empId);
+        console.log('Employee data:', empData);
       } else {
-        console.log('⚠️ No employee document found for email:', authUser.email);
+        console.log('No employee document found for email:', authUser.email);
         
         const userDoc = await getDoc(doc(db, 'users', authUser.uid));
         if (userDoc.exists()) {
@@ -388,7 +495,7 @@ function EmployeePortal() {
 
       if (empData) {
         setEmployee(empData);
-        console.log('🎯 Using employee ID for queries:', empId);
+        console.log('Using employee ID for queries:', empId);
 
         // Fetch leave balance
         const balanceQuery = query(collection(db, 'leaveBalances'), where('employeeId', '==', empId));
@@ -479,6 +586,121 @@ function EmployeePortal() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // ====== SIGNATURE FUNCTIONS ======
+  const handleSignatureUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Signature file is too large. Maximum size is 2MB.');
+      return;
+    }
+    
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file for the signature.');
+      return;
+    }
+    
+    setSignatureFile(file);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setSignaturePreview(event.target.result);
+      setShowSignatureControls(true);
+      setSignaturePosition({ x: 100, y: 300 });
+      setSignatureSize({ width: 150, height: 60 });
+      setSignatureScale(1);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const removeSignature = () => {
+    setSignatureFile(null);
+    setSignaturePreview(null);
+    setShowSignatureControls(false);
+  };
+
+  // ====== SIGNATURE DRAG AND RESIZE FUNCTIONS ======
+  const handleSignatureMouseDown = (e) => {
+    if (!signaturePreview) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const target = e.target;
+    if (target.className && target.className.includes('resize-handle')) {
+      setIsResizing(true);
+      setResizeStart({ x: e.clientX, y: e.clientY });
+      return;
+    }
+    
+    setIsDragging(true);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+  };
+
+  const handleSignatureMouseMove = (e) => {
+    if (isDragging && signatureContainerRef.current) {
+      const containerRect = signatureContainerRef.current.parentElement.getBoundingClientRect();
+      const newX = e.clientX - containerRect.left - dragOffset.x;
+      const newY = e.clientY - containerRect.top - dragOffset.y;
+      
+      setSignaturePosition({
+        x: Math.max(0, Math.min(newX, containerRect.width - signatureSize.width)),
+        y: Math.max(0, Math.min(newY, containerRect.height - signatureSize.height))
+      });
+    }
+    
+    if (isResizing && signatureContainerRef.current) {
+      const containerRect = signatureContainerRef.current.parentElement.getBoundingClientRect();
+      const deltaX = e.clientX - resizeStart.x;
+      const deltaY = e.clientY - resizeStart.y;
+      
+      const newWidth = Math.max(50, signatureSize.width + deltaX);
+      const newHeight = Math.max(30, signatureSize.height + deltaY);
+      
+      setSignatureSize({
+        width: Math.min(newWidth, containerRect.width - signaturePosition.x),
+        height: Math.min(newHeight, containerRect.height - signaturePosition.y)
+      });
+      
+      setResizeStart({ x: e.clientX, y: e.clientY });
+    }
+  };
+
+  const handleSignatureMouseUp = () => {
+    setIsDragging(false);
+    setIsResizing(false);
+  };
+
+  useEffect(() => {
+    if (isDragging || isResizing) {
+      document.addEventListener('mousemove', handleSignatureMouseMove);
+      document.addEventListener('mouseup', handleSignatureMouseUp);
+      return () => {
+        document.removeEventListener('mousemove', handleSignatureMouseMove);
+        document.removeEventListener('mouseup', handleSignatureMouseUp);
+      };
+    }
+  }, [isDragging, isResizing, dragOffset, resizeStart, signaturePosition, signatureSize]);
+
+  const zoomSignature = (direction) => {
+    const newScale = direction === 'in' ? signatureScale + 0.1 : signatureScale - 0.1;
+    const clampedScale = Math.max(0.3, Math.min(3, newScale));
+    setSignatureScale(clampedScale);
+    setSignatureSize({
+      width: 150 * clampedScale,
+      height: 60 * clampedScale
+    });
+  };
+
+  const resetSignaturePosition = () => {
+    setSignaturePosition({ x: 100, y: 300 });
+    setSignatureSize({ width: 150, height: 60 });
+    setSignatureScale(1);
   };
 
   // ====== ATTENDANCE FUNCTIONS ======
@@ -1294,6 +1516,35 @@ function EmployeePortal() {
     }
   };
 
+  // ====== EDITABLE COMPLIANCE FUNCTIONS ======
+
+  // Open the editable form modal
+  const openEditableForm = (formId) => {
+    setSelectedForm(formId);
+    setShowEditModal(true);
+    setSignaturePosition({ x: 100, y: 300 });
+    setSignatureSize({ width: 150, height: 60 });
+    setSignatureScale(1);
+  };
+
+  // Handle field value change
+  const handleFieldChange = (formId, fieldKey, value) => {
+    setSavedFieldData(prev => ({
+      ...prev,
+      [formId]: {
+        ...(prev[formId] || {}),
+        [fieldKey]: value
+      }
+    }));
+  };
+
+  // Get field value
+  const getFieldValue = (formId, fieldKey) => {
+    const saved = savedFieldData[formId] || {};
+    return saved[fieldKey] || '';
+  };
+
+  // ====== STATUS BADGE FUNCTIONS ======
   const getStatusBadge = (status) => {
     switch(status) {
       case 'Approved':
@@ -1652,17 +1903,13 @@ function EmployeePortal() {
       </html>
     `;
 
-    // Create a temporary container for PDF generation
     const container = document.createElement('div');
     container.innerHTML = attendanceHTML;
     document.body.appendChild(container);
-
     const element = container.querySelector('.report-container');
 
-    // Generate filename
     const fileName = `Attendance_Report_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`;
 
-    // Generate PDF and download using html2pdf
     try {
       await html2pdf()
         .set({
@@ -1694,7 +1941,7 @@ function EmployeePortal() {
     }
   };
 
-  // ====== GENERATE PAYSLIP PDF (True Download) ======
+  // ====== GENERATE PAYSLIP PDF ======
   const generatePayslipPDF = (payrollData) => {
     const loadingMsg = document.createElement('div');
     loadingMsg.style.cssText = `
@@ -1960,7 +2207,6 @@ function EmployeePortal() {
     const container = document.createElement('div');
     container.innerHTML = payslipHTML;
     document.body.appendChild(container);
-
     const element = container.querySelector('.payslip-container');
 
     const fileName = `Payslip_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${payrollData.periodMonth || ''}_${payrollData.periodYear || ''}.pdf`;
@@ -1995,7 +2241,7 @@ function EmployeePortal() {
       });
   };
 
-  // ====== VIEW/PRINT PAYSLIP (Opens print dialog) ======
+  // ====== VIEW/PRINT PAYSLIP ======
   const viewPayslip = (payrollData) => {
     const payslipHTML = `
       <!DOCTYPE html>
@@ -2352,94 +2598,802 @@ function EmployeePortal() {
     );
   };
 
-  if (loading || authLoading) {
-    return <div className="loading">Loading your portal...</div>;
-  }
+  // ====== RENDER COMPLIANCE TAB - FIXED VERSION (NO HOOKS INSIDE) ======
+const renderCompliance = () => {
+  const formData = selectedForm ? complianceFiles.find(f => f.id === selectedForm) : null;
 
-  if (!employee) {
-    return <div className="error">No employee profile found. Please contact HR.</div>;
-  }
+  // Save signature position and size
+  const saveSignature = () => {
+    if (!signaturePreview) {
+      alert('Please upload a signature first.');
+      return;
+    }
+    
+    const data = {
+      preview: signaturePreview,
+      position: signaturePosition,
+      size: signatureSize,
+      scale: signatureScale
+    };
+    
+    localStorage.setItem('savedSignature', JSON.stringify(data));
+    setSignatureData(data);
+    
+    setSavedFieldData(prev => ({
+      ...prev,
+      signature: data
+    }));
+    
+    alert('Signature saved successfully!');
+  };
 
-  const Sidebar = () => (
-    <div className={`employee-sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
-      <div className="sidebar-top">
-        <img src={logo} alt="LGU Logo" className="sidebar-logo" />
-        <h3>HR System</h3>
-        <p>Pagbilao LGU</p>
-        <div className="user-badge">
-          <span className="user-name">{employee.fullName}</span>
-          <span className="user-role">{employee.position}</span>
-          <span className="user-dept">{employee.department}</span>
+  // Download PDF with signature - FIXED VERSION
+  const downloadPDFWithSignature = async () => {
+    if (!signaturePreview) {
+      alert('Please upload a signature first.');
+      return;
+    }
+
+    try {
+      // Get the container
+      const container = document.querySelector('.pdf-viewer-container');
+      if (!container) {
+        alert('PDF container not found.');
+        return;
+      }
+
+      // Get the signature overlay element directly
+      const overlay = container.querySelector('.signature-overlay');
+      if (!overlay) {
+        alert('Signature not found. Please place the signature first.');
+        return;
+      }
+
+      // Get actual positions from the DOM
+      const containerRect = container.getBoundingClientRect();
+      const overlayRect = overlay.getBoundingClientRect();
+
+      // Calculate percentage positions based on actual DOM positions
+      const containerWidth = containerRect.width || 800;
+      const containerHeight = containerRect.height || 1000;
+      
+      const relX = ((overlayRect.left - containerRect.left) / containerWidth) * 100;
+      const relY = ((overlayRect.top - containerRect.top) / containerHeight) * 100;
+      const relWidth = (overlayRect.width / containerWidth) * 100;
+      const relHeight = (overlayRect.height / containerHeight) * 100;
+
+      console.log('DOM Positions:', {
+        container: { width: containerWidth, height: containerHeight },
+        overlay: { left: overlayRect.left, top: overlayRect.top, width: overlayRect.width, height: overlayRect.height },
+        percentages: { relX, relY, relWidth, relHeight }
+      });
+
+      // Get the PDF file URL
+      const pdfUrl = formData.file;
+
+      // Fetch the PDF
+      const response = await fetch(pdfUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.status}`);
+      }
+      const pdfData = await response.arrayBuffer();
+
+      // Load the PDF using pdf-lib
+      const pdfDoc = await PDFDocument.load(pdfData);
+      const pages = pdfDoc.getPages();
+      const firstPage = pages[0];
+      const { width, height } = firstPage.getSize();
+
+      // Convert signature image to PNG
+      const canvas = document.createElement('canvas');
+      canvas.width = signatureSize.width * 2;
+      canvas.height = signatureSize.height * 2;
+      const ctx = canvas.getContext('2d');
+      
+      const img = new Image();
+      img.src = signaturePreview;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+      });
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      
+      const signatureImageData = canvas.toDataURL('image/png');
+      const signatureImageBytes = await fetch(signatureImageData).then(res => res.arrayBuffer());
+      const signatureImage = await pdfDoc.embedPng(signatureImageBytes);
+
+      // Calculate position on PDF page
+      const pdfX = (relX / 100) * width;
+      const pdfY = height - ((relY + relHeight) / 100) * height;
+      const pdfWidth = (relWidth / 100) * width;
+      const pdfHeight = (relHeight / 100) * height;
+
+      console.log('PDF Positions:', { pdfX, pdfY, pdfWidth, pdfHeight });
+
+      // Draw the signature on the PDF
+      firstPage.drawImage(signatureImage, {
+        x: pdfX,
+        y: pdfY,
+        width: pdfWidth,
+        height: pdfHeight,
+        opacity: 1,
+      });
+
+      // Save and download
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${formData.name.replace(/\s/g, '_')}_signed.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+      alert('PDF with signature downloaded successfully!');
+    } catch (error) {
+      console.error('Error downloading PDF with signature:', error);
+      alert('Error downloading PDF: ' + error.message);
+    }
+  };
+
+  // Handle scroll to keep signature in correct position
+  const handleScroll = (e) => {
+    // The signature position is already relative to the container
+    // No need to update position on scroll
+  };
+
+  return (
+    <div className="employee-compliance-content">
+      <div className="section-header">
+        <h2>My Compliance</h2>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={downloadPDFWithSignature}
+            className="btn-add-modern"
+            style={{
+              background: '#27ae60',
+              color: 'white',
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '13px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <GetAppIcon style={{ fontSize: 18 }} />
+            Download Signed PDF
+          </button>
+          <button onClick={() => setShowUploadForm(true)} className="btn-add-modern">
+            <UploadIcon style={{ fontSize: 18, marginRight: 8 }} />
+            Upload Document
+          </button>
         </div>
       </div>
 
-      <div className="sidebar-menu">
-        <button 
-          onClick={() => { setActiveTab('dashboard'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'dashboard' ? 'active' : ''}`}
-        >
-          <DashboardIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Dashboard
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('attendance'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'attendance' ? 'active' : ''}`}
-        >
-          <AccessTimeIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Attendance
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('leave'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'leave' ? 'active' : ''}`}
-        >
-          <CalendarTodayIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Leave Management
-          {pendingLeaves > 0 && <span className="badge-count">{pendingLeaves}</span>}
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('compliance'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'compliance' ? 'active' : ''}`}
-        >
-          <FolderIcon style={{ fontSize: 20, marginRight: 12 }} />
-          My Compliance
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('notifications'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'notifications' ? 'active' : ''}`}
-        >
-          <NotificationsIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Notifications
-          {unreadNotifications > 0 && <span className="badge-count">{unreadNotifications}</span>}
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('payroll'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'payroll' ? 'active' : ''}`}
-        >
-          <AttachMoneyIcon style={{ fontSize: 20, marginRight: 12 }} />
-          My Payroll
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('profile'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'profile' ? 'active' : ''}`}
-        >
-          <PersonIcon style={{ fontSize: 20, marginRight: 12 }} />
-          My Profile
-        </button>
-
-        <button onClick={handleLogout} className="logout-btn">
-          <LogoutIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Logout
-        </button>
+      <div className="compliance-progress-card">
+        <div className="progress-header">
+          <h3>Compliance Rate</h3>
+          <span className="progress-percentage">{complianceRate}%</span>
+        </div>
+        <div className="progress-bar-large">
+          <div 
+            className="progress-fill" 
+            style={{ 
+              width: `${complianceRate}%`,
+              background: complianceRate === 100 ? '#27ae60' : '#4a6fa5'
+            }}
+          />
+        </div>
+        <p className="progress-text">
+          {documents.filter(d => d.status === 'Complete').length} of {documents.length} documents complete
+        </p>
       </div>
+
+      {/* Editable Compliance Forms Section */}
+      <div className="editable-forms-section" style={{ marginTop: '24px' }}>
+        <h3 style={{ marginBottom: '16px' }}>
+          <TextFieldsIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
+          Editable Compliance Forms
+        </h3>
+        <p style={{ color: '#666', fontSize: '13px', marginBottom: '16px' }}>
+          Click on any form to view and fill in the fields.
+        </p>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+          {complianceFiles.map(form => (
+            <button
+              key={form.id}
+              onClick={() => openEditableForm(form.id)}
+              style={{
+                padding: '16px',
+                background: 'white',
+                border: '2px solid #eef2f7',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                textAlign: 'left',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#4a6fa5';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(74,111,165,0.15)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#eef2f7';
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <DescriptionIcon style={{ fontSize: 32, color: '#4a6fa5' }} />
+              <span style={{ fontWeight: '600', fontSize: '14px' }}>{form.name}</span>
+              <span style={{ fontSize: '11px', color: '#888' }}>{form.type.toUpperCase()}</span>
+              {savedFieldData[form.id] && Object.values(savedFieldData[form.id]).some(v => v) && (
+                <span style={{ fontSize: '10px', color: '#27ae60' }}>✅ Fields filled</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Editable Form Modal */}
+      {showEditModal && formData && (
+        <div className="modal-overlay" onClick={() => {
+          setShowEditModal(false);
+          setSignatureFile(null);
+          setSignaturePreview(null);
+          setShowSignatureControls(false);
+        }}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ 
+            maxWidth: '95vw', 
+            maxHeight: '95vh',
+            width: '95vw',
+            padding: '20px',
+            overflow: 'auto'
+          }}>
+            <div className="modal-header">
+              <h3>
+                <TextFieldsIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
+                View & Sign: {formData.name}
+              </h3>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button 
+                  className="modal-close" 
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSignatureFile(null);
+                    setSignaturePreview(null);
+                    setShowSignatureControls(false);
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            
+            {/* E-Signature Upload Section */}
+            <div style={{ 
+              background: '#f8fafd', 
+              padding: '16px 20px', 
+              borderRadius: '8px',
+              marginBottom: '16px',
+              border: '1px solid #eef2f7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
+                  <DragIndicatorIcon style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }} />
+                  E-Signature
+                </span>
+                {!signaturePreview ? (
+                  <label style={{
+                    padding: '6px 16px',
+                    background: '#4a6fa5',
+                    color: 'white',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontSize: '13px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'background 0.2s ease'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#3a5f8f'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#4a6fa5'}
+                  >
+                    <UploadIcon style={{ fontSize: 16 }} />
+                    Upload Signature
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleSignatureUpload}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                ) : (
+                  <span style={{ fontSize: '13px', color: '#27ae60', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CheckCircleIcon style={{ fontSize: 16 }} />
+                    Signature uploaded - Drag to position, resize from corner
+                  </span>
+                )}
+              </div>
+              
+              {signaturePreview && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{
+                    border: '1px solid #eef2f7',
+                    borderRadius: '6px',
+                    padding: '4px 8px',
+                    background: 'white'
+                  }}>
+                    <img 
+                      src={signaturePreview} 
+                      alt="Signature" 
+                      style={{ 
+                        maxHeight: '40px', 
+                        maxWidth: '150px',
+                        objectFit: 'contain'
+                      }} 
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => zoomSignature('in')}
+                      style={{
+                        padding: '4px 10px',
+                        background: '#4a6fa5',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Zoom In"
+                    >
+                      <ZoomInIcon style={{ fontSize: 14 }} />
+                    </button>
+                    <button
+                      onClick={() => zoomSignature('out')}
+                      style={{
+                        padding: '4px 10px',
+                        background: '#4a6fa5',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      title="Zoom Out"
+                    >
+                      <ZoomOutIcon style={{ fontSize: 14 }} />
+                    </button>
+                    <button
+                      onClick={resetSignaturePosition}
+                      style={{
+                        padding: '4px 10px',
+                        background: '#f39c12',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px'
+                      }}
+                      title="Reset Position"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      onClick={removeSignature}
+                      style={{
+                        padding: '4px 12px',
+                        background: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#c0392b'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#e74c3c'}
+                    >
+                      <DeleteIcon style={{ fontSize: 14 }} />
+                      Remove
+                    </button>
+                    <button
+                      onClick={saveSignature}
+                      style={{
+                        padding: '4px 16px',
+                        background: '#27ae60',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: '600'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = '#219a52'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = '#27ae60'}
+                      title="Save Signature"
+                    >
+                      <SaveIcon style={{ fontSize: 14 }} />
+                      Save
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* PDF/Image Viewer with Signature Overlay */}
+            <div 
+              className="pdf-viewer-container"
+              style={{ 
+                padding: '20px 0',
+                background: '#f5f7fa',
+                borderRadius: '8px',
+                padding: '20px',
+                position: 'relative',
+                overflow: 'auto',
+                maxHeight: '70vh'
+              }}
+              onScroll={handleScroll}
+            >
+              <div style={{ 
+                background: 'white', 
+                borderRadius: '8px', 
+                padding: '20px',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+                minHeight: '500px',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                {/* PDF/Image Display */}
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  alignItems: 'center',
+                  padding: '20px',
+                  background: '#f8fafd',
+                  borderRadius: '8px',
+                  position: 'relative',
+                  minHeight: '500px',
+                  width: '100%'
+                }}>
+                  {formData.type === 'pdf' ? (
+                    <iframe
+                      src={formData.file}
+                      style={{
+                        width: '100%',
+                        height: '600px',
+                        border: 'none',
+                        borderRadius: '8px',
+                        background: 'white'
+                      }}
+                      title={formData.name}
+                    />
+                  ) : (
+                    <img 
+                      src={formData.file} 
+                      alt={formData.name}
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '600px',
+                        objectFit: 'contain',
+                        borderRadius: '8px'
+                      }}
+                    />
+                  )}
+                  
+                  {/* Signature Overlay - Draggable and Resizable */}
+                  {signaturePreview && (
+                    <div
+                      ref={signatureContainerRef}
+                      className="signature-overlay"
+                      style={{
+                        position: 'absolute',
+                        left: signaturePosition.x + 'px',
+                        top: signaturePosition.y + 'px',
+                        width: signatureSize.width + 'px',
+                        height: signatureSize.height + 'px',
+                        cursor: isDragging ? 'grabbing' : 'grab',
+                        border: isDragging || isResizing ? '2px dashed #4a6fa5' : '2px dashed transparent',
+                        borderRadius: '4px',
+                        zIndex: 100,
+                        userSelect: 'none',
+                        touchAction: 'none',
+                        transition: isDragging || isResizing ? 'none' : 'border 0.2s ease'
+                      }}
+                      onMouseDown={handleSignatureMouseDown}
+                      onMouseEnter={() => setShowSignatureControls(true)}
+                      onMouseLeave={() => setShowSignatureControls(false)}
+                    >
+                      <img
+                        ref={signatureImageRef}
+                        src={signaturePreview}
+                        alt="Signature"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                          pointerEvents: 'none',
+                          opacity: 0.9
+                        }}
+                        draggable={false}
+                      />
+                      
+                      {/* Resize Handle - Bottom Right Corner */}
+                      <div
+                        className="resize-handle"
+                        style={{
+                          position: 'absolute',
+                          bottom: '-6px',
+                          right: '-6px',
+                          width: '14px',
+                          height: '14px',
+                          backgroundColor: '#4a6fa5',
+                          borderRadius: '50%',
+                          cursor: 'nwse-resize',
+                          border: '2px solid white',
+                          boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
+                          pointerEvents: 'auto',
+                          display: showSignatureControls ? 'block' : 'none'
+                        }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          setIsResizing(true);
+                          setResizeStart({ x: e.clientX, y: e.clientY });
+                        }}
+                      />
+                      
+                      {/* Drag Indicator */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '-20px',
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          backgroundColor: 'rgba(74, 111, 165, 0.8)',
+                          color: 'white',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          whiteSpace: 'nowrap',
+                          display: showSignatureControls ? 'block' : 'none',
+                          pointerEvents: 'none'
+                        }}
+                      >
+                        Drag to move
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Instructions Footer */}
+            <div style={{ 
+              marginTop: '16px', 
+              display: 'flex', 
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              borderTop: '1px solid #eef2f7',
+              paddingTop: '16px',
+              flexWrap: 'wrap',
+              gap: '10px'
+            }}>
+              <div style={{ fontSize: '12px', color: '#888', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <span>💡Upload your signature image, then drag to position</span>
+                <span>↕ Drag from the signature to move</span>
+                <span>↘ Drag the blue dot to resize</span>
+                <span>💾 Click "Save" to store your signature</span>
+                {signaturePreview && (
+                  <span style={{ color: '#27ae60', fontWeight: '600' }}>✓ Signature placed</span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                {signaturePreview && (
+                  <button 
+                    onClick={downloadPDFWithSignature}
+                    style={{
+                      padding: '10px 24px',
+                      background: '#27ae60',
+                      border: 'none',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      color: 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#219a52'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = '#27ae60'}
+                  >
+                    <GetAppIcon style={{ fontSize: 18 }} />
+                    Download Signed PDF
+                  </button>
+                )}
+                <button 
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setSignatureFile(null);
+                    setSignaturePreview(null);
+                    setShowSignatureControls(false);
+                  }}
+                  style={{
+                    padding: '10px 24px',
+                    background: '#4a6fa5',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    color: 'white'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#3a5f8f'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = '#4a6fa5'}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="documents-list">
+        {documents.map(doc => (
+          <div key={doc.id} className="doc-item-card">
+            <div className="doc-item-info">
+              <span className="doc-item-name">{doc.documentType}</span>
+              {getDocStatusBadge(doc.status)}
+            </div>
+            <div className="doc-item-actions">
+              {doc.fileUrl && (
+                <button
+                  onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
+                  className="btn-view-doc"
+                  style={{
+                    padding: '4px 12px',
+                    background: '#4a6fa5',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '13px'
+                  }}
+                >
+                  <VisibilityIcon style={{ fontSize: 16 }} />
+                  View
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {documents.length === 0 && (
+          <p className="no-data">No documents found</p>
+        )}
+      </div>
+
+      {showUploadForm && (
+        <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Upload Document</h3>
+              <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
+            </div>
+            
+            <div className="form-grid">
+              <div className="form-group full-width">
+                <label>Document Type</label>
+                <select
+                  value={selectedDocType}
+                  onChange={(e) => setSelectedDocType(e.target.value)}
+                  className="upload-select"
+                  required
+                >
+                  <option value="">Select Document Type</option>
+                  <option value="Certificates">Certificates</option>
+                  <option value="DTR">Daily Time Record (DTR)</option>
+                  <option value="IPCR">Performance Commitment and Review (IPCR)</option>
+                  <option value="Leave">Leave Form</option>
+                  <option value="Personal Data Sheet">Personal Data Sheet</option>
+                  <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+                </select>
+              </div>
+              <div className="form-group full-width">
+                <label>Choose File</label>
+                <input
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="upload-input"
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                  required
+                />
+                {selectedFile && (
+                  <span className="file-name">
+                    {selectedFile.name} 
+                    ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="form-actions">
+              <button 
+                onClick={handleDocumentUpload} 
+                className="btn-save" 
+                disabled={uploading || !selectedFile || !selectedDocType}
+              >
+                {uploading ? 'Uploading...' : 'Upload File'}
+              </button>
+              <button 
+                type="button" 
+                className="btn-cancel" 
+                onClick={() => setShowUploadForm(false)}
+                disabled={uploading}
+              >
+                Cancel
+              </button>
+            </div>
+            {uploadStatus && <p className="upload-status">{uploadStatus}</p>}
+            {uploading && uploadProgress > 0 && (
+              <div className="progress-bar" style={{ marginTop: '10px' }}>
+                <div 
+                  className="progress-fill" 
+                  style={{ 
+                    width: `${uploadProgress}%`,
+                    height: '6px',
+                    background: '#4a6fa5',
+                    borderRadius: '3px',
+                    transition: 'width 0.3s ease'
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
+                  {uploadProgress}% uploaded
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+};
 
+  // ====== RENDER DASHBOARD ======
   const renderDashboard = () => (
     <div className="employee-dashboard-content">
       <div className="welcome-header">
@@ -2661,7 +3615,7 @@ function EmployeePortal() {
     </div>
   );
 
-  // ====== ATTENDANCE TAB ======
+  // ====== RENDER ATTENDANCE ======
   const renderAttendance = () => (
     <div className="employee-attendance-content">
       <div className="section-header">
@@ -2807,12 +3761,12 @@ function EmployeePortal() {
         </div>
         {isTimedIn && isTimedOut && (
           <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
-            ✅ You have completed your attendance entry. You can time in again if needed.
+            You have completed your attendance entry. You can time in again if needed.
           </div>
         )}
         {isTimedIn && !isTimedOut && (
           <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
-            ⏳ You are currently timed in. Click "Time Out" when leaving.
+            You are currently timed in. Click "Time Out" when leaving.
           </div>
         )}
       </div>
@@ -2845,9 +3799,9 @@ function EmployeePortal() {
                     } else if (record.status === 'Over Time' && record.overtimeMinutes) {
                       remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
                     } else if (record.status === 'Late') {
-                      remarks = '⏰ Late arrival';
+                      remarks = 'Late arrival';
                     } else if (record.status === 'On Time') {
-                      remarks = '✅ On time';
+                      remarks = 'On time';
                     }
                     if (record.entryNumber && record.entryNumber > 1) {
                       remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
@@ -2878,7 +3832,7 @@ function EmployeePortal() {
     </div>
   );
 
-  //====LEAVE MANAGEMENT=====//
+  // ====== RENDER LEAVE ======
   const renderLeave = () => (
     <div className="employee-leave-content">
       <div className="section-header">
@@ -3020,159 +3974,7 @@ function EmployeePortal() {
     </div>
   );
 
-  //Compliance Tab//
-  const renderCompliance = () => (
-    <div className="employee-compliance-content">
-      <div className="section-header">
-        <h2>My Compliance</h2>
-        <button onClick={() => setShowUploadForm(true)} className="btn-add-modern">
-          <UploadIcon style={{ fontSize: 18, marginRight: 8 }} />
-          Upload Document
-        </button>
-      </div>
-
-      <div className="compliance-progress-card">
-        <div className="progress-header">
-          <h3>Compliance Rate</h3>
-          <span className="progress-percentage">{complianceRate}%</span>
-        </div>
-        <div className="progress-bar-large">
-          <div 
-            className="progress-fill" 
-            style={{ 
-              width: `${complianceRate}%`,
-              background: complianceRate === 100 ? '#27ae60' : '#4a6fa5'
-            }}
-          />
-        </div>
-        <p className="progress-text">
-          {documents.filter(d => d.status === 'Complete').length} of {documents.length} documents complete
-        </p>
-      </div>
-
-      <div className="documents-list">
-        {documents.map(doc => (
-          <div key={doc.id} className="doc-item-card">
-            <div className="doc-item-info">
-              <span className="doc-item-name">{doc.documentType}</span>
-              {getDocStatusBadge(doc.status)}
-            </div>
-            <div className="doc-item-actions">
-              {doc.fileUrl && (
-                <button
-                  onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
-                  className="btn-view-doc"
-                  style={{
-                    padding: '4px 12px',
-                    background: '#4a6fa5',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '13px'
-                  }}
-                >
-                  <VisibilityIcon style={{ fontSize: 16 }} />
-                  View
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-        {documents.length === 0 && (
-          <p className="no-data">No documents found</p>
-        )}
-      </div>
-
-      {showUploadForm && (
-        <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
-          <div className="modal-form" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Upload Document</h3>
-              <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
-            </div>
-            
-            <div className="form-grid">
-              <div className="form-group full-width">
-                <label>Document Type</label>
-                <select
-                  value={selectedDocType}
-                  onChange={(e) => setSelectedDocType(e.target.value)}
-                  className="upload-select"
-                  required
-                >
-                  <option value="">Select Document Type</option>
-                  <option value="Certificates">Certificates</option>
-                  <option value="DTR">Daily Time Record (DTR)</option>
-                  <option value="IPCR">Performance Commitment and Review (IPCR)</option>
-                  <option value="Leave">Leave Form</option>
-                  <option value="Personal Data Sheet">Personal Data Sheet</option>
-                  <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-                </select>
-              </div>
-              <div className="form-group full-width">
-                <label>Choose File</label>
-                <input
-                  type="file"
-                  onChange={handleFileSelect}
-                  className="upload-input"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  required
-                />
-                {selectedFile && (
-                  <span className="file-name">
-                    {selectedFile.name} 
-                    ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="form-actions">
-              <button 
-                onClick={handleDocumentUpload} 
-                className="btn-save" 
-                disabled={uploading || !selectedFile || !selectedDocType}
-              >
-                {uploading ? 'Uploading...' : 'Upload File'}
-              </button>
-              <button 
-                type="button" 
-                className="btn-cancel" 
-                onClick={() => setShowUploadForm(false)}
-                disabled={uploading}
-              >
-                Cancel
-              </button>
-            </div>
-            {uploadStatus && <p className="upload-status">{uploadStatus}</p>}
-            {uploading && uploadProgress > 0 && (
-              <div className="progress-bar" style={{ marginTop: '10px' }}>
-                <div 
-                  className="progress-fill" 
-                  style={{ 
-                    width: `${uploadProgress}%`,
-                    height: '6px',
-                    background: '#4a6fa5',
-                    borderRadius: '3px',
-                    transition: 'width 0.3s ease'
-                  }}
-                />
-                <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
-                  {uploadProgress}% uploaded
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  // ====== NOTIFICATIONS TAB ======
+  // ====== RENDER NOTIFICATIONS ======
   const renderNotifications = () => {
     const sortedNotifications = [...notifications].sort((a, b) => 
       new Date(b.createdAt) - new Date(a.createdAt)
@@ -3353,7 +4155,7 @@ function EmployeePortal() {
     );
   };
 
-  // ====== PAYSLIP MODAL ======
+  // ====== RENDER PAYSLIP MODAL ======
   const renderPayslipModal = () => {
     if (!showPayslipModal || !selectedPayroll) return null;
 
@@ -3486,7 +4288,7 @@ function EmployeePortal() {
     );
   };
 
-  // ====== PAYROLL TAB ======
+  // ====== RENDER PAYROLL ======
   const renderPayroll = () => {
     const hasCurrentPayroll = !!employeePayroll;
     const hasHistory = allPayrollHistory.length > 0;
@@ -3811,6 +4613,7 @@ function EmployeePortal() {
     );
   };
 
+  // ====== RENDER PROFILE ======
   const renderProfile = () => (
     <div className="employee-profile-content">
       <div className="section-header">
@@ -3835,6 +4638,96 @@ function EmployeePortal() {
       </div>
     </div>
   );
+
+  // ====== SIDEBAR ======
+  const Sidebar = () => (
+    <div className={`employee-sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
+      <div className="sidebar-top">
+        <img src={logo} alt="LGU Logo" className="sidebar-logo" />
+        <h3>HR System</h3>
+        <p>Pagbilao LGU</p>
+        <div className="user-badge">
+          <span className="user-name">{employee.fullName}</span>
+          <span className="user-role">{employee.position}</span>
+          <span className="user-dept">{employee.department}</span>
+        </div>
+      </div>
+
+      <div className="sidebar-menu">
+        <button 
+          onClick={() => { setActiveTab('dashboard'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'dashboard' ? 'active' : ''}`}
+        >
+          <DashboardIcon style={{ fontSize: 20, marginRight: 12 }} />
+          Dashboard
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('attendance'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'attendance' ? 'active' : ''}`}
+        >
+          <AccessTimeIcon style={{ fontSize: 20, marginRight: 12 }} />
+          Attendance
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('leave'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'leave' ? 'active' : ''}`}
+        >
+          <CalendarTodayIcon style={{ fontSize: 20, marginRight: 12 }} />
+          Leave Management
+          {pendingLeaves > 0 && <span className="badge-count">{pendingLeaves}</span>}
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('compliance'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'compliance' ? 'active' : ''}`}
+        >
+          <FolderIcon style={{ fontSize: 20, marginRight: 12 }} />
+          My Compliance
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('notifications'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'notifications' ? 'active' : ''}`}
+        >
+          <NotificationsIcon style={{ fontSize: 20, marginRight: 12 }} />
+          Notifications
+          {unreadNotifications > 0 && <span className="badge-count">{unreadNotifications}</span>}
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('payroll'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'payroll' ? 'active' : ''}`}
+        >
+          <AttachMoneyIcon style={{ fontSize: 20, marginRight: 12 }} />
+          My Payroll
+        </button>
+        
+        <button 
+          onClick={() => { setActiveTab('profile'); if(isMobile) setSidebarOpen(false); }}
+          className={`sidebar-link ${activeTab === 'profile' ? 'active' : ''}`}
+        >
+          <PersonIcon style={{ fontSize: 20, marginRight: 12 }} />
+          My Profile
+        </button>
+
+        <button onClick={handleLogout} className="logout-btn">
+          <LogoutIcon style={{ fontSize: 20, marginRight: 12 }} />
+          Logout
+        </button>
+      </div>
+    </div>
+  );
+
+  // ====== MAIN RETURN ======
+  if (loading || authLoading) {
+    return <div className="loading">Loading your portal...</div>;
+  }
+
+  if (!employee) {
+    return <div className="error">No employee profile found. Please contact HR.</div>;
+  }
 
   return (
     <div className="employee-portal">
@@ -3877,13 +4770,6 @@ function EmployeePortal() {
         {activeTab === 'payroll' && renderPayroll()}
         {activeTab === 'profile' && renderProfile()}
       </div>
-
-      <style jsx>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }
