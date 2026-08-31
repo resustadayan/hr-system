@@ -102,7 +102,7 @@ function Attendance() {
 
     setLoading(true);
     try {
-      const status = timeIn <= '08:00' ? 'On Time' : 'Late';
+      const status = timeIn <= '07:00' ? 'On Time' : 'Late';
       
       await addDoc(collection(db, 'attendance'), {
         employeeId: selectedEmployee,
@@ -130,7 +130,7 @@ function Attendance() {
   };
 
   const calculateStatus = (timeInValue) => {
-    const threshold = '08:00';
+    const threshold = '07:00';
     return timeInValue <= threshold ? 'Present' : 'Late';
   };
 
@@ -617,7 +617,7 @@ function Attendance() {
       </div>
 
       {/* Record Attendance Form */}
-      <div className="form-card-modern">
+      {/* <div className="form-card-modern">
         <h3>
           <AddIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
           Record Attendance
@@ -691,7 +691,7 @@ function Attendance() {
             </button>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* View Attendance Records */}
       <div className="form-card-modern">

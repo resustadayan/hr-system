@@ -35,6 +35,9 @@ import WarningIcon from '@mui/icons-material/Warning';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import logo from '../assets/hrmo logo.jpg';
 
+// Late deduction rate (matches EmployeePortal.js)
+const LATE_DEDUCTION_RATE = 500;
+
 function MGDHDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -73,13 +76,15 @@ function MGDHDashboard() {
   const [timeIn, setTimeIn] = useState(null);
   const [timeOut, setTimeOut] = useState(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
-  const [officeStartTime, setOfficeStartTime] = useState('08:00');
-  const [officeEndTime, setOfficeEndTime] = useState('17:00');
+  const [officeStartTime, setOfficeStartTime] = useState('07:00');
+  const [officeEndTime, setOfficeEndTime] = useState('18:00');
   const [attendanceSummary, setAttendanceSummary] = useState({
     totalDays: 0,
     presentDays: 0,
     lateDays: 0,
-    absentDays: 0
+    absentDays: 0,
+    underTimeDays: 0,
+    overTimeDays: 0
   });
   const [mgdhEmployeeData, setMgdhEmployeeData] = useState(null);
 
@@ -109,6 +114,20 @@ function MGDHDashboard() {
     fetchMGDHData();
     setupRealtimeListeners();
   }, []);
+
+  // ====== HELPER FUNCTIONS ======
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  };
+
+  const formatTime = (date) => {
+    if (!date) return null;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
 
   // ====== FETCH MGDH EMPLOYEE DATA FOR ATTENDANCE ======
   const fetchMgdhEmployeeData = async (email) => {
@@ -168,7 +187,7 @@ function MGDHDashboard() {
           sickLeave: 15,
           createdAt: new Date().toISOString()
         });
-        console.log('✅ Created leave balance for MGDH');
+        console.log('Created leave balance for MGDH');
       }
       
       // Fetch the newly created employee data
@@ -176,11 +195,11 @@ function MGDHDashboard() {
       setMgdhEmployeeData(newEmpData);
       await fetchMgdhAttendance(userId);
       
-      alert('✅ Employee record created successfully! You can now time in.');
+      alert('Employee record created successfully! You can now time in.');
       return newEmpData;
       
     } catch (error) {
-      console.error('❌ Error fetching/creating MGDH employee data:', error);
+      console.error('Error fetching/creating MGDH employee data:', error);
       alert('Error: ' + error.message);
       return null;
     }
@@ -199,8 +218,17 @@ function MGDHDashboard() {
       const todaySnapshot = await getDocs(todayQuery);
       
       if (!todaySnapshot.empty) {
-        const todayData = todaySnapshot.docs[0].data();
-        const todayId = todaySnapshot.docs[0].id;
+        // Get the most recent entry for today
+        const allDocs = todaySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Sort by entry number or by timeIn
+        const sortedDocs = allDocs.sort((a, b) => {
+          if (a.entryNumber && b.entryNumber) return b.entryNumber - a.entryNumber;
+          return (b.timeIn || '').localeCompare(a.timeIn || '');
+        });
+        const latestDoc = sortedDocs[0];
+        const todayData = latestDoc;
+        const todayId = latestDoc.id;
+        
         setTodayAttendance({ id: todayId, ...todayData });
         setTimeIn(todayData.timeIn || null);
         setTimeOut(todayData.timeOut || null);
@@ -243,12 +271,16 @@ function MGDHDashboard() {
       const totalDays = monthRecords.length;
       const presentDays = monthRecords.filter(r => r.status === 'Present' || r.status === 'On Time').length;
       const lateDays = monthRecords.filter(r => r.status === 'Late').length;
+      const underTimeDays = monthRecords.filter(r => r.status === 'Under Time').length;
+      const overTimeDays = monthRecords.filter(r => r.status === 'Over Time').length;
       
       setAttendanceSummary({
         totalDays: totalDays || 0,
         presentDays: presentDays || 0,
         lateDays: lateDays || 0,
-        absentDays: Math.max(0, totalDays - presentDays - lateDays)
+        absentDays: Math.max(0, totalDays - presentDays - lateDays - underTimeDays - overTimeDays),
+        underTimeDays: underTimeDays || 0,
+        overTimeDays: overTimeDays || 0
       });
 
     } catch (error) {
@@ -271,21 +303,30 @@ function MGDHDashboard() {
     try {
       const today = new Date().toISOString().split('T')[0];
       const currentTime = new Date();
-      const timeInStr = currentTime.toTimeString().slice(0, 5);
+      const timeInStr = formatTime(currentTime);
       
+      // Check existing entries for today
       const existingQuery = query(
         collection(db, 'attendance'),
         where('employeeId', '==', mgdhEmployeeData.id),
         where('date', '==', today)
       );
       const existingSnapshot = await getDocs(existingQuery);
+      const existingDocs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      if (!existingSnapshot.empty) {
-        alert('You have already timed in today!');
+      // Find if there's an incomplete entry (has timeIn but no timeOut)
+      const incompleteEntry = existingDocs.find(doc => doc.timeIn && !doc.timeOut);
+      
+      if (incompleteEntry) {
+        alert('You have an incomplete attendance entry. Please time out first.');
         setAttendanceLoading(false);
         return;
       }
 
+      // Determine entry number
+      const entryNumber = existingDocs.length + 1;
+      
+      // Determine status based on office start time
       const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
 
       await addDoc(collection(db, 'attendance'), {
@@ -296,6 +337,7 @@ function MGDHDashboard() {
         timeIn: timeInStr,
         timeOut: null,
         status: status,
+        entryNumber: entryNumber,
         recordedBy: 'MGDH',
         recordedAt: new Date().toISOString(),
         timestamp: Timestamp.now()
@@ -306,7 +348,7 @@ function MGDHDashboard() {
         employeeName: mgdhEmployeeData.fullName || userName,
         department: department || mgdhEmployeeData.department || 'N/A',
         type: 'attendance_timein_mgdh',
-        message: `${userName} (MGDH) timed in at ${timeInStr} (${status})`,
+        message: `${userName} (MGDH) timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
         read: false,
         forAdmin: true,
         forEmployee: false,
@@ -316,7 +358,7 @@ function MGDHDashboard() {
       await addDoc(collection(db, 'notifications'), {
         employeeId: mgdhEmployeeData.id,
         type: 'attendance_confirmation',
-        message: `You have successfully timed in at ${timeInStr} (${status})`,
+        message: `You have successfully timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
         read: false,
         forEmployee: true,
         forAdmin: false,
@@ -328,7 +370,7 @@ function MGDHDashboard() {
       setAttendanceStatus('Timed In');
       
       const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
-      alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}`);
+      alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}\nEntry ${entryNumber}`);
       
       await fetchMgdhAttendance(mgdhEmployeeData.id);
       
@@ -342,18 +384,91 @@ function MGDHDashboard() {
 
   // ====== MGDH TIME OUT ======
   const handleTimeOut = async () => {
-    if (!mgdhEmployeeData || !todayAttendance) {
-      alert('You need to time in first before timing out.');
+    if (!mgdhEmployeeData) {
+      alert('Employee data not found. Please refresh and try again.');
       return;
     }
     
     setAttendanceLoading(true);
     try {
+      const today = new Date().toISOString().split('T')[0];
       const currentTime = new Date();
-      const timeOutStr = currentTime.toTimeString().slice(0, 5);
+      const timeOutStr = formatTime(currentTime);
       
-      await updateDoc(doc(db, 'attendance', todayAttendance.id), {
+      // Find the most recent attendance record for today that has timeIn but no timeOut
+      const existingQuery = query(
+        collection(db, 'attendance'),
+        where('employeeId', '==', mgdhEmployeeData.id),
+        where('date', '==', today)
+      );
+      const existingSnapshot = await getDocs(existingQuery);
+      
+      if (existingSnapshot.empty) {
+        alert('You have not timed in today.');
+        setAttendanceLoading(false);
+        return;
+      }
+
+      // Find the record with timeIn but no timeOut (most recent incomplete entry)
+      let recordToUpdate = null;
+      let recordId = null;
+      
+      const docs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Sort by entry number descending to get the latest
+      docs.sort((a, b) => (b.entryNumber || 0) - (a.entryNumber || 0));
+      
+      for (const doc of docs) {
+        if (doc.timeIn && !doc.timeOut) {
+          recordToUpdate = doc;
+          recordId = doc.id;
+          break;
+        }
+      }
+
+      if (!recordToUpdate) {
+        alert('All your entries for today are already completed. Please time in first if you want to record another entry.');
+        setAttendanceLoading(false);
+        return;
+      }
+
+      // Determine if this is under time or over time
+      const officeEndMinutes = timeToMinutes(officeEndTime);
+      const timeOutMinutes = timeToMinutes(timeOutStr);
+      const timeInMinutes = timeToMinutes(recordToUpdate.timeIn);
+      
+      let status = recordToUpdate.status || 'Present';
+      let overtimeMinutes = 0;
+      let undertimeMinutes = 0;
+
+      // Check if timed out early (undertime)
+      if (timeOutMinutes < officeEndMinutes) {
+        const diffMinutes = officeEndMinutes - timeOutMinutes;
+        if (diffMinutes >= 15) { // 15 minutes threshold
+          status = 'Under Time';
+          undertimeMinutes = diffMinutes;
+        } else {
+          // If less than 15 minutes early, still considered on time
+          status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+        }
+      } 
+      // Check if timed out late (overtime)
+      else if (timeOutMinutes > officeEndMinutes) {
+        const diffMinutes = timeOutMinutes - officeEndMinutes;
+        if (diffMinutes >= 15) { // 15 minutes threshold
+          status = 'Over Time';
+          overtimeMinutes = diffMinutes;
+        } else {
+          status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+        }
+      } else {
+        status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+      }
+
+      await updateDoc(doc(db, 'attendance', recordId), {
         timeOut: timeOutStr,
+        status: status,
+        overtimeMinutes: overtimeMinutes,
+        undertimeMinutes: undertimeMinutes,
         updatedAt: new Date().toISOString()
       });
 
@@ -362,7 +477,7 @@ function MGDHDashboard() {
         employeeName: mgdhEmployeeData.fullName || userName,
         department: department || mgdhEmployeeData.department || 'N/A',
         type: 'attendance_timeout_mgdh',
-        message: `${userName} (MGDH) timed out at ${timeOutStr}`,
+        message: `${userName} (MGDH) timed out at ${timeOutStr} (${status})${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
         read: false,
         forAdmin: true,
         forEmployee: false,
@@ -372,7 +487,7 @@ function MGDHDashboard() {
       await addDoc(collection(db, 'notifications'), {
         employeeId: mgdhEmployeeData.id,
         type: 'attendance_confirmation',
-        message: `You have successfully timed out at ${timeOutStr}`,
+        message: `You have successfully timed out at ${timeOutStr}\nStatus: ${status}${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
         read: false,
         forEmployee: true,
         forAdmin: false,
@@ -383,7 +498,14 @@ function MGDHDashboard() {
       setIsTimedOut(true);
       setAttendanceStatus('Completed');
       
-      alert(`Timed out successfully at ${timeOutStr}`);
+      let alertMessage = `Timed out successfully at ${timeOutStr}\nStatus: ${status}`;
+      if (overtimeMinutes > 0) {
+        alertMessage += `\n🕐 Overtime: ${overtimeMinutes} minutes`;
+      }
+      if (undertimeMinutes > 0) {
+        alertMessage += `\n⚠️ Undertime: ${undertimeMinutes} minutes`;
+      }
+      alert(alertMessage);
       
       await fetchMgdhAttendance(mgdhEmployeeData.id);
       
@@ -402,6 +524,10 @@ function MGDHDashboard() {
         return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> On Time</span>;
       case 'Late':
         return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Late</span>;
+      case 'Under Time':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Under Time</span>;
+      case 'Over Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Over Time</span>;
       case 'Timed In':
         return <span className="status-badge info"><AccessTimeIcon style={{ fontSize: 14, marginRight: 4 }} /> Timed In</span>;
       case 'Completed':
@@ -442,10 +568,24 @@ function MGDHDashboard() {
           </div>
         </div>
         <div className="stat-card">
+          <div className="stat-icon purple"><WarningIcon /></div>
+          <div className="stat-info">
+            <h3>Under Time</h3>
+            <p>{attendanceSummary.underTimeDays || 0}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon success"><CheckCircleIcon /></div>
+          <div className="stat-info">
+            <h3>Over Time</h3>
+            <p>{attendanceSummary.overTimeDays || 0}</p>
+          </div>
+        </div>
+        <div className="stat-card">
           <div className="stat-icon red"><CancelIcon /></div>
           <div className="stat-info">
             <h3>Absent</h3>
-            <p>{attendanceSummary.absentDays}</p>
+            <p>{attendanceSummary.absentDays || 0}</p>
           </div>
         </div>
       </div>
@@ -474,70 +614,61 @@ function MGDHDashboard() {
             </p>
           </div>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {!isTimedIn && (
-              <button 
-                onClick={handleTimeIn} 
-                className="btn-time-in"
-                disabled={attendanceLoading}
-                style={{
-                  padding: '12px 30px',
-                  background: '#4a6fa5',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}
-              >
-                <LoginIcon style={{ fontSize: 20 }} />
-                {attendanceLoading ? 'Processing...' : 'Time In'}
-              </button>
-            )}
-            {isTimedIn && !isTimedOut && (
-              <button 
-                onClick={handleTimeOut} 
-                className="btn-time-out"
-                disabled={attendanceLoading}
-                style={{
-                  padding: '12px 30px',
-                  background: '#e67e22',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px'
-                }}
-              >
-                <Logout style={{ fontSize: 20 }} />
-                {attendanceLoading ? 'Processing...' : 'Time Out'}
-              </button>
-            )}
-            {isTimedIn && isTimedOut && (
-              <span style={{ 
+            <button 
+              onClick={handleTimeIn} 
+              className="btn-time-in"
+              disabled={attendanceLoading}
+              style={{
                 padding: '12px 30px',
-                background: '#27ae60',
+                background: '#4a6fa5',
                 color: 'white',
+                border: 'none',
                 borderRadius: '8px',
                 fontSize: '16px',
                 fontWeight: '600',
+                cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                opacity: attendanceLoading ? 0.7 : 1
+              }}
+            >
+              <LoginIcon style={{ fontSize: 20 }} />
+              {attendanceLoading ? 'Processing...' : 'Time In'}
+            </button>
+            <button 
+              onClick={handleTimeOut} 
+              className="btn-time-out"
+              disabled={attendanceLoading || !isTimedIn}
+              style={{
+                padding: '12px 30px',
+                background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px'
-              }}>
-                <CheckCircleIcon style={{ fontSize: 20 }} />
-                Day Complete
-              </span>
-            )}
+              }}
+            >
+              <Logout style={{ fontSize: 20 }} />
+              {attendanceLoading ? 'Processing...' : 'Time Out'}
+            </button>
           </div>
         </div>
+        {isTimedIn && isTimedOut && (
+          <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
+            ✅ You have completed your attendance entry. You can time in again if needed.
+          </div>
+        )}
+        {isTimedIn && !isTimedOut && (
+          <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
+            ⏳ You are currently timed in. Click "Time Out" when leaving.
+          </div>
+        )}
       </div>
 
       <div className="form-card-modern">
@@ -553,6 +684,7 @@ function MGDHDashboard() {
                 <th>Time In</th>
                 <th>Time Out</th>
                 <th>Status</th>
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -560,26 +692,36 @@ function MGDHDashboard() {
                 [...attendanceRecords]
                   .sort((a, b) => b.date.localeCompare(a.date))
                   .slice(0, 20)
-                  .map(record => (
-                    <tr key={record.id} className={record.status === 'Late' ? 'late-row' : ''}>
-                      <td>{record.date}</td>
-                      <td className="time-cell">{record.timeIn || '—'}</td>
-                      <td className="time-cell">{record.timeOut || '—'}</td>
-                      <td>
-                        <span className={`status-badge ${record.status === 'On Time' || record.status === 'Present' ? 'success' : 'warning'}`}>
-                          {record.status === 'On Time' || record.status === 'Present' ? (
-                            <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                          ) : (
-                            <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                          )}
-                          {record.status || 'Present'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                  .map(record => {
+                    let remarks = '';
+                    if (record.status === 'Under Time' && record.undertimeMinutes) {
+                      remarks = `⏱️ Undertime: ${record.undertimeMinutes} mins`;
+                    } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+                      remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
+                    } else if (record.status === 'Late') {
+                      remarks = '⏰ Late arrival';
+                    } else if (record.status === 'On Time') {
+                      remarks = '✅ On time';
+                    }
+                    // For multiple entries, show entry number
+                    if (record.entryNumber && record.entryNumber > 1) {
+                      remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
+                    }
+                    return (
+                      <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''}>
+                        <td>{record.date}</td>
+                        <td className="time-cell">{record.timeIn || '—'}</td>
+                        <td className="time-cell">{record.timeOut || '—'}</td>
+                        <td>
+                          {getAttendanceStatusBadge(record.status || 'Present')}
+                        </td>
+                        <td style={{ fontSize: '12px', color: '#666' }}>{remarks}</td>
+                      </tr>
+                    );
+                  })
               ) : (
                 <tr>
-                  <td colSpan="4" className="empty-state">
+                  <td colSpan="5" className="empty-state">
                     <p>No attendance records found</p>
                   </td>
                 </tr>

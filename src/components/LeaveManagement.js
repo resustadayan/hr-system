@@ -147,7 +147,7 @@ function LeaveManagement() {
     const icons = {
       'Vacation': <BeachAccessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Sick': <SickIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
-      'Emergency': <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
+      'Wellness': <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Maternity': <ChildCareIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Paternity': <ManIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Others': <MoreHorizIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
@@ -551,13 +551,13 @@ function LeaveManagement() {
             <PrintIcon style={{ fontSize: 18 }} />
             Print
           </button>
-          <button 
+          {/* <button 
             onClick={() => setShowForm(true)} 
             className="btn-add-modern"
           >
             <AddIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
             New Leave Request
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -764,7 +764,7 @@ function LeaveManagement() {
                     </option>
                     <option value="Emergency">
                       <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Emergency
+                      Wellness
                     </option>
                     <option value="Maternity">
                       <ChildCareIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />

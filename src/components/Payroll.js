@@ -1,4 +1,4 @@
-// src/components/Payroll.js - Enhanced Version
+// src/components/Payroll.js - Enhanced with Position-Based Deductions (Leave Credits Only)
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, onSnapshot } from 'firebase/firestore';
@@ -22,6 +22,20 @@ import PendingIcon from '@mui/icons-material/Pending';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import PrintIcon from '@mui/icons-material/Print';
 import CancelIcon from '@mui/icons-material/Cancel';
+import WorkIcon from '@mui/icons-material/Work';
+
+// ====== CONFIGURATION ======
+// Monetary deduction for Job Order employees
+const MONETARY_DEDUCTION_RATE = 1.50;
+
+// Leave credit deduction rate (for Casual and Regular employees)
+const LEAVE_DEDUCTION_RATE = 0.5; // 0.5 leave credit per late day
+
+// Position types that use leave credits instead of monetary deductions
+const LEAVE_CREDIT_POSITIONS = ['Casual', 'Regular', 'Permanent', 'Probationary'];
+
+// Position types that use monetary deductions
+const MONETARY_DEDUCTION_POSITIONS = ['Job Order', 'JO', 'Contractual'];
 
 function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const [payrollRecords, setPayrollRecords] = useState([]);
@@ -29,7 +43,9 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterPosition, setFilterPosition] = useState('all');
   const [departments, setDepartments] = useState([]);
+  const [positions, setPositions] = useState([]);
   const [summary, setSummary] = useState({ 
     totalPayroll: 0, 
     avgSalary: 0, 
@@ -39,15 +55,15 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     totalLateDeductions: 0,
     totalLateDays: 0,
     paidCount: 0,
-    pendingCount: 0
+    pendingCount: 0,
+    totalLeaveCreditsUsed: 0,
+    totalMonetaryDeductions: 0
   });
   const [loading, setLoading] = useState(true);
   const [processingPayroll, setProcessingPayroll] = useState(false);
   const [processMessage, setProcessMessage] = useState('');
   const [processSuccess, setProcessSuccess] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
-
-  const LATE_DEDUCTION_RATE = 500;
 
   // Real-time listener for payroll changes
   useEffect(() => {
@@ -68,6 +84,9 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
 
       const deptList = [...new Set(empList.map(emp => emp.department || emp.dept).filter(Boolean))];
       setDepartments(deptList);
+
+      const posList = [...new Set(empList.map(emp => emp.position || emp.employmentType || 'Unknown').filter(Boolean))];
+      setPositions(posList);
 
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
@@ -92,9 +111,52 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         }
       });
 
+      // Get leave balances for employees
+      const leaveBalancesSnapshot = await getDocs(collection(db, 'leaveBalances'));
+      const leaveBalancesMap = {};
+      leaveBalancesSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.employeeId) {
+          leaveBalancesMap[data.employeeId] = {
+            id: doc.id,
+            ...data
+          };
+        }
+      });
+
       const updatedPayroll = payrollList.map(record => {
+        const emp = empList.find(e => e.id === record.employeeId);
+        const position = emp?.position || emp?.employmentType || 'Unknown';
         const lateDays = lateDaysMap[record.employeeId] || 0;
-        const lateDeduction = lateDays * LATE_DEDUCTION_RATE;
+        
+        // Check if position uses leave credits or monetary deduction
+        const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
+        const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
+        
+        let lateDeduction = 0;
+        let leaveCreditsUsed = 0;
+        let deductionType = 'none';
+        
+        if (usesLeaveCredits && lateDays > 0) {
+          // Use leave credits for Casual, Regular, etc.
+          leaveCreditsUsed = lateDays * LEAVE_DEDUCTION_RATE;
+          deductionType = 'leave';
+          
+          // Deduct from leave balance
+          const balance = leaveBalancesMap[record.employeeId];
+          if (balance) {
+            let remainingDeduction = leaveCreditsUsed;
+            let vacationDeduction = Math.min(remainingDeduction, balance.vacationLeave || 0);
+            remainingDeduction -= vacationDeduction;
+            let sickDeduction = Math.min(remainingDeduction, balance.sickLeave || 0);
+            // Store deduction amounts for display
+          }
+        } else if (usesMonetaryDeduction && lateDays > 0) {
+          // Monetary deduction for Job Order
+          lateDeduction = lateDays * MONETARY_DEDUCTION_RATE;
+          deductionType = 'monetary';
+        }
+        
         const originalDeductions = record.deductions || record.otherDeductions || 0;
         const totalDeductions = originalDeductions + lateDeduction;
         const netPay = (record.basicSalary || 0) - totalDeductions;
@@ -106,12 +168,17 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           originalDeductions: originalDeductions,
           totalDeductions: totalDeductions,
           netPay: netPay,
-          hasLate: lateDays > 0
+          hasLate: lateDays > 0,
+          position: position,
+          deductionType: deductionType,
+          leaveCreditsUsed: leaveCreditsUsed,
+          monetaryDeduction: lateDeduction,
+          deductionRate: usesLeaveCredits ? LEAVE_DEDUCTION_RATE : MONETARY_DEDUCTION_RATE
         };
       });
 
       setPayrollRecords(updatedPayroll);
-      calculateSummary(updatedPayroll, empList, lateDaysMap);
+      calculateSummary(updatedPayroll, empList, lateDaysMap, leaveBalancesMap);
 
     } catch (error) {
       console.error('Error fetching payroll data:', error);
@@ -120,10 +187,38 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     }
   };
 
-  const calculateSummary = (records, empList, lateDaysMap) => {
+  const getDeductionInfo = (position) => {
+    if (!position) return { type: 'unknown', rate: 0, label: 'Unknown' };
+    const normalizedPosition = position.trim();
+    
+    if (LEAVE_CREDIT_POSITIONS.includes(normalizedPosition)) {
+      return { 
+        type: 'leave', 
+        rate: LEAVE_DEDUCTION_RATE, 
+        label: 'Leave Credits',
+        description: `${LEAVE_DEDUCTION_RATE} day per late`
+      };
+    } else if (MONETARY_DEDUCTION_POSITIONS.includes(normalizedPosition)) {
+      return { 
+        type: 'monetary', 
+        rate: MONETARY_DEDUCTION_RATE, 
+        label: 'Monetary',
+        description: `₱${MONETARY_DEDUCTION_RATE} per late`
+      };
+    }
+    return { 
+      type: 'leave', 
+      rate: LEAVE_DEDUCTION_RATE, 
+      label: 'Leave Credits (Default)',
+      description: `${LEAVE_DEDUCTION_RATE} day per late`
+    };
+  };
+
+  const calculateSummary = (records, empList, lateDaysMap, leaveBalancesMap) => {
     const totalPayroll = records.reduce((sum, record) => sum + (record.netPay || 0), 0);
     const totalDeductions = records.reduce((sum, record) => sum + (record.totalDeductions || 0), 0);
-    const totalLateDeductions = records.reduce((sum, record) => sum + (record.lateDeduction || 0), 0);
+    const totalMonetaryDeductions = records.reduce((sum, record) => sum + (record.monetaryDeduction || 0), 0);
+    const totalLeaveCreditsUsed = records.reduce((sum, record) => sum + (record.leaveCreditsUsed || 0), 0);
     const totalLateDays = Object.values(lateDaysMap || {}).reduce((sum, val) => sum + val, 0);
     const avgSalary = records.length > 0 ? totalPayroll / records.length : 0;
     const paidCount = records.filter(r => r.status === 'Paid').length;
@@ -146,10 +241,12 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       departmentBreakdown,
       totalDeductions,
       totalEmployees: empList.length,
-      totalLateDeductions,
+      totalLateDeductions: totalMonetaryDeductions + (totalLeaveCreditsUsed * LEAVE_DEDUCTION_RATE),
       totalLateDays,
       paidCount,
-      pendingCount
+      pendingCount,
+      totalLeaveCreditsUsed,
+      totalMonetaryDeductions
     });
   };
 
@@ -165,10 +262,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         ...(newStatus === 'Paid' ? { paidAt: new Date().toISOString() } : {})
       });
 
-      // Get the payroll record for notification
       const payrollRecord = payrollRecords.find(r => r.id === payrollId);
       
-      // Notify employee
       if (payrollRecord) {
         await addDoc(collection(db, 'notifications'), {
           employeeId: payrollRecord.employeeId,
@@ -220,7 +315,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           updatedAt: new Date().toISOString()
         });
         
-        // Notify each employee
         await addDoc(collection(db, 'notifications'), {
           employeeId: record.employeeId,
           employeeName: record.employeeName,
@@ -290,15 +384,81 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         }
       });
 
+      // Get leave balances
+      const leaveBalancesSnapshot = await getDocs(collection(db, 'leaveBalances'));
+      const leaveBalancesMap = {};
+      leaveBalancesSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.employeeId) {
+          leaveBalancesMap[data.employeeId] = {
+            id: doc.id,
+            ...data
+          };
+        }
+      });
+
       let createdCount = 0;
       let updatedCount = 0;
       let errorCount = 0;
+      let totalLeaveCreditsUsed = 0;
+      let totalMonetaryDeductions = 0;
 
       for (const emp of empList) {
         try {
           const lateDays = lateDaysMap[emp.id] || 0;
-          const lateDeduction = lateDays * LATE_DEDUCTION_RATE;
+          const position = emp.position || emp.employmentType || 'Unknown';
           const basicSalary = parseFloat(emp.salary || emp.basicSalary || emp.baseSalary || 0) || 0;
+          
+          let lateDeduction = 0;
+          let leaveCreditsUsed = 0;
+          let monetaryDeduction = 0;
+          let deductionType = 'none';
+          
+          // Check if position uses leave credits or monetary deduction
+          const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
+          const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
+          
+          if (usesLeaveCredits && lateDays > 0) {
+            // Use leave credits for Casual, Regular, etc.
+            leaveCreditsUsed = lateDays * LEAVE_DEDUCTION_RATE;
+            deductionType = 'leave';
+            
+            const balance = leaveBalancesMap[emp.id];
+            if (balance) {
+              // Deduct from leave balances
+              let remainingDeduction = leaveCreditsUsed;
+              let vacationDeduction = Math.min(remainingDeduction, balance.vacationLeave || 0);
+              remainingDeduction -= vacationDeduction;
+              let sickDeduction = Math.min(remainingDeduction, balance.sickLeave || 0);
+              remainingDeduction -= sickDeduction;
+              
+              const actualDeduction = vacationDeduction + sickDeduction;
+              
+              // Update leave balances in database
+              const updates = {};
+              if (vacationDeduction > 0) {
+                updates.vacationLeave = (balance.vacationLeave || 0) - vacationDeduction;
+              }
+              if (sickDeduction > 0) {
+                updates.sickLeave = (balance.sickLeave || 0) - sickDeduction;
+              }
+              
+              if (Object.keys(updates).length > 0) {
+                await updateDoc(doc(db, 'leaveBalances', balance.id), {
+                  ...updates,
+                  updatedAt: new Date().toISOString()
+                });
+                totalLeaveCreditsUsed += actualDeduction;
+              }
+            }
+          } else if (usesMonetaryDeduction && lateDays > 0) {
+            // Monetary deduction for Job Order
+            monetaryDeduction = lateDays * MONETARY_DEDUCTION_RATE;
+            lateDeduction = monetaryDeduction;
+            deductionType = 'monetary';
+            totalMonetaryDeductions += monetaryDeduction;
+          }
+          
           const totalDeductions = lateDeduction;
           const netPay = basicSalary - totalDeductions;
           const employeeName = emp.fullName || emp.name || emp.employeeName || 'Unknown';
@@ -307,6 +467,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             employeeId: emp.id,
             employeeName: employeeName,
             department: emp.department || emp.dept || 'Unknown',
+            position: position,
+            employmentType: position,
             periodStart: startDate,
             periodEnd: endDate,
             periodMonth: monthName,
@@ -315,10 +477,14 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             deductions: totalDeductions,
             lateDays: lateDays,
             lateDeduction: lateDeduction,
+            monetaryDeduction: monetaryDeduction,
+            leaveCreditsUsed: leaveCreditsUsed,
+            deductionType: deductionType,
+            deductionRate: usesLeaveCredits ? LEAVE_DEDUCTION_RATE : MONETARY_DEDUCTION_RATE,
             originalDeductions: 0,
             totalDeductions: totalDeductions,
             netPay: netPay,
-            status: 'Pending', // Default status
+            status: 'Pending',
             hasLate: lateDays > 0,
             processedAt: new Date().toISOString()
           };
@@ -346,14 +512,17 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       }
 
       const totalLateDays = Object.values(lateDaysMap).reduce((sum, val) => sum + val, 0);
-      const totalLateDeductions = totalLateDays * LATE_DEDUCTION_RATE;
       
       const successMessage = 
         `✅ Payroll processed successfully!\n` +
         `📝 Created: ${createdCount}, Updated: ${updatedCount}\n` +
         `📊 Total late days: ${totalLateDays}\n` +
-        `💰 Total late deductions: ₱${totalLateDeductions.toLocaleString()}\n` +
-        `📌 Status set to: Pending (Ready for review)`;
+        `🔄 Leave credits used: ${totalLeaveCreditsUsed.toFixed(1)} days\n` +
+        `💰 Monetary deductions: ₱${totalMonetaryDeductions.toFixed(2)}\n` +
+        `📌 Status set to: Pending (Ready for review)\n` +
+        `📋 Deduction types:\n` +
+        `   • Casual/Regular: Leave Credits (${LEAVE_DEDUCTION_RATE} day per late)\n` +
+        `   • Job Order: Monetary (₱${MONETARY_DEDUCTION_RATE} per late)`;
       
       setProcessMessage(successMessage);
       setProcessSuccess(true);
@@ -386,6 +555,11 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const getEmployeeDepartment = (employeeId) => {
     const emp = employees.find(e => e.id === employeeId);
     return emp ? (emp.department || emp.dept || 'Unknown') : 'Unknown';
+  };
+
+  const getEmployeePosition = (employeeId) => {
+    const emp = employees.find(e => e.id === employeeId);
+    return emp ? (emp.position || emp.employmentType || 'Unknown') : 'Unknown';
   };
 
   const getStatusBadge = (record) => {
@@ -423,10 +597,35 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     );
   };
 
+  const getDeductionDisplay = (record) => {
+    const type = record.deductionType || 'unknown';
+    const position = record.position || 'Unknown';
+    
+    if (type === 'leave') {
+      return (
+        <span style={{ fontSize: '12px' }}>
+          <span style={{ color: '#27ae60' }}>Leave Credits: {record.leaveCreditsUsed?.toFixed(1) || 0} days</span>
+          <br />
+          <span style={{ color: '#6c757d', fontSize: '11px' }}>Rate: {LEAVE_DEDUCTION_RATE} day per late</span>
+        </span>
+      );
+    } else if (type === 'monetary') {
+      return (
+        <span style={{ fontSize: '12px' }}>
+          <span style={{ color: '#e74c3c' }}>Monetary: ₱{record.monetaryDeduction?.toFixed(2) || '0'}</span>
+          <br />
+          <span style={{ color: '#6c757d', fontSize: '11px' }}>Rate: ₱{MONETARY_DEDUCTION_RATE} per late</span>
+        </span>
+      );
+    }
+    return <span>No deduction</span>;
+  };
+
   const filteredRecords = payrollRecords.filter(record => {
     const deptMatch = filterDepartment === 'all' || getEmployeeDepartment(record.employeeId) === filterDepartment;
     const statusMatch = filterStatus === 'all' || (record.status || 'Pending') === filterStatus;
-    return deptMatch && statusMatch;
+    const positionMatch = filterPosition === 'all' || (record.position || 'Unknown') === filterPosition;
+    return deptMatch && statusMatch && positionMatch;
   });
 
   if (loading) {
@@ -443,7 +642,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <AttachMoneyIcon style={{ fontSize: 28, marginRight: 10, verticalAlign: 'middle' }} />
             Payroll Monitoring
           </h2>
-          <p className="header-subtitle">Track and manage employee salary records with late deductions</p>
+          <p className="header-subtitle">Track and manage employee salary records with position-based deductions</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="stats-badge">
@@ -541,15 +740,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <p>₱{summary.avgSalary.toLocaleString()}</p>
           </div>
         </div>
-        <div className="stat-card red">
-          <div className="stat-icon">
-            <TrendingDownIcon style={{ fontSize: 30 }} />
-          </div>
-          <div className="stat-info">
-            <h3>Total Deductions</h3>
-            <p>₱{summary.totalDeductions.toLocaleString()}</p>
-          </div>
-        </div>
         <div className="stat-card green">
           <div className="stat-icon">
             <CheckCircleIcon style={{ fontSize: 30 }} />
@@ -570,6 +760,35 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <small>employees</small>
           </div>
         </div>
+        <div className="stat-card teal">
+          <div className="stat-icon">
+            <PeopleIcon style={{ fontSize: 30 }} />
+          </div>
+          <div className="stat-info">
+            <h3>Leave Credits Used</h3>
+            <p>{summary.totalLeaveCreditsUsed?.toFixed(1) || 0} days</p>
+            <small>Casual & Regular</small>
+          </div>
+        </div>
+      </div>
+
+      {/* Deduction Rate Info */}
+      <div style={{
+        padding: '12px 20px',
+        background: '#f0f4fe',
+        borderRadius: '8px',
+        marginBottom: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '20px',
+        flexWrap: 'wrap',
+        fontSize: '13px'
+      }}>
+        <span><WorkIcon style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }} /> 
+          <strong>Deduction Rules:</strong>
+        </span>
+        <span style={{ color: '#27ae60' }}>✅ Casual & Regular: <strong>Leave Credits</strong> ({LEAVE_DEDUCTION_RATE} day per late)</span>
+        <span style={{ color: '#e74c3c' }}>💰 Job Order: <strong>Monetary</strong> (₱{MONETARY_DEDUCTION_RATE} per late)</span>
       </div>
 
       {/* Filter Bar */}
@@ -584,6 +803,19 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <option value="all">All Departments</option>
             {departments.map(dept => (
               <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+        </div>
+        <div className="filter-group">
+          <WorkIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
+          <select
+            value={filterPosition}
+            onChange={(e) => setFilterPosition(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Positions</option>
+            {positions.map(pos => (
+              <option key={pos} value={pos}>{pos}</option>
             ))}
           </select>
         </div>
@@ -651,11 +883,12 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           <thead>
             <tr>
               <th>Employee</th>
+              <th>Position</th>
               <th>Department</th>
               <th>Period</th>
               <th>Basic Salary</th>
               <th>Late Days</th>
-              <th>Late Deduction</th>
+              <th>Deduction Details</th>
               <th>Total Deductions</th>
               <th>Net Pay</th>
               <th>Status</th>
@@ -664,109 +897,150 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           </thead>
           <tbody>
             {filteredRecords.length > 0 ? (
-              filteredRecords.map(record => (
-                <tr key={record.id} className={record.hasLate ? 'has-late' : ''}>
-                  <td>
-                    <div className="employee-info">
-                      <div className="employee-avatar small">
-                        {getEmployeeName(record.employeeId).charAt(0)}
+              filteredRecords.map(record => {
+                const position = record.position || getEmployeePosition(record.employeeId);
+                const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
+                const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
+                const isLeave = record.deductionType === 'leave';
+                const isMonetary = record.deductionType === 'monetary';
+                
+                return (
+                  <tr key={record.id} className={record.hasLate ? 'has-late' : ''}>
+                    <td>
+                      <div className="employee-info">
+                        <div className="employee-avatar small">
+                          {getEmployeeName(record.employeeId).charAt(0)}
+                        </div>
+                        <span className="employee-name">{getEmployeeName(record.employeeId)}</span>
                       </div>
-                      <span className="employee-name">{getEmployeeName(record.employeeId)}</span>
-                    </div>
-                  </td>
-                  <td><span className="dept-tag">{getEmployeeDepartment(record.employeeId)}</span></td>
-                  <td>
-                    <div className="period-cell">
-                      <span>{record.periodStart}</span>
-                      <span className="arrow">→</span>
-                      <span>{record.periodEnd}</span>
-                    </div>
-                  </td>
-                  <td className="amount-cell">₱{record.basicSalary?.toLocaleString() || '0'}</td>
-                  <td className="amount-cell">
-                    {record.lateDays > 0 ? (
-                      <span style={{ color: '#e67e22', fontWeight: '600' }}>{record.lateDays} days</span>
-                    ) : (
-                      <span style={{ color: '#27ae60' }}>0</span>
-                    )}
-                  </td>
-                  <td className="deduction-cell">
-                    {record.lateDeduction > 0 ? (
-                      <span style={{ color: '#e74c3c' }}>₱{record.lateDeduction?.toLocaleString() || '0'}</span>
-                    ) : (
-                      '₱0'
-                    )}
-                  </td>
-                  <td className="deduction-cell">
-                    {record.totalDeductions > 0 ? (
-                      <span style={{ color: '#e74c3c', fontWeight: '600' }}>₱{record.totalDeductions?.toLocaleString() || '0'}</span>
-                    ) : (
-                      '₱0'
-                    )}
-                  </td>
-                  <td className="net-pay-cell">
-                    {record.hasLate ? (
-                      <span style={{ color: '#e67e22', fontWeight: '700' }}>₱{record.netPay?.toLocaleString() || '0'}</span>
-                    ) : (
-                      <span style={{ color: '#27ae60', fontWeight: '700' }}>₱{record.netPay?.toLocaleString() || '0'}</span>
-                    )}
-                  </td>
-                  <td>{getStatusBadge(record)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                      {/* Status Update Buttons */}
-                      {(record.status === 'Pending' || !record.status) && (
-                        <button
-                          onClick={() => updatePayrollStatus(record.id, 'Paid')}
-                          disabled={updatingStatus}
-                          style={{
-                            padding: '4px 10px',
-                            background: '#27ae60',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            cursor: updatingStatus ? 'not-allowed' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <PaidIcon style={{ fontSize: 14 }} />
-                          Mark Paid
-                        </button>
+                    </td>
+                    <td>
+                      <span className="position-tag" style={{
+                        background: usesLeaveCredits ? '#d4edda' : '#fff3cd',
+                        color: usesLeaveCredits ? '#155724' : '#856404',
+                        padding: '2px 10px',
+                        borderRadius: '12px',
+                        fontSize: '12px',
+                        fontWeight: '600'
+                      }}>
+                        {position}
+                      </span>
+                    </td>
+                    <td><span className="dept-tag">{getEmployeeDepartment(record.employeeId)}</span></td>
+                    <td>
+                      <div className="period-cell">
+                        <span>{record.periodStart}</span>
+                        <span className="arrow">→</span>
+                        <span>{record.periodEnd}</span>
+                      </div>
+                    </td>
+                    <td className="amount-cell">₱{record.basicSalary?.toLocaleString() || '0'}</td>
+                    <td className="amount-cell">
+                      {record.lateDays > 0 ? (
+                        <span style={{ color: '#e67e22', fontWeight: '600' }}>{record.lateDays} days</span>
+                      ) : (
+                        <span style={{ color: '#27ae60' }}>0</span>
                       )}
-                      {record.status === 'Paid' && (
-                        <button
-                          onClick={() => updatePayrollStatus(record.id, 'Pending')}
-                          disabled={updatingStatus}
-                          style={{
-                            padding: '4px 10px',
-                            background: '#e67e22',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            cursor: updatingStatus ? 'not-allowed' : 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <PendingIcon style={{ fontSize: 14 }} />
-                          Revert
-                        </button>
+                    </td>
+                    <td className="deduction-cell">
+                      {isLeave && record.lateDays > 0 ? (
+                        <span style={{ fontSize: '12px', color: '#27ae60' }}>
+                          Leave Credits: {record.leaveCreditsUsed?.toFixed(1) || 0} days used
+                          <br />
+                          <span style={{ fontSize: '11px', color: '#6c757d' }}>Rate: {LEAVE_DEDUCTION_RATE} day/late</span>
+                        </span>
+                      ) : isMonetary && record.lateDays > 0 ? (
+                        <span style={{ fontSize: '12px', color: '#e74c3c' }}>
+                          Monetary: ₱{record.monetaryDeduction?.toFixed(2) || '0'}
+                          <br />
+                          <span style={{ fontSize: '11px', color: '#6c757d' }}>Rate: ₱{MONETARY_DEDUCTION_RATE}/late</span>
+                        </span>
+                      ) : (
+                        <span style={{ color: '#27ae60' }}>No deduction</span>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="deduction-cell">
+                      {record.totalDeductions > 0 ? (
+                        <span style={{ color: '#e74c3c', fontWeight: '600' }}>
+                          ₱{record.totalDeductions?.toLocaleString() || '0'}
+                          {isLeave && record.leaveCreditsUsed > 0 && (
+                            <span style={{ fontSize: '11px', display: 'block', color: '#27ae60' }}>
+                              (Leave: {record.leaveCreditsUsed.toFixed(1)} days)
+                            </span>
+                          )}
+                          {isMonetary && record.monetaryDeduction > 0 && (
+                            <span style={{ fontSize: '11px', display: 'block', color: '#e74c3c' }}>
+                              (Monetary: ₱{record.monetaryDeduction.toFixed(2)})
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        '₱0'
+                      )}
+                    </td>
+                    <td className="net-pay-cell">
+                      {record.hasLate ? (
+                        <span style={{ color: '#e67e22', fontWeight: '700' }}>₱{record.netPay?.toLocaleString() || '0'}</span>
+                      ) : (
+                        <span style={{ color: '#27ae60', fontWeight: '700' }}>₱{record.netPay?.toLocaleString() || '0'}</span>
+                      )}
+                    </td>
+                    <td>{getStatusBadge(record)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                        {(record.status === 'Pending' || !record.status) && (
+                          <button
+                            onClick={() => updatePayrollStatus(record.id, 'Paid')}
+                            disabled={updatingStatus}
+                            style={{
+                              padding: '4px 10px',
+                              background: '#27ae60',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              cursor: updatingStatus ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <PaidIcon style={{ fontSize: 14 }} />
+                            Mark Paid
+                          </button>
+                        )}
+                        {record.status === 'Paid' && (
+                          <button
+                            onClick={() => updatePayrollStatus(record.id, 'Pending')}
+                            disabled={updatingStatus}
+                            style={{
+                              padding: '4px 10px',
+                              background: '#e67e22',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '4px',
+                              fontSize: '11px',
+                              cursor: updatingStatus ? 'not-allowed' : 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <PendingIcon style={{ fontSize: 14 }} />
+                            Revert
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
-                <td colSpan="10" className="empty-state">
+                <td colSpan="11" className="empty-state">
                   <InboxIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 10px' }} />
                   <p>No payroll records found</p>
-                  <span>Click "Process Payroll" to generate records with late deductions</span>
+                  <span>Click "Process Payroll" to generate records with position-based deductions</span>
                 </td>
               </tr>
             )}

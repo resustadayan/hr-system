@@ -16,6 +16,7 @@ import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import CancelIcon from '@mui/icons-material/Cancel';
 import UploadIcon from '@mui/icons-material/Upload';
 import PersonIcon from '@mui/icons-material/Person';
+import PeopleIcon from '@mui/icons-material/People';
 import EmailIcon from '@mui/icons-material/Email';
 import BusinessIcon from '@mui/icons-material/Business';
 import WorkIcon from '@mui/icons-material/Work';
@@ -42,7 +43,10 @@ import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import logo from '../assets/hrmo logo.jpg';
 
 // Late deduction rate (matches Payroll.js)
-const LATE_DEDUCTION_RATE = 500;
+const MONETARY_DEDUCTION_RATE = 1.50;
+const LEAVE_DEDUCTION_RATE = 0.5;
+const LEAVE_CREDIT_POSITIONS = ['Casual', 'Permanent', 'Regular', 'Probationary'];
+const MONETARY_DEDUCTION_POSITIONS = ['Job Order', 'JO', 'Contractual'];
 
 function EmployeePortal() {
   const navigate = useNavigate();
@@ -94,7 +98,7 @@ function EmployeePortal() {
   const [timeOut, setTimeOut] = useState(null);
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [officeStartTime, setOfficeStartTime] = useState('07:00');
-  const [officeEndTime, setOfficeEndTime] = useState('06:00');
+  const [officeEndTime, setOfficeEndTime] = useState('18:00');
   const [attendanceSummary, setAttendanceSummary] = useState({
     totalDays: 0,
     presentDays: 0,
@@ -117,6 +121,7 @@ function EmployeePortal() {
     totalPayrolls: 0
   });
   const [isRefreshingPayroll, setIsRefreshingPayroll] = useState(false);
+  const [deductionType, setDeductionType] = useState('none');
 
   // ====== SMART FILE VIEWER WITH IMAGE FIX ======
   const openFileViewer = (fileUrl, fileName) => {
@@ -259,17 +264,12 @@ function EmployeePortal() {
       return;
     }
     
-    console.log('Fetching payroll for employee ID:', employee.id);
-    console.log('Employee data:', employee);
-    
     try {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
       const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
-
-      console.log(`📅 Current period: ${startDate} to ${endDate}`);
 
       const payrollQuery = query(
         collection(db, 'payroll'),
@@ -279,19 +279,17 @@ function EmployeePortal() {
       );
       const payrollSnapshot = await getDocs(payrollQuery);
       
-      console.log(`📊 Found ${payrollSnapshot.size} payroll records for current period`);
-      
       if (!payrollSnapshot.empty) {
         const payrollData = payrollSnapshot.docs[0].data();
-        console.log('📄 Payroll data:', payrollData);
         setEmployeePayroll(payrollData);
         setEmployeeLateDays(payrollData.lateDays || 0);
         setEmployeeLateDeduction(payrollData.lateDeduction || 0);
+        setDeductionType(payrollData.deductionType || 'none');
       } else {
-        console.log('⚠️ No payroll record found for current period');
         setEmployeePayroll(null);
         setEmployeeLateDays(0);
         setEmployeeLateDeduction(0);
+        setDeductionType('none');
       }
 
       const allPayrollQuery = query(
@@ -300,8 +298,6 @@ function EmployeePortal() {
       );
       const allPayrollSnapshot = await getDocs(allPayrollQuery);
       const history = allPayrollSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log(`📊 Found ${history.length} total payroll records for this employee`);
-      
       history.sort((a, b) => b.periodStart?.localeCompare(a.periodStart) || 0);
       setAllPayrollHistory(history);
 
@@ -310,8 +306,18 @@ function EmployeePortal() {
         totalDeductions: acc.totalDeductions + (record.totalDeductions || 0),
         totalNetPay: acc.totalNetPay + (record.netPay || 0),
         totalLateDays: acc.totalLateDays + (record.lateDays || 0),
-        totalPayrolls: acc.totalPayrolls + 1
-      }), { totalEarned: 0, totalDeductions: 0, totalNetPay: 0, totalLateDays: 0, totalPayrolls: 0 });
+        totalPayrolls: acc.totalPayrolls + 1,
+        totalLeaveCreditsUsed: acc.totalLeaveCreditsUsed + (record.leaveCreditsUsed || 0),
+        totalMonetaryDeductions: acc.totalMonetaryDeductions + (record.monetaryDeduction || 0)
+      }), { 
+        totalEarned: 0, 
+        totalDeductions: 0, 
+        totalNetPay: 0, 
+        totalLateDays: 0, 
+        totalPayrolls: 0,
+        totalLeaveCreditsUsed: 0,
+        totalMonetaryDeductions: 0
+      });
       
       setPayrollSummary(summary);
 
@@ -476,316 +482,300 @@ function EmployeePortal() {
   };
 
   // ====== ATTENDANCE FUNCTIONS ======
-const fetchAttendanceData = async (empId) => {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    
-    const todayQuery = query(
-      collection(db, 'attendance'), 
-      where('employeeId', '==', empId),
-      where('date', '==', today)
-    );
-    const todaySnapshot = await getDocs(todayQuery);
-    
-    if (!todaySnapshot.empty) {
-      // Get the most recent entry for today
-      const allDocs = todaySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort by entry number or by timeIn
-      const sortedDocs = allDocs.sort((a, b) => {
-        if (a.entryNumber && b.entryNumber) return b.entryNumber - a.entryNumber;
-        return (b.timeIn || '').localeCompare(a.timeIn || '');
-      });
-      const latestDoc = sortedDocs[0];
-      const todayData = latestDoc;
-      const todayId = latestDoc.id;
+  const fetchAttendanceData = async (empId) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
       
-      setTodayAttendance({ id: todayId, ...todayData });
-      setTimeIn(todayData.timeIn || null);
-      setTimeOut(todayData.timeOut || null);
-      setIsTimedIn(!!todayData.timeIn);
-      setIsTimedOut(!!todayData.timeOut);
+      const todayQuery = query(
+        collection(db, 'attendance'), 
+        where('employeeId', '==', empId),
+        where('date', '==', today)
+      );
+      const todaySnapshot = await getDocs(todayQuery);
       
-      if (todayData.timeIn && !todayData.timeOut) {
-        setAttendanceStatus('Timed In');
-      } else if (todayData.timeIn && todayData.timeOut) {
-        setAttendanceStatus('Completed');
+      if (!todaySnapshot.empty) {
+        const allDocs = todaySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const sortedDocs = allDocs.sort((a, b) => {
+          if (a.entryNumber && b.entryNumber) return b.entryNumber - a.entryNumber;
+          return (b.timeIn || '').localeCompare(a.timeIn || '');
+        });
+        const latestDoc = sortedDocs[0];
+        const todayData = latestDoc;
+        const todayId = latestDoc.id;
+        
+        setTodayAttendance({ id: todayId, ...todayData });
+        setTimeIn(todayData.timeIn || null);
+        setTimeOut(todayData.timeOut || null);
+        setIsTimedIn(!!todayData.timeIn);
+        setIsTimedOut(!!todayData.timeOut);
+        
+        if (todayData.timeIn && !todayData.timeOut) {
+          setAttendanceStatus('Timed In');
+        } else if (todayData.timeIn && todayData.timeOut) {
+          setAttendanceStatus('Completed');
+        } else {
+          setAttendanceStatus('Not Timed In');
+        }
       } else {
+        setTodayAttendance(null);
+        setTimeIn(null);
+        setTimeOut(null);
+        setIsTimedIn(false);
+        setIsTimedOut(false);
         setAttendanceStatus('Not Timed In');
       }
-    } else {
-      setTodayAttendance(null);
-      setTimeIn(null);
-      setTimeOut(null);
-      setIsTimedIn(false);
-      setIsTimedOut(false);
-      setAttendanceStatus('Not Timed In');
+
+      const allQuery = query(
+        collection(db, 'attendance'), 
+        where('employeeId', '==', empId)
+      );
+      const allSnapshot = await getDocs(allQuery);
+      const records = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAttendanceRecords(records);
+
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      const monthRecords = records.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
+      });
+
+      const totalDays = monthRecords.length;
+      const presentDays = monthRecords.filter(r => r.status === 'Present' || r.status === 'On Time').length;
+      const lateDays = monthRecords.filter(r => r.status === 'Late').length;
+      const underTimeDays = monthRecords.filter(r => r.status === 'Under Time').length;
+      const overTimeDays = monthRecords.filter(r => r.status === 'Over Time').length;
+      
+      setAttendanceSummary({
+        totalDays: totalDays || 0,
+        presentDays: presentDays || 0,
+        lateDays: lateDays || 0,
+        absentDays: Math.max(0, totalDays - presentDays - lateDays - underTimeDays - overTimeDays),
+        underTimeDays: underTimeDays || 0,
+        overTimeDays: overTimeDays || 0
+      });
+
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
     }
+  };
 
-    const allQuery = query(
-      collection(db, 'attendance'), 
-      where('employeeId', '==', empId)
-    );
-    const allSnapshot = await getDocs(allQuery);
-    const records = allSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    setAttendanceRecords(records);
+  // Helper function to parse time string to minutes
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  };
 
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
-    const monthRecords = records.filter(record => {
-      const recordDate = new Date(record.date);
-      return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
-    });
+  // Helper function to format time from Date object
+  const formatTime = (date) => {
+    if (!date) return null;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
 
-    const totalDays = monthRecords.length;
-    const presentDays = monthRecords.filter(r => r.status === 'Present' || r.status === 'On Time').length;
-    const lateDays = monthRecords.filter(r => r.status === 'Late').length;
-    const underTimeDays = monthRecords.filter(r => r.status === 'Under Time').length;
-    const overTimeDays = monthRecords.filter(r => r.status === 'Over Time').length;
+  const handleTimeIn = async () => {
+    if (!employee) return;
     
-    setAttendanceSummary({
-      totalDays: totalDays || 0,
-      presentDays: presentDays || 0,
-      lateDays: lateDays || 0,
-      absentDays: Math.max(0, totalDays - presentDays - lateDays - underTimeDays - overTimeDays),
-      underTimeDays: underTimeDays || 0,
-      overTimeDays: overTimeDays || 0
-    });
-
-  } catch (error) {
-    console.error('Error fetching attendance:', error);
-  }
-};
-
-// Helper function to parse time string to minutes
-const timeToMinutes = (timeStr) => {
-  if (!timeStr) return 0;
-  const parts = timeStr.split(':');
-  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-};
-
-// Helper function to format time from Date object
-const formatTime = (date) => {
-  if (!date) return null;
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-};
-
-const handleTimeIn = async () => {
-  if (!employee) return;
-  
-  setAttendanceLoading(true);
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const currentTime = new Date();
-    const timeInStr = formatTime(currentTime);
-    
-    // Check existing entries for today
-    const existingQuery = query(
-      collection(db, 'attendance'),
-      where('employeeId', '==', employee.id),
-      where('date', '==', today)
-    );
-    const existingSnapshot = await getDocs(existingQuery);
-    const existingDocs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    // Find if there's an incomplete entry (has timeIn but no timeOut)
-    const incompleteEntry = existingDocs.find(doc => doc.timeIn && !doc.timeOut);
-    
-    if (incompleteEntry) {
-      alert('You have an incomplete attendance entry. Please time out first.');
-      setAttendanceLoading(false);
-      return;
-    }
-
-    // Determine entry number
-    const entryNumber = existingDocs.length + 1;
-    
-    // Determine status based on office start time
-    const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
-
-    await addDoc(collection(db, 'attendance'), {
-      employeeId: employee.id,
-      employeeName: employee.fullName,
-      department: employee.department,
-      date: today,
-      timeIn: timeInStr,
-      timeOut: null,
-      status: status,
-      entryNumber: entryNumber,
-      recordedAt: new Date().toISOString(),
-      timestamp: Timestamp.now()
-    });
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      employeeName: employee.fullName,
-      department: employee.department,
-      type: 'attendance_timein',
-      message: `${employee.fullName} timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
-      read: false,
-      forAdmin: true,
-      forEmployee: false,
-      createdAt: new Date().toISOString()
-    });
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      type: 'attendance_confirmation',
-      message: `You have successfully timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
-      read: false,
-      forEmployee: true,
-      forAdmin: false,
-      createdAt: new Date().toISOString()
-    });
-
-    setTimeIn(timeInStr);
-    setIsTimedIn(true);
-    setAttendanceStatus('Timed In');
-    
-    const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
-    alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}\nEntry ${entryNumber}`);
-    
-    await fetchAttendanceData(employee.id);
-    
-  } catch (error) {
-    console.error('Error timing in:', error);
-    alert('Failed to time in. Please try again.');
-  } finally {
-    setAttendanceLoading(false);
-  }
-};
-
-const handleTimeOut = async () => {
-  if (!employee) return;
-  
-  setAttendanceLoading(true);
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const currentTime = new Date();
-    const timeOutStr = formatTime(currentTime);
-    
-    // Find the most recent attendance record for today that has timeIn but no timeOut
-    const existingQuery = query(
-      collection(db, 'attendance'),
-      where('employeeId', '==', employee.id),
-      where('date', '==', today)
-    );
-    const existingSnapshot = await getDocs(existingQuery);
-    
-    if (existingSnapshot.empty) {
-      alert('You have not timed in today.');
-      setAttendanceLoading(false);
-      return;
-    }
-
-    // Find the record with timeIn but no timeOut (most recent incomplete entry)
-    let recordToUpdate = null;
-    let recordId = null;
-    
-    const docs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    // Sort by entry number descending to get the latest
-    docs.sort((a, b) => (b.entryNumber || 0) - (a.entryNumber || 0));
-    
-    for (const doc of docs) {
-      if (doc.timeIn && !doc.timeOut) {
-        recordToUpdate = doc;
-        recordId = doc.id;
-        break;
+    setAttendanceLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const currentTime = new Date();
+      const timeInStr = formatTime(currentTime);
+      
+      const existingQuery = query(
+        collection(db, 'attendance'),
+        where('employeeId', '==', employee.id),
+        where('date', '==', today)
+      );
+      const existingSnapshot = await getDocs(existingQuery);
+      const existingDocs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const incompleteEntry = existingDocs.find(doc => doc.timeIn && !doc.timeOut);
+      
+      if (incompleteEntry) {
+        alert('You have an incomplete attendance entry. Please time out first.');
+        setAttendanceLoading(false);
+        return;
       }
-    }
 
-    if (!recordToUpdate) {
-      alert('All your entries for today are already completed. Please time in first if you want to record another entry.');
+      const entryNumber = existingDocs.length + 1;
+      const status = timeInStr <= officeStartTime ? 'On Time' : 'Late';
+
+      await addDoc(collection(db, 'attendance'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department,
+        date: today,
+        timeIn: timeInStr,
+        timeOut: null,
+        status: status,
+        entryNumber: entryNumber,
+        recordedAt: new Date().toISOString(),
+        timestamp: Timestamp.now()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department,
+        type: 'attendance_timein',
+        message: `${employee.fullName} timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        type: 'attendance_confirmation',
+        message: `You have successfully timed in at ${timeInStr} (${status}) - Entry ${entryNumber}`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setTimeIn(timeInStr);
+      setIsTimedIn(true);
+      setAttendanceStatus('Timed In');
+      
+      const statusEmoji = status === 'On Time' ? '✅' : '⚠️';
+      alert(`${statusEmoji} Timed in successfully at ${timeInStr}\nStatus: ${status}\nEntry ${entryNumber}`);
+      
+      await fetchAttendanceData(employee.id);
+      
+    } catch (error) {
+      console.error('Error timing in:', error);
+      alert('Failed to time in. Please try again.');
+    } finally {
       setAttendanceLoading(false);
-      return;
     }
+  };
 
-    // Determine if this is under time or over time
-    const officeEndMinutes = timeToMinutes(officeEndTime);
-    const timeOutMinutes = timeToMinutes(timeOutStr);
-    const timeInMinutes = timeToMinutes(recordToUpdate.timeIn);
+  const handleTimeOut = async () => {
+    if (!employee) return;
     
-    let status = recordToUpdate.status || 'Present';
-    let overtimeMinutes = 0;
-    let undertimeMinutes = 0;
-
-    // Check if timed out early (undertime)
-    if (timeOutMinutes < officeEndMinutes) {
-      const diffMinutes = officeEndMinutes - timeOutMinutes;
-      if (diffMinutes >= 15) { // 15 minutes threshold
-        status = 'Under Time';
-        undertimeMinutes = diffMinutes;
-      } else {
-        // If less than 15 minutes early, still considered on time
-        status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+    setAttendanceLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const currentTime = new Date();
+      const timeOutStr = formatTime(currentTime);
+      
+      const existingQuery = query(
+        collection(db, 'attendance'),
+        where('employeeId', '==', employee.id),
+        where('date', '==', today)
+      );
+      const existingSnapshot = await getDocs(existingQuery);
+      
+      if (existingSnapshot.empty) {
+        alert('You have not timed in today.');
+        setAttendanceLoading(false);
+        return;
       }
-    } 
-    // Check if timed out late (overtime)
-    else if (timeOutMinutes > officeEndMinutes) {
-      const diffMinutes = timeOutMinutes - officeEndMinutes;
-      if (diffMinutes >= 15) { // 15 minutes threshold
-        status = 'Over Time';
-        overtimeMinutes = diffMinutes;
+
+      let recordToUpdate = null;
+      let recordId = null;
+      
+      const docs = existingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      docs.sort((a, b) => (b.entryNumber || 0) - (a.entryNumber || 0));
+      
+      for (const doc of docs) {
+        if (doc.timeIn && !doc.timeOut) {
+          recordToUpdate = doc;
+          recordId = doc.id;
+          break;
+        }
+      }
+
+      if (!recordToUpdate) {
+        alert('All your entries for today are already completed. Please time in first if you want to record another entry.');
+        setAttendanceLoading(false);
+        return;
+      }
+
+      const officeEndMinutes = timeToMinutes(officeEndTime);
+      const timeOutMinutes = timeToMinutes(timeOutStr);
+      
+      let status = recordToUpdate.status || 'Present';
+      let overtimeMinutes = 0;
+      let undertimeMinutes = 0;
+
+      if (timeOutMinutes < officeEndMinutes) {
+        const diffMinutes = officeEndMinutes - timeOutMinutes;
+        if (diffMinutes >= 15) {
+          status = 'Under Time';
+          undertimeMinutes = diffMinutes;
+        } else {
+          status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+        }
+      } else if (timeOutMinutes > officeEndMinutes) {
+        const diffMinutes = timeOutMinutes - officeEndMinutes;
+        if (diffMinutes >= 15) {
+          status = 'Over Time';
+          overtimeMinutes = diffMinutes;
+        } else {
+          status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+        }
       } else {
         status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
       }
-    } else {
-      status = recordToUpdate.status === 'Late' ? 'Late' : 'On Time';
+
+      await updateDoc(doc(db, 'attendance', recordId), {
+        timeOut: timeOutStr,
+        status: status,
+        overtimeMinutes: overtimeMinutes,
+        undertimeMinutes: undertimeMinutes,
+        updatedAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department,
+        type: 'attendance_timeout',
+        message: `${employee.fullName} timed out at ${timeOutStr} (${status})${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        type: 'attendance_confirmation',
+        message: `You have successfully timed out at ${timeOutStr}\nStatus: ${status}${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setTimeOut(timeOutStr);
+      setIsTimedOut(true);
+      setAttendanceStatus('Completed');
+      
+      let alertMessage = `Timed out successfully at ${timeOutStr}\nStatus: ${status}`;
+      if (overtimeMinutes > 0) {
+        alertMessage += `\n🕐 Overtime: ${overtimeMinutes} minutes`;
+      }
+      if (undertimeMinutes > 0) {
+        alertMessage += `\n⚠️ Undertime: ${undertimeMinutes} minutes`;
+      }
+      alert(alertMessage);
+      
+      await fetchAttendanceData(employee.id);
+      
+    } catch (error) {
+      console.error('Error timing out:', error);
+      alert('Failed to time out. Please try again.');
+    } finally {
+      setAttendanceLoading(false);
     }
-
-    await updateDoc(doc(db, 'attendance', recordId), {
-      timeOut: timeOutStr,
-      status: status,
-      overtimeMinutes: overtimeMinutes,
-      undertimeMinutes: undertimeMinutes,
-      updatedAt: new Date().toISOString()
-    });
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      employeeName: employee.fullName,
-      department: employee.department,
-      type: 'attendance_timeout',
-      message: `${employee.fullName} timed out at ${timeOutStr} (${status})${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
-      read: false,
-      forAdmin: true,
-      forEmployee: false,
-      createdAt: new Date().toISOString()
-    });
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      type: 'attendance_confirmation',
-      message: `You have successfully timed out at ${timeOutStr}\nStatus: ${status}${overtimeMinutes > 0 ? ` (Overtime: ${overtimeMinutes} mins)` : ''}${undertimeMinutes > 0 ? ` (Undertime: ${undertimeMinutes} mins)` : ''}`,
-      read: false,
-      forEmployee: true,
-      forAdmin: false,
-      createdAt: new Date().toISOString()
-    });
-
-    setTimeOut(timeOutStr);
-    setIsTimedOut(true);
-    setAttendanceStatus('Completed');
-    
-    let alertMessage = `Timed out successfully at ${timeOutStr}\nStatus: ${status}`;
-    if (overtimeMinutes > 0) {
-      alertMessage += `\n🕐 Overtime: ${overtimeMinutes} minutes`;
-    }
-    if (undertimeMinutes > 0) {
-      alertMessage += `\n⚠️ Undertime: ${undertimeMinutes} minutes`;
-    }
-    alert(alertMessage);
-    
-    await fetchAttendanceData(employee.id);
-    
-  } catch (error) {
-    console.error('Error timing out:', error);
-    alert('Failed to time out. Please try again.');
-  } finally {
-    setAttendanceLoading(false);
-  }
-};
+  };
 
   // ====== SETUP REALTIME LISTENERS ======
   const setupRealtimeListeners = () => {
@@ -870,189 +860,185 @@ const handleTimeOut = async () => {
     }
   };
 
-  //===leave management====//
+  // ===leave management====//
   const handleLeaveSubmit = async (e) => {
-  e.preventDefault();
-  if (!leaveFormData.startDate || !leaveFormData.endDate) {
-    alert('Please fill all required fields');
-    return;
-  }
+    e.preventDefault();
+    if (!leaveFormData.startDate || !leaveFormData.endDate) {
+      alert('Please fill all required fields');
+      return;
+    }
 
-  setSubmitting(true);
-  try {
-    const days = calculateDays(leaveFormData.startDate, leaveFormData.endDate);
-    
-    // Get the correct current balance based on leave type
-    const currentBalance = leaveFormData.type === 'Vacation' 
-      ? leaveBalance.vacationLeave
-      : leaveFormData.type === 'Maternity'
-      ? leaveBalance.maternityLeave
-      : leaveFormData.type === 'Paternity'
-      ? leaveBalance.paternityLeave
-      : leaveBalance.sickLeave;
+    setSubmitting(true);
+    try {
+      const days = calculateDays(leaveFormData.startDate, leaveFormData.endDate);
       
-    if (days > currentBalance) {
-      alert(`Insufficient ${leaveFormData.type} leave balance. Available: ${currentBalance} days`);
-      setSubmitting(false);
-      return;
-    }
+      const currentBalance = leaveFormData.type === 'Vacation' 
+        ? leaveBalance.vacationLeave
+        : leaveFormData.type === 'Maternity'
+        ? leaveBalance.maternityLeave
+        : leaveFormData.type === 'Paternity'
+        ? leaveBalance.paternityLeave
+        : leaveBalance.sickLeave;
+        
+      if (days > currentBalance) {
+        alert(`Insufficient ${leaveFormData.type} leave balance. Available: ${currentBalance} days`);
+        setSubmitting(false);
+        return;
+      }
 
-    const leaveRef = await addDoc(collection(db, 'leaveRequests'), {
-      employeeId: employee.id,
-      employeeName: employee.fullName,
-      type: leaveFormData.type,
-      startDate: leaveFormData.startDate,
-      endDate: leaveFormData.endDate,
-      days: days,
-      reason: leaveFormData.reason || '',
-      status: 'Pending',
-      department: employee.department,
-      dateSubmitted: new Date().toISOString()
-    });
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      employeeName: employee.fullName,
-      department: employee.department,
-      leaveId: leaveRef.id,
-      leaveType: leaveFormData.type,
-      leaveDays: days,
-      message: `${employee.fullName} submitted a ${leaveFormData.type} leave request for ${days} days`,
-      type: 'leave_request',
-      read: false,
-      forMGDH: true,
-      forEmployee: false,
-      createdAt: new Date().toISOString()
-    });
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      leaveId: leaveRef.id,
-      message: `Your ${leaveFormData.type} leave request for ${days} days has been submitted and is pending approval.`,
-      type: 'leave_confirmation',
-      read: false,
-      forEmployee: true,
-      forMGDH: false,
-      createdAt: new Date().toISOString()
-    });
-
-    // Update balance - using leaveFormData.type (not leaveData)
-    const updatedBalance = { ...leaveBalance };
-    if (leaveFormData.type === 'Vacation') {
-      updatedBalance.vacationLeave = currentBalance - days;
-    } else if (leaveFormData.type === 'Maternity') {
-      updatedBalance.maternityLeave = currentBalance - days;
-    } else if (leaveFormData.type === 'Paternity') {
-      updatedBalance.paternityLeave = currentBalance - days;
-    } else {
-      updatedBalance.sickLeave = currentBalance - days;
-    }
-
-    if (leaveBalanceId) {
-      await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
-        vacationLeave: updatedBalance.vacationLeave,
-        sickLeave: updatedBalance.sickLeave,
-        maternityLeave: updatedBalance.maternityLeave,
-        paternityLeave: updatedBalance.paternityLeave,
-        updatedAt: new Date().toISOString()
-      });
-    } else {
-      const newBalance = {
+      const leaveRef = await addDoc(collection(db, 'leaveRequests'), {
         employeeId: employee.id,
-        vacationLeave: updatedBalance.vacationLeave,
-        sickLeave: updatedBalance.sickLeave,
-        maternityLeave: updatedBalance.maternityLeave,
-        paternityLeave: updatedBalance.paternityLeave,
+        employeeName: employee.fullName,
+        type: leaveFormData.type,
+        startDate: leaveFormData.startDate,
+        endDate: leaveFormData.endDate,
+        days: days,
+        reason: leaveFormData.reason || '',
+        status: 'Pending',
+        department: employee.department,
+        dateSubmitted: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department,
+        leaveId: leaveRef.id,
+        leaveType: leaveFormData.type,
+        leaveDays: days,
+        message: `${employee.fullName} submitted a ${leaveFormData.type} leave request for ${days} days`,
+        type: 'leave_request',
+        read: false,
+        forMGDH: true,
+        forEmployee: false,
         createdAt: new Date().toISOString()
-      };
-      const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), newBalance);
-      setLeaveBalanceId(newBalanceRef.id);
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        leaveId: leaveRef.id,
+        message: `Your ${leaveFormData.type} leave request for ${days} days has been submitted and is pending approval.`,
+        type: 'leave_confirmation',
+        read: false,
+        forEmployee: true,
+        forMGDH: false,
+        createdAt: new Date().toISOString()
+      });
+
+      const updatedBalance = { ...leaveBalance };
+      if (leaveFormData.type === 'Vacation') {
+        updatedBalance.vacationLeave = currentBalance - days;
+      } else if (leaveFormData.type === 'Maternity') {
+        updatedBalance.maternityLeave = currentBalance - days;
+      } else if (leaveFormData.type === 'Paternity') {
+        updatedBalance.paternityLeave = currentBalance - days;
+      } else {
+        updatedBalance.sickLeave = currentBalance - days;
+      }
+
+      if (leaveBalanceId) {
+        await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
+          vacationLeave: updatedBalance.vacationLeave,
+          sickLeave: updatedBalance.sickLeave,
+          maternityLeave: updatedBalance.maternityLeave,
+          paternityLeave: updatedBalance.paternityLeave,
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        const newBalance = {
+          employeeId: employee.id,
+          vacationLeave: updatedBalance.vacationLeave,
+          sickLeave: updatedBalance.sickLeave,
+          maternityLeave: updatedBalance.maternityLeave,
+          paternityLeave: updatedBalance.paternityLeave,
+          createdAt: new Date().toISOString()
+        };
+        const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), newBalance);
+        setLeaveBalanceId(newBalanceRef.id);
+      }
+
+      setLeaveBalance(updatedBalance);
+
+      alert(`Leave request submitted successfully!\n${days} ${leaveFormData.type} days deducted.\nYour department head has been notified.`);
+      setShowLeaveForm(false);
+      setLeaveFormData({ type: 'Vacation', startDate: '', endDate: '', reason: '' });
+      
+      await fetchEmployeeData();
+    } catch (error) {
+      console.error('Error submitting leave:', error);
+      alert('Failed to submit leave request');
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    setLeaveBalance(updatedBalance);
-
-    alert(`Leave request submitted successfully!\n${days} ${leaveFormData.type} days deducted.\nYour department head has been notified.`);
-    setShowLeaveForm(false);
-    setLeaveFormData({ type: 'Vacation', startDate: '', endDate: '', reason: '' });
-    
-    await fetchEmployeeData();
-  } catch (error) {
-    console.error('Error submitting leave:', error);
-    alert('Failed to submit leave request');
-  } finally {
-    setSubmitting(false);
-  }
-};
-
- const handleCancelLeave = async (leaveId, leaveData) => {
-  if (!window.confirm(`Are you sure you want to cancel your ${leaveData.type} leave request?`)) {
-    return;
-  }
-
-  try {
-    if (leaveData.status !== 'Pending') {
-      alert('You can only cancel pending leave requests.');
+  const handleCancelLeave = async (leaveId, leaveData) => {
+    if (!window.confirm(`Are you sure you want to cancel your ${leaveData.type} leave request?`)) {
       return;
     }
 
-    await deleteDoc(doc(db, 'leaveRequests', leaveId));
+    try {
+      if (leaveData.status !== 'Pending') {
+        alert('You can only cancel pending leave requests.');
+        return;
+      }
 
-    // Get the correct current balance based on leaveData.type
-    const currentBalance = leaveData.type === 'Vacation' 
-      ? leaveBalance.vacationLeave
-      : leaveData.type === 'Maternity'
-      ? leaveBalance.maternityLeave
-      : leaveData.type === 'Paternity'
-      ? leaveBalance.paternityLeave
-      : leaveBalance.sickLeave;
-    
-    // Restore days - using leaveData (not leaveFormData)
-    const updatedBalance = { ...leaveBalance };
-    if (leaveData.type === 'Vacation') {
-      updatedBalance.vacationLeave = currentBalance + leaveData.days;
-    } else if (leaveData.type === 'Maternity') {
-      updatedBalance.maternityLeave = currentBalance + leaveData.days;
-    } else if (leaveData.type === 'Paternity') {
-      updatedBalance.paternityLeave = currentBalance + leaveData.days;
-    } else {
-      updatedBalance.sickLeave = currentBalance + leaveData.days;
-    }
+      await deleteDoc(doc(db, 'leaveRequests', leaveId));
 
-    if (leaveBalanceId) {
-      await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
-        vacationLeave: updatedBalance.vacationLeave,
-        sickLeave: updatedBalance.sickLeave,
-        maternityLeave: updatedBalance.maternityLeave,
-        paternityLeave: updatedBalance.paternityLeave,
-        updatedAt: new Date().toISOString()
+      const currentBalance = leaveData.type === 'Vacation' 
+        ? leaveBalance.vacationLeave
+        : leaveData.type === 'Maternity'
+        ? leaveBalance.maternityLeave
+        : leaveData.type === 'Paternity'
+        ? leaveBalance.paternityLeave
+        : leaveBalance.sickLeave;
+      
+      const updatedBalance = { ...leaveBalance };
+      if (leaveData.type === 'Vacation') {
+        updatedBalance.vacationLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Maternity') {
+        updatedBalance.maternityLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Paternity') {
+        updatedBalance.paternityLeave = currentBalance + leaveData.days;
+      } else {
+        updatedBalance.sickLeave = currentBalance + leaveData.days;
+      }
+
+      if (leaveBalanceId) {
+        await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
+          vacationLeave: updatedBalance.vacationLeave,
+          sickLeave: updatedBalance.sickLeave,
+          maternityLeave: updatedBalance.maternityLeave,
+          paternityLeave: updatedBalance.paternityLeave,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      setLeaveBalance(updatedBalance);
+
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department,
+        leaveId: leaveId,
+        leaveType: leaveData.type,
+        leaveDays: leaveData.days,
+        message: `${employee.fullName} cancelled their ${leaveData.type} leave request (${leaveData.days} days).`,
+        type: 'leave_cancelled',
+        read: false,
+        forMGDH: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
       });
+
+      alert(`Leave request cancelled.\n${leaveData.days} ${leaveData.type} days restored.`);
+      
+      await fetchEmployeeData();
+    } catch (error) {
+      console.error('Error cancelling leave:', error);
+      alert('Failed to cancel leave request');
     }
-
-    setLeaveBalance(updatedBalance);
-
-    await addDoc(collection(db, 'notifications'), {
-      employeeId: employee.id,
-      employeeName: employee.fullName,
-      department: employee.department,
-      leaveId: leaveId,
-      leaveType: leaveData.type,
-      leaveDays: leaveData.days,
-      message: `${employee.fullName} cancelled their ${leaveData.type} leave request (${leaveData.days} days).`,
-      type: 'leave_cancelled',
-      read: false,
-      forMGDH: true,
-      forEmployee: false,
-      createdAt: new Date().toISOString()
-    });
-
-    alert(`Leave request cancelled.\n${leaveData.days} ${leaveData.type} days restored.`);
-    
-    await fetchEmployeeData();
-  } catch (error) {
-    console.error('Error cancelling leave:', error);
-    alert('Failed to cancel leave request');
-  }
-};
+  };
 
   // ====== NOTIFICATION FUNCTIONS ======
   const markNotificationAsRead = async (notificationId) => {
@@ -1375,342 +1361,341 @@ const handleTimeOut = async () => {
   };
 
   // ====== GENERATE ATTENDANCE PDF (TRUE DOWNLOAD) ======
-const generateAttendancePDF = async () => {
-  const loadingMsg = document.createElement('div');
-  loadingMsg.style.cssText = `
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: white; padding: 20px 40px; border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.2); z-index: 9999;
-    font-size: 18px; font-weight: 600; color: #4a6fa5;
-    display: flex; align-items: center; gap: 12px;
-  `;
-  loadingMsg.innerHTML = `
-    <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
-    Generating attendance report...
-  `;
-  document.body.appendChild(loadingMsg);
+  const generateAttendancePDF = async () => {
+    const loadingMsg = document.createElement('div');
+    loadingMsg.style.cssText = `
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: white; padding: 20px 40px; border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2); z-index: 9999;
+      font-size: 18px; font-weight: 600; color: #4a6fa5;
+      display: flex; align-items: center; gap: 12px;
+    `;
+    loadingMsg.innerHTML = `
+      <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
+      Generating attendance report...
+    `;
+    document.body.appendChild(loadingMsg);
 
-  const sortedRecords = [...attendanceRecords].sort((a, b) => b.date.localeCompare(a.date));
+    const sortedRecords = [...attendanceRecords].sort((a, b) => b.date.localeCompare(a.date));
 
-  const attendanceHTML = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Attendance Report - ${employee?.fullName || 'Employee'}</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-          font-family: 'Segoe UI', Arial, sans-serif; 
-          background: #f5f7fa; 
-          padding: 40px; 
-          display: flex;
-          justify-content: center;
-        }
-        .report-container {
-          max-width: 1000px;
-          width: 100%;
-          background: white;
-          border-radius: 16px;
-          padding: 40px;
-          box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-        }
-        .report-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-bottom: 3px solid #4a6fa5;
-          padding-bottom: 20px;
-          margin-bottom: 20px;
-        }
-        .report-header .title h1 {
-          color: #1a2a4a;
-          font-size: 28px;
-          margin: 0;
-        }
-        .report-header .title p {
-          color: #6b7a8f;
-          font-size: 14px;
-          margin: 4px 0 0;
-        }
-        .report-header .logo h3 {
-          color: #4a6fa5;
-          margin: 0;
-        }
-        .report-header .logo p {
-          color: #8a9bb5;
-          font-size: 12px;
-        }
-        .employee-info {
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 12px;
-          background: #f8fafd;
-          padding: 16px 20px;
-          border-radius: 10px;
-          margin-bottom: 20px;
-        }
-        .employee-info .info-item label {
-          font-size: 11px;
-          text-transform: uppercase;
-          color: #8a9bb5;
-          font-weight: 600;
-          letter-spacing: 0.5px;
-        }
-        .employee-info .info-item span {
-          font-size: 15px;
-          font-weight: 600;
-          color: #1a2a4a;
-        }
-        .summary-grid {
-          display: grid;
-          grid-template-columns: repeat(6, 1fr);
-          gap: 12px;
-          margin-bottom: 20px;
-        }
-        .summary-card {
-          background: #f8fafd;
-          padding: 12px 16px;
-          border-radius: 8px;
-          text-align: center;
-        }
-        .summary-card .number {
-          font-size: 22px;
-          font-weight: 700;
-          color: #4a6fa5;
-        }
-        .summary-card .label {
-          font-size: 11px;
-          color: #8a9bb5;
-          text-transform: uppercase;
-        }
-        .summary-card.green .number { color: #27ae60; }
-        .summary-card.orange .number { color: #e67e22; }
-        .summary-card.red .number { color: #e74c3c; }
-        .summary-card.purple .number { color: #8e44ad; }
-        .summary-card.success .number { color: #2ecc71; }
-        .attendance-table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-top: 10px;
-        }
-        .attendance-table th {
-          background: #4a6fa5;
-          color: white;
-          padding: 10px 14px;
-          text-align: left;
-          font-size: 13px;
-          font-weight: 600;
-        }
-        .attendance-table td {
-          padding: 10px 14px;
-          border-bottom: 1px solid #eef2f7;
-          font-size: 13px;
-        }
-        .attendance-table tr:nth-child(even) {
-          background: #fafbfd;
-        }
-        .attendance-table .status-badge {
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 600;
-          display: inline-block;
-        }
-        .status-badge.success { background: #d4edda; color: #155724; }
-        .status-badge.warning { background: #fff3cd; color: #856404; }
-        .status-badge.danger { background: #f8d7da; color: #721c24; }
-        .status-badge.info { background: #d1ecf1; color: #0c5460; }
-        .status-badge.secondary { background: #e2e3e5; color: #383d41; }
-        .status-badge.undertime { background: #fef3cd; color: #856404; }
-        .status-badge.overtime { background: #d4edda; color: #155724; }
-        .report-footer {
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 2px solid #eef2f7;
-          display: flex;
-          justify-content: space-between;
-          font-size: 13px;
-          color: #8a9bb5;
-        }
-        .report-footer .total-records {
-          font-weight: 600;
-          color: #4a6fa5;
-        }
-        @media print {
-          body { padding: 20px; background: white; }
-          .report-container { box-shadow: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="report-container" id="report-container">
-        <div class="report-header">
-          <div class="title">
-            <h1>ATTENDANCE REPORT</h1>
-            <p>Municipality of Pagbilao, Quezon</p>
+    const attendanceHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Attendance Report - ${employee?.fullName || 'Employee'}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background: #f5f7fa; 
+            padding: 40px; 
+            display: flex;
+            justify-content: center;
+          }
+          .report-container {
+            max-width: 1000px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+          }
+          .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #4a6fa5;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+          }
+          .report-header .title h1 {
+            color: #1a2a4a;
+            font-size: 28px;
+            margin: 0;
+          }
+          .report-header .title p {
+            color: #6b7a8f;
+            font-size: 14px;
+            margin: 4px 0 0;
+          }
+          .report-header .logo h3 {
+            color: #4a6fa5;
+            margin: 0;
+          }
+          .report-header .logo p {
+            color: #8a9bb5;
+            font-size: 12px;
+          }
+          .employee-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            background: #f8fafd;
+            padding: 16px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+          }
+          .employee-info .info-item label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #8a9bb5;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+          }
+          .employee-info .info-item span {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1a2a4a;
+          }
+          .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+          }
+          .summary-card {
+            background: #f8fafd;
+            padding: 12px 16px;
+            border-radius: 8px;
+            text-align: center;
+          }
+          .summary-card .number {
+            font-size: 22px;
+            font-weight: 700;
+            color: #4a6fa5;
+          }
+          .summary-card .label {
+            font-size: 11px;
+            color: #8a9bb5;
+            text-transform: uppercase;
+          }
+          .summary-card.green .number { color: #27ae60; }
+          .summary-card.orange .number { color: #e67e22; }
+          .summary-card.red .number { color: #e74c3c; }
+          .summary-card.purple .number { color: #8e44ad; }
+          .summary-card.success .number { color: #2ecc71; }
+          .attendance-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+          }
+          .attendance-table th {
+            background: #4a6fa5;
+            color: white;
+            padding: 10px 14px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .attendance-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 13px;
+          }
+          .attendance-table tr:nth-child(even) {
+            background: #fafbfd;
+          }
+          .attendance-table .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-block;
+          }
+          .status-badge.success { background: #d4edda; color: #155724; }
+          .status-badge.warning { background: #fff3cd; color: #856404; }
+          .status-badge.danger { background: #f8d7da; color: #721c24; }
+          .status-badge.info { background: #d1ecf1; color: #0c5460; }
+          .status-badge.secondary { background: #e2e3e5; color: #383d41; }
+          .status-badge.undertime { background: #fef3cd; color: #856404; }
+          .status-badge.overtime { background: #d4edda; color: #155724; }
+          .report-footer {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 2px solid #eef2f7;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #8a9bb5;
+          }
+          .report-footer .total-records {
+            font-weight: 600;
+            color: #4a6fa5;
+          }
+          @media print {
+            body { padding: 20px; background: white; }
+            .report-container { box-shadow: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="report-container" id="report-container">
+          <div class="report-header">
+            <div class="title">
+              <h1>ATTENDANCE REPORT</h1>
+              <p>Municipality of Pagbilao, Quezon</p>
+            </div>
+            <div class="logo">
+              <h3>HR Management System</h3>
+              <p>${new Date().toLocaleDateString()}</p>
+            </div>
           </div>
-          <div class="logo">
-            <h3>HR Management System</h3>
-            <p>${new Date().toLocaleDateString()}</p>
-          </div>
-        </div>
 
-        <div class="employee-info">
-          <div class="info-item">
-            <label>Employee Name</label>
-            <span>${employee?.fullName || 'N/A'}</span>
+          <div class="employee-info">
+            <div class="info-item">
+              <label>Employee Name</label>
+              <span>${employee?.fullName || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Department</label>
+              <span>${employee?.department || 'N/A'}</span>
+            </div>
+            <div class="info-item">
+              <label>Position</label>
+              <span>${employee?.position || 'N/A'}</span>
+            </div>
           </div>
-          <div class="info-item">
-            <label>Department</label>
-            <span>${employee?.department || 'N/A'}</span>
-          </div>
-          <div class="info-item">
-            <label>Position</label>
-            <span>${employee?.position || 'N/A'}</span>
-          </div>
-        </div>
 
-        <div class="summary-grid">
-          <div class="summary-card">
-            <div class="number">${attendanceSummary.totalDays}</div>
-            <div class="label">Total Days</div>
+          <div class="summary-grid">
+            <div class="summary-card">
+              <div class="number">${attendanceSummary.totalDays}</div>
+              <div class="label">Total Days</div>
+            </div>
+            <div class="summary-card green">
+              <div class="number">${attendanceSummary.presentDays || 0}</div>
+              <div class="label">Present</div>
+            </div>
+            <div class="summary-card orange">
+              <div class="number">${attendanceSummary.lateDays || 0}</div>
+              <div class="label">Late</div>
+            </div>
+            <div class="summary-card purple">
+              <div class="number">${attendanceSummary.underTimeDays || 0}</div>
+              <div class="label">Under Time</div>
+            </div>
+            <div class="summary-card success">
+              <div class="number">${attendanceSummary.overTimeDays || 0}</div>
+              <div class="label">Over Time</div>
+            </div>
+            <div class="summary-card red">
+              <div class="number">${attendanceSummary.absentDays || 0}</div>
+              <div class="label">Absent</div>
+            </div>
           </div>
-          <div class="summary-card green">
-            <div class="number">${attendanceSummary.presentDays || 0}</div>
-            <div class="label">Present</div>
-          </div>
-          <div class="summary-card orange">
-            <div class="number">${attendanceSummary.lateDays || 0}</div>
-            <div class="label">Late</div>
-          </div>
-          <div class="summary-card purple">
-            <div class="number">${attendanceSummary.underTimeDays || 0}</div>
-            <div class="label">Under Time</div>
-          </div>
-          <div class="summary-card success">
-            <div class="number">${attendanceSummary.overTimeDays || 0}</div>
-            <div class="label">Over Time</div>
-          </div>
-          <div class="summary-card red">
-            <div class="number">${attendanceSummary.absentDays || 0}</div>
-            <div class="label">Absent</div>
-          </div>
-        </div>
 
-        <table class="attendance-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Time In</th>
-              <th>Time Out</th>
-              <th>Status</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${sortedRecords.map(record => {
-              let remarks = '';
-              let statusClass = 'secondary';
-              if (record.status === 'On Time') {
-                statusClass = 'success';
-                remarks = 'On time';
-              } else if (record.status === 'Late') {
-                statusClass = 'warning';
-                remarks = 'Late arrival';
-              } else if (record.status === 'Under Time') {
-                statusClass = 'undertime';
-                remarks = record.undertimeMinutes ? `Undertime: ${record.undertimeMinutes} mins` : 'Undertime';
-              } else if (record.status === 'Over Time') {
-                statusClass = 'overtime';
-                remarks = record.overtimeMinutes ? `Overtime: ${record.overtimeMinutes} mins` : 'Overtime';
-              } else if (record.status === 'Present') {
-                statusClass = 'success';
-                remarks = 'Present';
-              }
-              return `
-                <tr>
-                  <td>${record.date}</td>
-                  <td>${record.timeIn || '—'}</td>
-                  <td>${record.timeOut || '—'}</td>
-                  <td>
-                    <span class="status-badge ${statusClass}">
-                      ${record.status || 'Present'}
-                    </span>
-                  </td>
-                  <td>${remarks}</td>
-                </tr>
-              `;
-            }).join('')}
-            ${sortedRecords.length === 0 ? `
+          <table class="attendance-table">
+            <thead>
               <tr>
-                <td colspan="5" style="text-align:center; color:#8a9bb5; padding:20px;">
-                  No attendance records found
-                </td>
+                <th>Date</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>Status</th>
+                <th>Remarks</th>
               </tr>
-            ` : ''}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${sortedRecords.map(record => {
+                let remarks = '';
+                let statusClass = 'secondary';
+                if (record.status === 'On Time') {
+                  statusClass = 'success';
+                  remarks = 'On time';
+                } else if (record.status === 'Late') {
+                  statusClass = 'warning';
+                  remarks = 'Late arrival';
+                } else if (record.status === 'Under Time') {
+                  statusClass = 'undertime';
+                  remarks = record.undertimeMinutes ? `Undertime: ${record.undertimeMinutes} mins` : 'Undertime';
+                } else if (record.status === 'Over Time') {
+                  statusClass = 'overtime';
+                  remarks = record.overtimeMinutes ? `Overtime: ${record.overtimeMinutes} mins` : 'Overtime';
+                } else if (record.status === 'Present') {
+                  statusClass = 'success';
+                  remarks = 'Present';
+                }
+                return `
+                  <tr>
+                    <td>${record.date}</td>
+                    <td>${record.timeIn || '—'}</td>
+                    <td>${record.timeOut || '—'}</td>
+                    <td>
+                      <span class="status-badge ${statusClass}">
+                        ${record.status || 'Present'}
+                      </span>
+                    </td>
+                    <td>${remarks}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${sortedRecords.length === 0 ? `
+                <tr>
+                  <td colspan="5" style="text-align:center; color:#8a9bb5; padding:20px;">
+                    No attendance records found
+                  </td>
+                </tr>
+              ` : ''}
+            </tbody>
+          </table>
 
-        <div class="report-footer">
-          <div>
-            <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-            <p>Office Hours: ${officeStartTime} - ${officeEndTime}</p>
-          </div>
-          <div>
-            <p class="total-records">Total Records: ${sortedRecords.length}</p>
-            <p>${employee?.fullName || 'Employee'} - Attendance Report</p>
+          <div class="report-footer">
+            <div>
+              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+              <p>Office Hours: ${officeStartTime} - ${officeEndTime}</p>
+            </div>
+            <div>
+              <p class="total-records">Total Records: ${sortedRecords.length}</p>
+              <p>${employee?.fullName || 'Employee'} - Attendance Report</p>
+            </div>
           </div>
         </div>
-      </div>
-    </body>
-    </html>
-  `;
+      </body>
+      </html>
+    `;
 
-  // Create a temporary container for PDF generation
-  const container = document.createElement('div');
-  container.innerHTML = attendanceHTML;
-  document.body.appendChild(container);
+    // Create a temporary container for PDF generation
+    const container = document.createElement('div');
+    container.innerHTML = attendanceHTML;
+    document.body.appendChild(container);
 
-  const element = container.querySelector('.report-container');
+    const element = container.querySelector('.report-container');
 
-  // Generate filename
-  const fileName = `Attendance_Report_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`;
+    // Generate filename
+    const fileName = `Attendance_Report_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`;
 
-  // Generate PDF and download using html2pdf
-  try {
-    await html2pdf()
-      .set({
-        margin: 10,
-        filename: fileName,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true,
-          letterRendering: true,
-          logging: false
-        },
-        jsPDF: { 
-          unit: 'mm', 
-          format: 'a4', 
-          orientation: 'landscape' 
-        }
-      })
-      .from(element)
-      .save();
-    
-    document.body.removeChild(container);
-    document.body.removeChild(loadingMsg);
-  } catch (error) {
-    console.error('PDF generation failed:', error);
-    document.body.removeChild(container);
-    document.body.removeChild(loadingMsg);
-    alert('Failed to generate PDF. Please try again.');
-  }
-};
+    // Generate PDF and download using html2pdf
+    try {
+      await html2pdf()
+        .set({
+          margin: 10,
+          filename: fileName,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { 
+            scale: 2, 
+            useCORS: true,
+            letterRendering: true,
+            logging: false
+          },
+          jsPDF: { 
+            unit: 'mm', 
+            format: 'a4', 
+            orientation: 'landscape' 
+          }
+        })
+        .from(element)
+        .save();
+      
+      document.body.removeChild(container);
+      document.body.removeChild(loadingMsg);
+    } catch (error) {
+      console.error('PDF generation failed:', error);
+      document.body.removeChild(container);
+      document.body.removeChild(loadingMsg);
+      alert('Failed to generate PDF. Please try again.');
+    }
+  };
 
   // ====== GENERATE PAYSLIP PDF (True Download) ======
   const generatePayslipPDF = (payrollData) => {
-    // Show loading indicator
     const loadingMsg = document.createElement('div');
     loadingMsg.style.cssText = `
       position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -1942,7 +1927,7 @@ const generateAttendancePDF = async () => {
               </tr>
               ${payrollData.lateDays > 0 ? `
                 <tr class="deduction-row">
-                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
+                  <td>Late Deduction (${payrollData.lateDays} days × ₱${MONETARY_DEDUCTION_RATE.toLocaleString()})</td>
                   <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
                 </tr>
               ` : ''}
@@ -1972,17 +1957,14 @@ const generateAttendancePDF = async () => {
       </html>
     `;
 
-    // Create a temporary container
     const container = document.createElement('div');
     container.innerHTML = payslipHTML;
     document.body.appendChild(container);
 
     const element = container.querySelector('.payslip-container');
 
-    // Generate filename
     const fileName = `Payslip_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${payrollData.periodMonth || ''}_${payrollData.periodYear || ''}.pdf`;
 
-    // Generate PDF and download
     html2pdf()
       .set({
         margin: 10,
@@ -2268,7 +2250,7 @@ const generateAttendancePDF = async () => {
               </tr>
               ${payrollData.lateDays > 0 ? `
                 <tr class="deduction-row">
-                  <td>Late Deduction (${payrollData.lateDays} days × ₱${LATE_DEDUCTION_RATE.toLocaleString()})</td>
+                  <td>Late Deduction (${payrollData.lateDays} days × ₱${MONETARY_DEDUCTION_RATE.toLocaleString()})</td>
                   <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
                 </tr>
               ` : ''}
@@ -2585,7 +2567,6 @@ const generateAttendancePDF = async () => {
         </div>
       </div>
 
-      {/* Payroll Quick Summary */}
       {employeePayroll && (
         <div className="payroll-quick-summary" style={{ 
           background: 'white', 
@@ -2681,222 +2662,221 @@ const generateAttendancePDF = async () => {
   );
 
   // ====== ATTENDANCE TAB ======
-const renderAttendance = () => (
-  <div className="employee-attendance-content">
-    <div className="section-header">
-      <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="stats-badge">{new Date().toLocaleDateString()}</span>
-        <button 
-          onClick={generateAttendancePDF}
-          className="btn-add-modern"
-          style={{
-            background: '#27ae60',
-            color: 'white',
-            padding: '8px 16px',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: '600',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <GetAppIcon style={{ fontSize: 18 }} />
-          Download PDF
-        </button>
-      </div>
-    </div>
-
-    <div className="stats-row">
-      <div className="stat-card">
-        <div className="stat-icon blue"><EventNoteIcon /></div>
-        <div className="stat-info">
-          <h3>Total Days</h3>
-          <p>{attendanceSummary.totalDays}</p>
-        </div>
-      </div>
-      <div className="stat-card">
-        <div className="stat-icon green"><CheckCircleIcon /></div>
-        <div className="stat-info">
-          <h3>Present</h3>
-          <p>{attendanceSummary.presentDays}</p>
-        </div>
-      </div>
-      <div className="stat-card">
-        <div className="stat-icon orange"><WarningIcon /></div>
-        <div className="stat-info">
-          <h3>Late</h3>
-          <p>{attendanceSummary.lateDays}</p>
-        </div>
-      </div>
-      <div className="stat-card">
-        <div className="stat-icon purple"><WarningIcon /></div>
-        <div className="stat-info">
-          <h3>Under Time</h3>
-          <p>{attendanceSummary.underTimeDays || 0}</p>
-        </div>
-      </div>
-      <div className="stat-card">
-        <div className="stat-icon success"><CheckCircleIcon /></div>
-        <div className="stat-info">
-          <h3>Over Time</h3>
-          <p>{attendanceSummary.overTimeDays || 0}</p>
-        </div>
-      </div>
-      <div className="stat-card">
-        <div className="stat-icon red"><CancelIcon /></div>
-        <div className="stat-info">
-          <h3>Absent</h3>
-          <p>{attendanceSummary.absentDays || 0}</p>
-        </div>
-      </div>
-    </div>
-
-    <div className="form-card-modern">
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <AccessTimeIcon />
-        Today's Attendance
-      </h3>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '15px',
-        padding: '10px 0'
-      }}>
-        <div>
-          <p style={{ margin: '5px 0' }}>
-            <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
-          </p>
-          {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
-          {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
-          <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
-            <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+  const renderAttendance = () => (
+    <div className="employee-attendance-content">
+      <div className="section-header">
+        <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="stats-badge">{new Date().toLocaleDateString()}</span>
           <button 
-            onClick={handleTimeIn} 
-            className="btn-time-in"
-            disabled={attendanceLoading}
+            onClick={generateAttendancePDF}
+            className="btn-add-modern"
             style={{
-              padding: '12px 30px',
-              background: '#4a6fa5',
+              background: '#27ae60',
               color: 'white',
+              padding: '8px 16px',
               border: 'none',
               borderRadius: '8px',
-              fontSize: '16px',
+              fontSize: '13px',
               fontWeight: '600',
-              cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              opacity: attendanceLoading ? 0.7 : 1
+              gap: '6px'
             }}
           >
-            <LoginIcon style={{ fontSize: 20 }} />
-            {attendanceLoading ? 'Processing...' : 'Time In'}
-          </button>
-          <button 
-            onClick={handleTimeOut} 
-            className="btn-time-out"
-            disabled={attendanceLoading || !isTimedIn}
-            style={{
-              padding: '12px 30px',
-              background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}
-          >
-            <Logout style={{ fontSize: 20 }} />
-            {attendanceLoading ? 'Processing...' : 'Time Out'}
+            <GetAppIcon style={{ fontSize: 18 }} />
+            Download PDF
           </button>
         </div>
       </div>
-      {isTimedIn && isTimedOut && (
-        <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
-          ✅ You have completed your attendance entry. You can time in again if needed.
-        </div>
-      )}
-      {isTimedIn && !isTimedOut && (
-        <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
-          ⏳ You are currently timed in. Click "Time Out" when leaving.
-        </div>
-      )}
-    </div>
 
-    <div className="form-card-modern">
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <TimelineIcon />
-        Attendance History
-      </h3>
-      <div className="table-container">
-        <table className="attendance-table-modern">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Time In</th>
-              <th>Time Out</th>
-              <th>Status</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {attendanceRecords.length > 0 ? (
-              [...attendanceRecords]
-                .sort((a, b) => b.date.localeCompare(a.date))
-                .slice(0, 20)
-                .map(record => {
-                  let remarks = '';
-                  if (record.status === 'Under Time' && record.undertimeMinutes) {
-                    remarks = `⏱️ Undertime: ${record.undertimeMinutes} mins`;
-                  } else if (record.status === 'Over Time' && record.overtimeMinutes) {
-                    remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
-                  } else if (record.status === 'Late') {
-                    remarks = '⏰ Late arrival';
-                  } else if (record.status === 'On Time') {
-                    remarks = '✅ On time';
-                  }
-                  // For multiple entries, show entry number
-                  if (record.entryNumber && record.entryNumber > 1) {
-                    remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
-                  }
-                  return (
-                    <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''}>
-                      <td>{record.date}</td>
-                      <td className="time-cell">{record.timeIn || '—'}</td>
-                      <td className="time-cell">{record.timeOut || '—'}</td>
-                      <td>
-                        {getAttendanceStatusBadge(record.status || 'Present')}
-                      </td>
-                      <td style={{ fontSize: '12px', color: '#666' }}>{remarks}</td>
-                    </tr>
-                  );
-                })
-            ) : (
+      <div className="stats-row">
+        <div className="stat-card">
+          <div className="stat-icon blue"><EventNoteIcon /></div>
+          <div className="stat-info">
+            <h3>Total Days</h3>
+            <p>{attendanceSummary.totalDays}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon green"><CheckCircleIcon /></div>
+          <div className="stat-info">
+            <h3>Present</h3>
+            <p>{attendanceSummary.presentDays}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon orange"><WarningIcon /></div>
+          <div className="stat-info">
+            <h3>Late</h3>
+            <p>{attendanceSummary.lateDays}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon purple"><WarningIcon /></div>
+          <div className="stat-info">
+            <h3>Under Time</h3>
+            <p>{attendanceSummary.underTimeDays || 0}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon success"><CheckCircleIcon /></div>
+          <div className="stat-info">
+            <h3>Over Time</h3>
+            <p>{attendanceSummary.overTimeDays || 0}</p>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon red"><CancelIcon /></div>
+          <div className="stat-info">
+            <h3>Absent</h3>
+            <p>{attendanceSummary.absentDays || 0}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="form-card-modern">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <AccessTimeIcon />
+          Today's Attendance
+        </h3>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '15px',
+          padding: '10px 0'
+        }}>
+          <div>
+            <p style={{ margin: '5px 0' }}>
+              <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
+            </p>
+            {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
+            {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
+            <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
+              <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              onClick={handleTimeIn} 
+              className="btn-time-in"
+              disabled={attendanceLoading}
+              style={{
+                padding: '12px 30px',
+                background: '#4a6fa5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                opacity: attendanceLoading ? 0.7 : 1
+              }}
+            >
+              <LoginIcon style={{ fontSize: 20 }} />
+              {attendanceLoading ? 'Processing...' : 'Time In'}
+            </button>
+            <button 
+              onClick={handleTimeOut} 
+              className="btn-time-out"
+              disabled={attendanceLoading || !isTimedIn}
+              style={{
+                padding: '12px 30px',
+                background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}
+            >
+              <Logout style={{ fontSize: 20 }} />
+              {attendanceLoading ? 'Processing...' : 'Time Out'}
+            </button>
+          </div>
+        </div>
+        {isTimedIn && isTimedOut && (
+          <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
+            ✅ You have completed your attendance entry. You can time in again if needed.
+          </div>
+        )}
+        {isTimedIn && !isTimedOut && (
+          <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
+            ⏳ You are currently timed in. Click "Time Out" when leaving.
+          </div>
+        )}
+      </div>
+
+      <div className="form-card-modern">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <TimelineIcon />
+          Attendance History
+        </h3>
+        <div className="table-container">
+          <table className="attendance-table-modern">
+            <thead>
               <tr>
-                <td colSpan="5" className="empty-state">
-                  <p>No attendance records found</p>
-                </td>
+                <th>Date</th>
+                <th>Time In</th>
+                <th>Time Out</th>
+                <th>Status</th>
+                <th>Remarks</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {attendanceRecords.length > 0 ? (
+                [...attendanceRecords]
+                  .sort((a, b) => b.date.localeCompare(a.date))
+                  .slice(0, 20)
+                  .map(record => {
+                    let remarks = '';
+                    if (record.status === 'Under Time' && record.undertimeMinutes) {
+                      remarks = `⏱️ Undertime: ${record.undertimeMinutes} mins`;
+                    } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+                      remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
+                    } else if (record.status === 'Late') {
+                      remarks = '⏰ Late arrival';
+                    } else if (record.status === 'On Time') {
+                      remarks = '✅ On time';
+                    }
+                    if (record.entryNumber && record.entryNumber > 1) {
+                      remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
+                    }
+                    return (
+                      <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''}>
+                        <td>{record.date}</td>
+                        <td className="time-cell">{record.timeIn || '—'}</td>
+                        <td className="time-cell">{record.timeOut || '—'}</td>
+                        <td>
+                          {getAttendanceStatusBadge(record.status || 'Present')}
+                        </td>
+                        <td style={{ fontSize: '12px', color: '#666' }}>{remarks}</td>
+                      </tr>
+                    );
+                  })
+              ) : (
+                <tr>
+                  <td colSpan="5" className="empty-state">
+                    <p>No attendance records found</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
 
   //====LEAVE MANAGEMENT=====//
   const renderLeave = () => (
@@ -2920,9 +2900,9 @@ const renderAttendance = () => (
             <span className="balance-label">Sick Leave</span>
             <span className="balance-value">{leaveBalance.sickLeave || 0} days</span>
           </div>
-          <div clasName="balance-item">
+          <div className="balance-item">
             <span className="balance-label">Maternity Leave</span>
-            <span className="balance-value">{leaveBalance.maternityLeave || 0}  days</span>
+            <span className="balance-value">{leaveBalance.maternityLeave || 0} days</span>
           </div>
           <div className="balance-item">
             <span className="balance-label">Paternity Leave</span>
@@ -3131,8 +3111,6 @@ const renderAttendance = () => (
                   <option value="Leave">Leave Form</option>
                   <option value="Personal Data Sheet">Personal Data Sheet</option>
                   <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-                  {/* <option value="Medical Certificate">Medical Certificate</option> */}
-                  {/* <option value="Others">Others</option> */}
                 </select>
               </div>
               <div className="form-group full-width">
@@ -3512,6 +3490,9 @@ const renderAttendance = () => (
   const renderPayroll = () => {
     const hasCurrentPayroll = !!employeePayroll;
     const hasHistory = allPayrollHistory.length > 0;
+    const position = employee?.position || employee?.employmentType || 'Unknown';
+    const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
+    const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
 
     return (
       <div className="employee-payroll-content">
@@ -3573,23 +3554,33 @@ const renderAttendance = () => (
           </div>
         </div>
 
-        {/* Debug Info */}
-        <div style={{ 
-          padding: '10px 16px', 
-          background: '#f0f4fe', 
+        <div style={{
+          padding: '12px 20px',
+          background: usesLeaveCredits ? '#d4edda' : (usesMonetaryDeduction ? '#fff3cd' : '#f0f4fe'),
           borderRadius: '8px',
           marginBottom: '16px',
-          fontSize: '13px',
+          fontSize: '14px',
           display: 'flex',
-          flexWrap: 'wrap',
-          gap: '20px',
-          alignItems: 'center'
+          alignItems: 'center',
+          gap: '12px',
+          flexWrap: 'wrap'
         }}>
-          <span>Employee ID: <strong>{employee?.id || 'N/A'}</strong></span>
-          <span>History Records: <strong>{allPayrollHistory.length}</strong></span>
+          <span><WorkIcon style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }} /> 
+            <strong>Position:</strong> {position}
+          </span>
+          <span>|</span>
+          <span>
+            <strong>Deduction Type:</strong> 
+            {usesLeaveCredits ? (
+              <span style={{ color: '#27ae60', fontWeight: '600' }}> Leave Credits ({LEAVE_DEDUCTION_RATE} day per late)</span>
+            ) : usesMonetaryDeduction ? (
+              <span style={{ color: '#e74c3c', fontWeight: '600' }}> Monetary (₱{MONETARY_DEDUCTION_RATE} per late)</span>
+            ) : (
+              <span style={{ color: '#6c757d' }}> None</span>
+            )}
+          </span>
         </div>
 
-        {/* Payroll Summary Cards */}
         {payrollSummary.totalPayrolls > 0 && (
           <div className="stats-row">
             <div className="stat-card blue">
@@ -3620,10 +3611,19 @@ const renderAttendance = () => (
                 <p>{payrollSummary.totalLateDays} days</p>
               </div>
             </div>
+            {payrollSummary.totalLeaveCreditsUsed > 0 && (
+              <div className="stat-card teal">
+                <div className="stat-icon"><PeopleIcon style={{ fontSize: 30 }} /></div>
+                <div className="stat-info">
+                  <h3>Leave Credits Used</h3>
+                  <p>{payrollSummary.totalLeaveCreditsUsed.toFixed(1)} days</p>
+                  <small>Total</small>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Current Month Payroll */}
         {hasCurrentPayroll && (
           <div className="form-card-modern">
             <h3>
@@ -3653,17 +3653,33 @@ const renderAttendance = () => (
                 </p>
               </div>
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Deduction:</strong></p>
-                <p style={{ color: employeeLateDeduction > 0 ? '#e74c3c' : '#27ae60' }}>
-                  {formatCurrency(employeeLateDeduction)}
+                <p style={{ margin: '5px 0', color: '#666' }}><strong>Deduction Type:</strong></p>
+                <p style={{ 
+                  color: deductionType === 'leave' ? '#27ae60' : 
+                         deductionType === 'monetary' ? '#e74c3c' : '#6c757d',
+                  fontWeight: '600'
+                }}>
+                  {deductionType === 'leave' ? `Leave Credits (${LEAVE_DEDUCTION_RATE} day/late)` :
+                   deductionType === 'monetary' ? `Monetary (₱${MONETARY_DEDUCTION_RATE}/late)` :
+                   'No deduction'}
                 </p>
               </div>
-              <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Other Deductions:</strong></p>
-                <p style={{ color: (employeePayroll.originalDeductions || 0) > 0 ? '#e67e22' : '#27ae60' }}>
-                  {formatCurrency(employeePayroll.originalDeductions || 0)}
-                </p>
-              </div>
+              {deductionType === 'leave' && employeePayroll.leaveCreditsUsed > 0 && (
+                <div>
+                  <p style={{ margin: '5px 0', color: '#666' }}><strong>Leave Credits Used:</strong></p>
+                  <p style={{ color: '#27ae60', fontWeight: '600' }}>
+                    {employeePayroll.leaveCreditsUsed.toFixed(1)} days
+                  </p>
+                </div>
+              )}
+              {deductionType === 'monetary' && employeePayroll.monetaryDeduction > 0 && (
+                <div>
+                  <p style={{ margin: '5px 0', color: '#666' }}><strong>Monetary Deduction:</strong></p>
+                  <p style={{ color: '#e74c3c', fontWeight: '600' }}>
+                    {formatCurrency(employeePayroll.monetaryDeduction)}
+                  </p>
+                </div>
+              )}
               <div>
                 <p style={{ margin: '5px 0', color: '#666' }}><strong>Net Pay:</strong></p>
                 <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#4a6fa5' }}>
@@ -3680,7 +3696,6 @@ const renderAttendance = () => (
           </div>
         )}
 
-        {/* Payroll History */}
         {hasHistory && (
           <div className="form-card-modern" style={{ marginTop: '20px' }}>
             <h3>
@@ -3709,6 +3724,16 @@ const renderAttendance = () => (
                       <td style={{ padding: '10px 14px', textAlign: 'right' }}>{formatCurrency(record.basicSalary)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', color: record.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
                         {record.lateDays || 0}
+                        {record.leaveCreditsUsed > 0 && (
+                          <span style={{ fontSize: '11px', display: 'block', color: '#27ae60' }}>
+                            Leave: {record.leaveCreditsUsed.toFixed(1)} days
+                          </span>
+                        )}
+                        {record.monetaryDeduction > 0 && (
+                          <span style={{ fontSize: '11px', display: 'block', color: '#e74c3c' }}>
+                            ₱{record.monetaryDeduction.toFixed(2)}
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', color: (record.totalDeductions || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
                         {formatCurrency(record.totalDeductions || 0)}
@@ -3770,7 +3795,6 @@ const renderAttendance = () => (
           </div>
         )}
 
-        {/* No Payroll Records */}
         {!hasCurrentPayroll && !hasHistory && (
           <div className="form-card-modern" style={{ textAlign: 'center', padding: '40px' }}>
             <AttachMoneyIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 16px' }} />
@@ -3816,7 +3840,6 @@ const renderAttendance = () => (
     <div className="employee-portal">
       {renderPreviewModal()}
 
-      {/* Notification Alert Banner */}
       {showNotificationAlert && latestNotification && (
         <div className={`notification-alert ${latestNotification.status === 'Approved' ? 'approved' : 'rejected'}`}>
           <div className="alert-content">
