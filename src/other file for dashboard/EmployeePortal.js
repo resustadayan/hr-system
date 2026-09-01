@@ -8,8 +8,6 @@ import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
 import html2pdf from 'html2pdf.js';
 
-import { PDFDocument } from 'pdf-lib';
-
 // Material-UI Icons
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
@@ -47,9 +45,6 @@ import WarningIcon from '@mui/icons-material/Warning';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import logo from '../assets/hrmo logo.jpg';
 
 // Import documents
@@ -140,26 +135,9 @@ function EmployeePortal() {
   const [isRefreshingPayroll, setIsRefreshingPayroll] = useState(false);
   const [deductionType, setDeductionType] = useState('none');
 
-  // ====== EDITABLE COMPLIANCE STATES ======
+  // ====== COMPLIANCE STATES ======
   const [selectedForm, setSelectedForm] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [savedFieldData, setSavedFieldData] = useState({});
-  const [editingFieldData, setEditingFieldData] = useState({ formId: null, fieldKey: null, field: null });
-  const [signatureFile, setSignatureFile] = useState(null);
-  const [signaturePreview, setSignaturePreview] = useState(null);
-  const [signaturePosition, setSignaturePosition] = useState({ x: 100, y: 300 });
-  const [signatureSize, setSignatureSize] = useState({ width: 150, height: 60 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [isResizing, setIsResizing] = useState(false);
-  const [resizeStart, setResizeStart] = useState({ x: 0, y: 0 });
-  const [signatureScale, setSignatureScale] = useState(1);
-  const [showSignatureControls, setShowSignatureControls] = useState(false);
-  const signatureContainerRef = useRef(null);
-  const signatureImageRef = useRef(null);
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
-  const [signatureData, setSignatureData] = useState(null);
-
 
   // ====== COMPLIANCE FILES CONFIGURATION ======
   const [complianceFiles] = useState([
@@ -189,13 +167,44 @@ function EmployeePortal() {
     },
     {
       id: 'saln',
-      name: 'Statement of Assets, Liabilities, and Net Wort (SALN) Annexes 2025',
+      name: 'Statement of Assets, Liabilities, and Net Worth (SALN) Annexes 2025',
       file: salnAnnexes,
       type: 'pdf',
     }
   ]);
 
-  // ====== SMART FILE VIEWER WITH IMAGE FIX ======
+  // ====== HELPER FUNCTIONS ======
+  const formatCurrency = (amount) => {
+    if (!amount || amount === '0' || amount === 0) return '₱0';
+    return new Intl.NumberFormat('en-PH', {
+      style: 'currency',
+      currency: 'PHP',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(parseFloat(amount));
+  };
+
+  const calculateDays = (start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffTime = Math.abs(endDate - startDate);
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  };
+
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  };
+
+  const formatTime = (date) => {
+    if (!date) return null;
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  // ====== SMART FILE VIEWER ======
   const openFileViewer = (fileUrl, fileName) => {
     if (!fileUrl) return;
     
@@ -246,121 +255,366 @@ function EmployeePortal() {
       return;
     }
     
-    const textExtensions = ['txt', 'csv', 'json', 'xml', 'log'];
-    if (textExtensions.includes(extension)) {
-      window.open(fileUrl, '_blank');
-      return;
-    }
-    
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
     window.open(viewerUrl, '_blank');
   };
 
-  // Add this useEffect in the main component body with your other useEffect hooks
-useEffect(() => {
-  const saved = localStorage.getItem('savedSignature');
-  if (saved) {
-    try {
-      const data = JSON.parse(saved);
-      setSignaturePreview(data.preview);
-      setSignaturePosition(data.position || { x: 100, y: 300 });
-      setSignatureSize(data.size || { width: 150, height: 60 });
-      setSignatureScale(data.scale || 1);
-      setShowSignatureControls(true);
-      setSignatureData(data);
-      console.log('✅ Signature loaded from localStorage');
-    } catch (e) {
-      console.error('Error loading saved signature:', e);
-    }
-  }
-}, []);
-
-// Add this useEffect for container size
-useEffect(() => {
-  const updateSize = () => {
-    const container = document.querySelector('.pdf-viewer-container');
-    if (container) {
-      const rect = container.getBoundingClientRect();
-      setContainerSize({ width: rect.width || 800, height: rect.height || 1000 });
+  // ====== STATUS BADGE FUNCTIONS ======
+  const getStatusBadge = (status) => {
+    switch(status) {
+      case 'Approved':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Approved</span>;
+      case 'Pending':
+        return <span className="status-badge warning"><HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4 }} /> Pending</span>;
+      case 'Rejected':
+        return <span className="status-badge danger"><CancelIcon style={{ fontSize: 14, marginRight: 4 }} /> Rejected</span>;
+      default:
+        return <span className="status-badge secondary">{status}</span>;
     }
   };
-  
-  updateSize();
-  window.addEventListener('resize', updateSize);
-  return () => window.removeEventListener('resize', updateSize);
-}, [showEditModal]);
 
-
-  // Handle mobile responsiveness
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-      if (window.innerWidth < 768) {
-        setSidebarOpen(false);
-      } else {
-        setSidebarOpen(true);
-      }
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  // Request notification permission on mount
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+  const getDocStatusBadge = (status) => {
+    switch(status) {
+      case 'Complete':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Complete</span>;
+      case 'Pending Review':
+        return <span className="status-badge warning"><HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4 }} /> Pending</span>;
+      case 'Missing':
+        return <span className="status-badge danger"><CancelIcon style={{ fontSize: 14, marginRight: 4 }} /> Missing</span>;
+      default:
+        return <span className="status-badge secondary">{status}</span>;
     }
-    
-    const audio = new Audio('/notification.mp3');
-    setNotificationSound(audio);
-  }, []);
+  };
 
-  // Fetch employee data when auth user changes
-  useEffect(() => {
-    if (authUser) {
-      fetchEmployeeData();
-    } else if (!authLoading) {
-      navigate('/login');
+  const getAttendanceStatusBadge = (status) => {
+    switch(status) {
+      case 'On Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> On Time</span>;
+      case 'Late':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Late</span>;
+      case 'Under Time':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Under Time</span>;
+      case 'Over Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Over Time</span>;
+      case 'Timed In':
+        return <span className="status-badge info"><AccessTimeIcon style={{ fontSize: 14, marginRight: 4 }} /> Timed In</span>;
+      case 'Completed':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Completed</span>;
+      default:
+        return <span className="status-badge secondary">{status}</span>;
     }
-  }, [authUser, authLoading]);
+  };
 
-  // ====== REAL-TIME EMPLOYEE DATA LISTENER ======
-  useEffect(() => {
-    if (employee && employee.id) {
-      const employeeDocRef = doc(db, 'employees', employee.id);
-      const unsubscribe = onSnapshot(employeeDocRef, (docSnapshot) => {
-        if (docSnapshot.exists()) {
-          const updatedData = { id: docSnapshot.id, ...docSnapshot.data() };
-          setEmployee(updatedData);
-          console.log('🔄 Employee data updated in real-time:', updatedData);
-          
-          if (updatedData.salary !== employee.salary) {
-            console.log('💰 Salary updated from', employee.salary, 'to', updatedData.salary);
-            fetchEmployeePayroll();
-          }
-        }
-      }, (error) => {
-        console.error('Error listening to employee updates:', error);
-      });
+  // ====== UPLOAD TO VERCEL BLOB ======
+  const uploadToVercelBlob = async (file, employeeId, documentType) => {
+    try {
+      const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
       
-      return () => unsubscribe();
-    }
-  }, [employee?.id]);
+      if (!token) {
+        throw new Error('Vercel Blob token not found');
+      }
 
-  // ====== REFRESH PAYROLL FUNCTION ======
-  const refreshPayrollData = async () => {
-    if (!employee) {
-      console.log('No employee data available for refresh');
+      const storeId = 'store_ynMAP2Iw8PKPFAn8';
+      
+      const timestamp = Date.now();
+      const fileName = `${employeeId}_${documentType}_${timestamp}_${file.name}`;
+      const blobPath = `${employeeId}/${documentType}/${fileName}`;
+
+      const url = `https://blob.vercel-storage.com/${storeId}/${blobPath}`;
+
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed (${response.status}): ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      const finalUrl = responseData.url || url;
+
+      return {
+        success: true,
+        url: finalUrl,
+        path: blobPath,
+        downloadUrl: finalUrl,
+      };
+    } catch (error) {
+      console.error('❌ Upload error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  };
+
+  // ====== handleDocumentUpload ======
+  const handleDocumentUpload = async () => {
+    if (!selectedFile || !selectedDocType) {
+      alert('Please select a document type and a file');
       return;
     }
-    setIsRefreshingPayroll(true);
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadStatus('Uploading File.....');
+
     try {
-      await fetchEmployeePayroll();
-      console.log('Payroll data refreshed successfully');
+      if (!authUser) {
+        alert('You must be logged in to upload');
+        setUploading(false);
+        return;
+      }
+
+      if (!employee || !employee.id) {
+        alert('Employee data not found. Please refresh and try again.');
+        setUploading(false);
+        return;
+      }
+
+      const uploadResult = await uploadToVercelBlob(
+        selectedFile,
+        employee.id,
+        selectedDocType
+      );
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload file failed');
+      }
+
+      setUploadProgress(50);
+      setUploadStatus('Saving compliance...');
+
+      await addDoc(collection(db, 'documents'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: selectedDocType,
+        status: 'Pending Review',
+        fileUrl: uploadResult.url,
+        downloadUrl: uploadResult.downloadUrl,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        storagePath: uploadResult.path,
+        storageProvider: 'vercel-blob',
+        uploadedAt: new Date().toISOString()
+      });
+
+      setUploadProgress(75);
+      setUploadStatus('Creating notifications...');
+
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload',
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: selectedDocType,
+        message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded ${selectedDocType} for compliance review`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload_confirmation',
+        employeeId: employee.id,
+        message: `Your ${selectedDocType} has been uploaded and is pending review by HR`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setUploadProgress(100);
+      setUploadStatus('Document uploaded successfully! HR has been notified.');
+      setSelectedFile(null);
+      setSelectedDocType('');
+      setShowUploadForm(false);
+      
+      fetchEmployeeData();
+      setUploading(false);
     } catch (error) {
-      console.error('Error refreshing payroll:', error);
+      console.error('Error uploading document:', error);
+      setUploadStatus(`Upload failed: ${error.message}`);
+      setUploading(false);
+      alert(`Upload failed: ${error.message}`);
+    }
+  };
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadStatus('File is too large. Maximum size is 10MB.');
+      return;
+    }
+
+    let processedFile = file;
+
+    if (file.type.startsWith('image/')) {
+      try {
+        const options = {
+          maxSizeMB: 0.5,
+          maxWidthOrHeight: 1024,
+          useWebWorker: true,
+          fileType: 'image/jpeg'
+        };
+        processedFile = await imageCompression(file, options);
+        setUploadStatus(`Compressed from ${(file.size / 1024 / 1024).toFixed(2)}MB to ${(processedFile.size / 1024 / 1024).toFixed(2)}MB`);
+      } catch (error) {
+        console.warn('Compression failed, using original file:', error);
+        processedFile = file;
+      }
+    }
+
+    setSelectedFile(processedFile);
+    setUploadProgress(0);
+  };
+
+  // ====== FETCH EMPLOYEE DATA ======
+  const fetchEmployeeData = async () => {
+    if (!authUser) {
+      console.log('No authenticated user');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      console.log('🔍 Fetching employee data for user:', authUser.email);
+
+      let empData = null;
+      let empId = null;
+
+      const empQuery = query(collection(db, 'employees'), where('email', '==', authUser.email));
+      const empSnapshot = await getDocs(empQuery);
+      
+      if (!empSnapshot.empty) {
+        const docRef = empSnapshot.docs[0];
+        empData = { id: docRef.id, ...docRef.data() };
+        empId = docRef.id;
+      } else {
+        console.log('No employee document found for email:', authUser.email);
+        
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          empData = {
+            id: authUser.uid,
+            fullName: userData.name || userData.fullName || authUser.email?.split('@')[0] || 'User',
+            email: userData.email || authUser.email,
+            department: userData.department || '',
+            position: userData.position || '',
+            salary: userData.salary || '',
+            phone: userData.phone || '',
+            dateHired: userData.dateHired || '',
+            status: userData.status || 'Active'
+          };
+          empId = empData.id;
+          
+          try {
+            await addDoc(collection(db, 'employees'), {
+              ...empData,
+              createdAt: new Date().toISOString()
+            });
+          } catch (saveError) {
+            console.warn('Could not save employee to collection:', saveError);
+          }
+        }
+      }
+
+      if (empData) {
+        setEmployee(empData);
+
+        // Fetch leave balance
+        const balanceQuery = query(collection(db, 'leaveBalances'), where('employeeId', '==', empId));
+        const balanceSnapshot = await getDocs(balanceQuery);
+        if (!balanceSnapshot.empty) {
+          const balanceData = balanceSnapshot.docs[0].data();
+          const balanceId = balanceSnapshot.docs[0].id;
+          setLeaveBalanceId(balanceId);
+          setLeaveBalance({ 
+            sickLeave: balanceData.sickLeave || 0, 
+            vacationLeave: balanceData.vacationLeave || 0,
+            maternityLeave: balanceData.maternityLeave || 0,
+            paternityLeave: balanceData.paternityLeave || 0 
+          });
+        } else {
+          const defaultBalance = {
+            employeeId: empId,
+            sickLeave: 5,
+            vacationLeave: 5,
+            maternityLeave: 105,
+            paternityLeave: 7,
+            createdAt: new Date().toISOString()
+          };
+          const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), defaultBalance);
+          setLeaveBalanceId(newBalanceRef.id);
+          setLeaveBalance({ sickLeave: 5, vacationLeave: 5, maternityLeave: 105, paternityLeave: 7 });
+        }
+
+        // Fetch leave requests
+        const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', empId));
+        const leaveSnapshot = await getDocs(leaveQuery);
+        setLeaveRequests(leaveSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        // Fetch documents
+        const docQuery = query(collection(db, 'documents'), where('employeeId', '==', empId));
+        const docSnapshot = await getDocs(docQuery);
+        setDocuments(docSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+        await fetchAttendanceData(empId);
+        await fetchEmployeePayroll();
+
+        // Fetch notifications
+        const notifQuery = query(
+          collection(db, 'notifications'), 
+          where('employeeId', '==', empId)
+        );
+        const notifSnapshot = await getDocs(notifQuery);
+        const allNotifs = notifSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        const employeeNotifs = allNotifs.filter(notif => 
+          notif.forEmployee === true || 
+          notif.type === 'leave_action' ||
+          notif.type === 'leave_confirmation' ||
+          notif.type === 'compliance_upload_confirmation'
+        );
+        setNotifications(employeeNotifs);
+        
+        const unreadLeaveActions = employeeNotifs.filter(n => !n.read && n.type === 'leave_action');
+        if (unreadLeaveActions.length > 0) {
+          const latest = unreadLeaveActions[0];
+          setLatestNotification(latest);
+          setShowNotificationAlert(true);
+          
+          if (notificationSound) {
+            notificationSound.play().catch(e => console.log('Sound play failed'));
+          }
+          
+          if (Notification.permission === 'granted') {
+            new Notification('Leave Request Update', {
+              body: latest.message,
+              icon: '/favicon.ico'
+            });
+          }
+        }
+
+        setTimeout(() => {
+          setupRealtimeListeners();
+        }, 300);
+      }
+    } catch (error) {
+      console.error('Error fetching employee data:', error);
     } finally {
-      setIsRefreshingPayroll(false);
+      setLoading(false);
     }
   };
 
@@ -374,7 +628,6 @@ useEffect(() => {
     try {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
-      const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
       const startDate = new Date(currentYear, currentMonth, 1).toISOString().split('T')[0];
       const endDate = new Date(currentYear, currentMonth + 1, 0).toISOString().split('T')[0];
 
@@ -433,276 +686,6 @@ useEffect(() => {
     }
   };
 
-  // ====== FETCH EMPLOYEE DATA ======
-  const fetchEmployeeData = async () => {
-    if (!authUser) {
-      console.log('No authenticated user');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      console.log('🔍 Fetching employee data for user:', authUser.email);
-      console.log('🔍 User UID:', authUser.uid);
-
-      let empData = null;
-      let empId = null;
-
-      const empQuery = query(collection(db, 'employees'), where('email', '==', authUser.email));
-      const empSnapshot = await getDocs(empQuery);
-      
-      console.log('📊 Employees found:', empSnapshot.size);
-      
-      if (!empSnapshot.empty) {
-        const docRef = empSnapshot.docs[0];
-        empData = { id: docRef.id, ...docRef.data() };
-        empId = docRef.id;
-        console.log('Employee found with ID:', empId);
-        console.log('Employee data:', empData);
-      } else {
-        console.log('No employee document found for email:', authUser.email);
-        
-        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          empData = {
-            id: authUser.uid,
-            fullName: userData.name || userData.fullName || authUser.email?.split('@')[0] || 'User',
-            email: userData.email || authUser.email,
-            department: userData.department || '',
-            position: userData.position || '',
-            salary: userData.salary || '',
-            phone: userData.phone || '',
-            dateHired: userData.dateHired || '',
-            status: userData.status || 'Active'
-          };
-          empId = empData.id;
-          console.log('Created employee data from user document:', empData);
-          
-          try {
-            await addDoc(collection(db, 'employees'), {
-              ...empData,
-              createdAt: new Date().toISOString()
-            });
-            console.log('Employee saved to employees collection');
-          } catch (saveError) {
-            console.warn('Could not save employee to collection:', saveError);
-          }
-        } else {
-          console.error('No user document found for UID:', authUser.uid);
-        }
-      }
-
-      if (empData) {
-        setEmployee(empData);
-        console.log('Using employee ID for queries:', empId);
-
-        // Fetch leave balance
-        const balanceQuery = query(collection(db, 'leaveBalances'), where('employeeId', '==', empId));
-        const balanceSnapshot = await getDocs(balanceQuery);
-        if (!balanceSnapshot.empty) {
-          const balanceData = balanceSnapshot.docs[0].data();
-          const balanceId = balanceSnapshot.docs[0].id;
-          setLeaveBalanceId(balanceId);
-          setLeaveBalance({ 
-            sickLeave: balanceData.sickLeave || 0, 
-            vacationLeave: balanceData.vacationLeave || 0,
-            maternityLeave: balanceData.maternityLeave || 0,
-            paternityLeave: balanceData.paternityLeave || 0 
-          });
-        } else {
-          const defaultBalance = {
-            employeeId: empId,
-            sickLeave: 5,
-            vacationLeave: 5,
-            maternityLeave: 105,
-            paternityLeave: 7,
-            createdAt: new Date().toISOString()
-          };
-          const newBalanceRef = await addDoc(collection(db, 'leaveBalances'), defaultBalance);
-          setLeaveBalanceId(newBalanceRef.id);
-          setLeaveBalance({ sickLeave: 5, vacationLeave: 5, maternityLeave: 105, paternityLeave: 7 });
-        }
-
-        // Fetch leave requests
-        const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', empId));
-        const leaveSnapshot = await getDocs(leaveQuery);
-        setLeaveRequests(leaveSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        // Fetch documents
-        const docQuery = query(collection(db, 'documents'), where('employeeId', '==', empId));
-        const docSnapshot = await getDocs(docQuery);
-        setDocuments(docSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-
-        // ====== FETCH ATTENDANCE RECORDS ======
-        await fetchAttendanceData(empId);
-
-        // ====== FETCH EMPLOYEE PAYROLL ======
-        await fetchEmployeePayroll();
-
-        // Fetch notifications
-        const notifQuery = query(
-          collection(db, 'notifications'), 
-          where('employeeId', '==', empId)
-        );
-        const notifSnapshot = await getDocs(notifQuery);
-        const allNotifs = notifSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        const employeeNotifs = allNotifs.filter(notif => 
-          notif.forEmployee === true || 
-          notif.type === 'leave_action' ||
-          notif.type === 'leave_confirmation' ||
-          notif.type === 'compliance_upload_confirmation'
-        );
-        setNotifications(employeeNotifs);
-        
-        const unreadLeaveActions = employeeNotifs.filter(n => !n.read && n.type === 'leave_action');
-        if (unreadLeaveActions.length > 0) {
-          const latest = unreadLeaveActions[0];
-          setLatestNotification(latest);
-          setShowNotificationAlert(true);
-          
-          if (notificationSound) {
-            notificationSound.play().catch(e => console.log('Sound play failed'));
-          }
-          
-          if (Notification.permission === 'granted') {
-            new Notification('Leave Request Update', {
-              body: latest.message,
-              icon: '/favicon.ico'
-            });
-          }
-        }
-
-        // ====== SETUP REALTIME LISTENERS AFTER DATA IS LOADED ======
-        setTimeout(() => {
-          setupRealtimeListeners();
-        }, 300);
-      } else {
-        console.error('No employee data found!');
-      }
-    } catch (error) {
-      console.error('Error fetching employee data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ====== SIGNATURE FUNCTIONS ======
-  const handleSignatureUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Signature file is too large. Maximum size is 2MB.');
-      return;
-    }
-    
-    if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file for the signature.');
-      return;
-    }
-    
-    setSignatureFile(file);
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setSignaturePreview(event.target.result);
-      setShowSignatureControls(true);
-      setSignaturePosition({ x: 100, y: 300 });
-      setSignatureSize({ width: 150, height: 60 });
-      setSignatureScale(1);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const removeSignature = () => {
-    setSignatureFile(null);
-    setSignaturePreview(null);
-    setShowSignatureControls(false);
-  };
-
-  // ====== SIGNATURE DRAG AND RESIZE FUNCTIONS ======
-  const handleSignatureMouseDown = (e) => {
-    if (!signaturePreview) return;
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const target = e.target;
-    if (target.className && target.className.includes('resize-handle')) {
-      setIsResizing(true);
-      setResizeStart({ x: e.clientX, y: e.clientY });
-      return;
-    }
-    
-    setIsDragging(true);
-    const rect = e.currentTarget.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    });
-  };
-
-  const handleSignatureMouseMove = (e) => {
-    if (isDragging && signatureContainerRef.current) {
-      const containerRect = signatureContainerRef.current.parentElement.getBoundingClientRect();
-      const newX = e.clientX - containerRect.left - dragOffset.x;
-      const newY = e.clientY - containerRect.top - dragOffset.y;
-      
-      setSignaturePosition({
-        x: Math.max(0, Math.min(newX, containerRect.width - signatureSize.width)),
-        y: Math.max(0, Math.min(newY, containerRect.height - signatureSize.height))
-      });
-    }
-    
-    if (isResizing && signatureContainerRef.current) {
-      const containerRect = signatureContainerRef.current.parentElement.getBoundingClientRect();
-      const deltaX = e.clientX - resizeStart.x;
-      const deltaY = e.clientY - resizeStart.y;
-      
-      const newWidth = Math.max(50, signatureSize.width + deltaX);
-      const newHeight = Math.max(30, signatureSize.height + deltaY);
-      
-      setSignatureSize({
-        width: Math.min(newWidth, containerRect.width - signaturePosition.x),
-        height: Math.min(newHeight, containerRect.height - signaturePosition.y)
-      });
-      
-      setResizeStart({ x: e.clientX, y: e.clientY });
-    }
-  };
-
-  const handleSignatureMouseUp = () => {
-    setIsDragging(false);
-    setIsResizing(false);
-  };
-
-  useEffect(() => {
-    if (isDragging || isResizing) {
-      document.addEventListener('mousemove', handleSignatureMouseMove);
-      document.addEventListener('mouseup', handleSignatureMouseUp);
-      return () => {
-        document.removeEventListener('mousemove', handleSignatureMouseMove);
-        document.removeEventListener('mouseup', handleSignatureMouseUp);
-      };
-    }
-  }, [isDragging, isResizing, dragOffset, resizeStart, signaturePosition, signatureSize]);
-
-  const zoomSignature = (direction) => {
-    const newScale = direction === 'in' ? signatureScale + 0.1 : signatureScale - 0.1;
-    const clampedScale = Math.max(0.3, Math.min(3, newScale));
-    setSignatureScale(clampedScale);
-    setSignatureSize({
-      width: 150 * clampedScale,
-      height: 60 * clampedScale
-    });
-  };
-
-  const resetSignaturePosition = () => {
-    setSignaturePosition({ x: 100, y: 300 });
-    setSignatureSize({ width: 150, height: 60 });
-    setSignatureScale(1);
-  };
-
   // ====== ATTENDANCE FUNCTIONS ======
   const fetchAttendanceData = async (empId) => {
     try {
@@ -723,9 +706,8 @@ useEffect(() => {
         });
         const latestDoc = sortedDocs[0];
         const todayData = latestDoc;
-        const todayId = latestDoc.id;
         
-        setTodayAttendance({ id: todayId, ...todayData });
+        setTodayAttendance({ id: latestDoc.id, ...todayData });
         setTimeIn(todayData.timeIn || null);
         setTimeOut(todayData.timeOut || null);
         setIsTimedIn(!!todayData.timeIn);
@@ -780,21 +762,6 @@ useEffect(() => {
     } catch (error) {
       console.error('Error fetching attendance:', error);
     }
-  };
-
-  // Helper function to parse time string to minutes
-  const timeToMinutes = (timeStr) => {
-    if (!timeStr) return 0;
-    const parts = timeStr.split(':');
-    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
-  };
-
-  // Helper function to format time from Date object
-  const formatTime = (date) => {
-    if (!date) return null;
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${hours}:${minutes}`;
   };
 
   const handleTimeIn = async () => {
@@ -999,90 +966,7 @@ useEffect(() => {
     }
   };
 
-  // ====== SETUP REALTIME LISTENERS ======
-  const setupRealtimeListeners = () => {
-    if (!employee || !employee.id) return;
-
-    const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', employee.id));
-    onSnapshot(leaveQuery, (snapshot) => {
-      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setLeaveRequests(requests);
-    });
-
-    const attendanceQuery = query(collection(db, 'attendance'), where('employeeId', '==', employee.id));
-    onSnapshot(attendanceQuery, () => {
-      fetchAttendanceData(employee.id);
-    });
-
-    const notifQuery = query(
-      collection(db, 'notifications'), 
-      where('employeeId', '==', employee.id)
-    );
-    onSnapshot(notifQuery, (snapshot) => {
-      const allNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const employeeNotifs = allNotifs.filter(notif => 
-        notif.forEmployee === true || 
-        notif.type === 'leave_action' ||
-        notif.type === 'leave_confirmation' ||
-        notif.type === 'compliance_upload_confirmation' ||
-        notif.type === 'attendance_confirmation'
-      );
-      
-      const previousNotifs = notifications;
-      const newNotifs = employeeNotifs.filter(n => 
-        !previousNotifs.some(p => p.id === n.id) && !n.read
-      );
-      
-      const newLeaveActions = newNotifs.filter(n => n.type === 'leave_action');
-      if (newLeaveActions.length > 0) {
-        const latest = newLeaveActions[0];
-        setLatestNotification(latest);
-        setShowNotificationAlert(true);
-        
-        if (notificationSound) {
-          notificationSound.play().catch(e => console.log('Sound play failed'));
-        }
-        
-        if (Notification.permission === 'granted') {
-          new Notification('Leave Request Update', {
-            body: latest.message,
-            icon: '/favicon.ico'
-          });
-        }
-        
-        setTimeout(() => {
-          setShowNotificationAlert(false);
-        }, 5000);
-      }
-      
-      setNotifications(employeeNotifs);
-    });
-
-    const payrollQuery = query(
-      collection(db, 'payroll'),
-      where('employeeId', '==', employee.id)
-    );
-    onSnapshot(payrollQuery, (snapshot) => {
-      console.log('Payroll data changed, refreshing...');
-      fetchEmployeePayroll();
-    }, (error) => {
-      console.error('Payroll listener error:', error);
-    });
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logout();
-      localStorage.removeItem('isAuthenticated');
-      localStorage.removeItem('userRole');
-      navigate('/login');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
-  // ===leave management====//
+  // ====== LEAVE FUNCTIONS ======
   const handleLeaveSubmit = async (e) => {
     e.preventDefault();
     if (!leaveFormData.startDate || !leaveFormData.endDate) {
@@ -1328,265 +1212,106 @@ useEffect(() => {
     }
   };
 
-  const calculateDays = (start, end) => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const diffTime = Math.abs(endDate - startDate);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  };
+  // ====== SETUP REALTIME LISTENERS ======
+  const setupRealtimeListeners = () => {
+    if (!employee || !employee.id) return;
 
-  const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', employee.id));
+    onSnapshot(leaveQuery, (snapshot) => {
+      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setLeaveRequests(requests);
+    });
 
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadStatus('File is too large. Maximum size is 10MB.');
-      return;
-    }
+    const attendanceQuery = query(collection(db, 'attendance'), where('employeeId', '==', employee.id));
+    onSnapshot(attendanceQuery, () => {
+      fetchAttendanceData(employee.id);
+    });
 
-    let processedFile = file;
-
-    if (file.type.startsWith('image/')) {
-      try {
-        const options = {
-          maxSizeMB: 0.5,
-          maxWidthOrHeight: 1024,
-          useWebWorker: true,
-          fileType: 'image/jpeg'
-        };
-        processedFile = await imageCompression(file, options);
-        setUploadStatus(`Compressed from ${(file.size / 1024 / 1024).toFixed(2)}MB to ${(processedFile.size / 1024 / 1024).toFixed(2)}MB`);
-      } catch (error) {
-        console.warn('Compression failed, using original file:', error);
-        processedFile = file;
-      }
-    }
-
-    setSelectedFile(processedFile);
-    setUploadProgress(0);
-  };
-
-  // ====== UPLOAD TO VERCEL BLOB ======
-  const uploadToVercelBlob = async (file, employeeId, documentType) => {
-    try {
-      const token = process.env.REACT_APP_BLOB_READ_WRITE_TOKEN;
+    const notifQuery = query(
+      collection(db, 'notifications'), 
+      where('employeeId', '==', employee.id)
+    );
+    onSnapshot(notifQuery, (snapshot) => {
+      const allNotifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      if (!token) {
-        throw new Error('Vercel Blob token not found');
-      }
-
-      const storeId = 'store_ynMAP2Iw8PKPFAn8';
-      
-      const timestamp = Date.now();
-      const fileName = `${employeeId}_${documentType}_${timestamp}_${file.name}`;
-      const blobPath = `${employeeId}/${documentType}/${fileName}`;
-
-      const url = `https://blob.vercel-storage.com/${storeId}/${blobPath}`;
-
-      console.log('📤 Uploading to:', url);
-      console.log('📄 File:', file.name, file.size, 'bytes');
-
-      const response = await fetch(url, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': file.type || 'application/octet-stream',
-        },
-        body: file,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Upload failed:', response.status, errorText);
-        throw new Error(`Upload failed (${response.status}): ${errorText}`);
-      }
-
-      const responseData = await response.json();
-      const finalUrl = responseData.url || url;
-
-      console.log('✅ Upload successful! URL:', finalUrl);
-
-      return {
-        success: true,
-        url: finalUrl,
-        path: blobPath,
-        downloadUrl: finalUrl,
-      };
-    } catch (error) {
-      console.error('❌ Upload error:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  };
-
-  // ====== handleDocumentUpload ======
-  const handleDocumentUpload = async () => {
-    if (!selectedFile || !selectedDocType) {
-      alert('Please select a document type and a file');
-      return;
-    }
-
-    setUploading(true);
-    setUploadProgress(0);
-    setUploadStatus('Uploading File.....');
-
-    try {
-      if (!authUser) {
-        alert('You must be logged in to upload');
-        setUploading(false);
-        return;
-      }
-
-      if (!employee || !employee.id) {
-        alert('Employee data not found. Please refresh and try again.');
-        setUploading(false);
-        return;
-      }
-
-      const uploadResult = await uploadToVercelBlob(
-        selectedFile,
-        employee.id,
-        selectedDocType
+      const employeeNotifs = allNotifs.filter(notif => 
+        notif.forEmployee === true || 
+        notif.type === 'leave_action' ||
+        notif.type === 'leave_confirmation' ||
+        notif.type === 'compliance_upload_confirmation' ||
+        notif.type === 'attendance_confirmation'
       );
-
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'Upload file failed');
+      
+      const previousNotifs = notifications;
+      const newNotifs = employeeNotifs.filter(n => 
+        !previousNotifs.some(p => p.id === n.id) && !n.read
+      );
+      
+      const newLeaveActions = newNotifs.filter(n => n.type === 'leave_action');
+      if (newLeaveActions.length > 0) {
+        const latest = newLeaveActions[0];
+        setLatestNotification(latest);
+        setShowNotificationAlert(true);
+        
+        if (notificationSound) {
+          notificationSound.play().catch(e => console.log('Sound play failed'));
+        }
+        
+        if (Notification.permission === 'granted') {
+          new Notification('Leave Request Update', {
+            body: latest.message,
+            icon: '/favicon.ico'
+          });
+        }
+        
+        setTimeout(() => {
+          setShowNotificationAlert(false);
+        }, 5000);
       }
-
-      setUploadProgress(50);
-      setUploadStatus('Saving compliance...');
-
-      await addDoc(collection(db, 'documents'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: selectedDocType,
-        status: 'Pending Review',
-        fileUrl: uploadResult.url,
-        downloadUrl: uploadResult.downloadUrl,
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        storagePath: uploadResult.path,
-        storageProvider: 'vercel-blob',
-        uploadedAt: new Date().toISOString()
-      });
-
-      setUploadProgress(75);
-      setUploadStatus('Creating notifications...');
-
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload',
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: selectedDocType,
-        message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded ${selectedDocType} for compliance review`,
-        read: false,
-        forAdmin: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload_confirmation',
-        employeeId: employee.id,
-        message: `Your ${selectedDocType} has been uploaded and is pending review by HR`,
-        read: false,
-        forEmployee: true,
-        forAdmin: false,
-        createdAt: new Date().toISOString()
-      });
-
-      setUploadProgress(100);
-      setUploadStatus('Document uploaded successfully! HR has been notified.');
-      setSelectedFile(null);
-      setSelectedDocType('');
-      setShowUploadForm(false);
       
-      
-      fetchEmployeeData();
-      setUploading(false);
+      setNotifications(employeeNotifs);
+    });
+
+    const payrollQuery = query(
+      collection(db, 'payroll'),
+      where('employeeId', '==', employee.id)
+    );
+    onSnapshot(payrollQuery, (snapshot) => {
+      console.log('Payroll data changed, refreshing...');
+      fetchEmployeePayroll();
+    }, (error) => {
+      console.error('Payroll listener error:', error);
+    });
+  };
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('userRole');
+      navigate('/login');
     } catch (error) {
-      console.error('Error uploading document:', error);
-      setUploadStatus(`Upload failed: ${error.message}`);
-      setUploading(false);
-      alert(`Upload failed: ${error.message}`);
+      console.error('Logout error:', error);
     }
   };
 
-  // ====== EDITABLE COMPLIANCE FUNCTIONS ======
-
-  // Open the editable form modal
-  const openEditableForm = (formId) => {
-    setSelectedForm(formId);
-    setShowEditModal(true);
-    setSignaturePosition({ x: 100, y: 300 });
-    setSignatureSize({ width: 150, height: 60 });
-    setSignatureScale(1);
+  const toggleSidebar = () => {
+    setSidebarOpen(!sidebarOpen);
   };
 
-  // Handle field value change
-  const handleFieldChange = (formId, fieldKey, value) => {
-    setSavedFieldData(prev => ({
-      ...prev,
-      [formId]: {
-        ...(prev[formId] || {}),
-        [fieldKey]: value
-      }
-    }));
-  };
-
-  // Get field value
-  const getFieldValue = (formId, fieldKey) => {
-    const saved = savedFieldData[formId] || {};
-    return saved[fieldKey] || '';
-  };
-
-  // ====== STATUS BADGE FUNCTIONS ======
-  const getStatusBadge = (status) => {
-    switch(status) {
-      case 'Approved':
-        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Approved</span>;
-      case 'Pending':
-        return <span className="status-badge warning"><HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4 }} /> Pending</span>;
-      case 'Rejected':
-        return <span className="status-badge danger"><CancelIcon style={{ fontSize: 14, marginRight: 4 }} /> Rejected</span>;
-      default:
-        return <span className="status-badge secondary">{status}</span>;
+  const refreshPayrollData = async () => {
+    if (!employee) {
+      console.log('No employee data available for refresh');
+      return;
     }
-  };
-
-  const getDocStatusBadge = (status) => {
-    switch(status) {
-      case 'Complete':
-        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Complete</span>;
-      case 'Pending Review':
-        return <span className="status-badge warning"><HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4 }} /> Pending</span>;
-      case 'Missing':
-        return <span className="status-badge danger"><CancelIcon style={{ fontSize: 14, marginRight: 4 }} /> Missing</span>;
-      default:
-        return <span className="status-badge secondary">{status}</span>;
-    }
-  };
-
-  const getAttendanceStatusBadge = (status) => {
-    switch(status) {
-      case 'On Time':
-        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> On Time</span>;
-      case 'Late':
-        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Late</span>;
-      case 'Under Time':
-        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 14, marginRight: 4 }} /> Under Time</span>;
-      case 'Over Time':
-        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Over Time</span>;
-      case 'Timed In':
-        return <span className="status-badge info"><AccessTimeIcon style={{ fontSize: 14, marginRight: 4 }} /> Timed In</span>;
-      case 'Completed':
-        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Completed</span>;
-      default:
-        return <span className="status-badge secondary">{status}</span>;
+    setIsRefreshingPayroll(true);
+    try {
+      await fetchEmployeePayroll();
+      console.log('Payroll data refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing payroll:', error);
+    } finally {
+      setIsRefreshingPayroll(false);
     }
   };
 
@@ -1597,1680 +1322,211 @@ useEffect(() => {
   const pendingLeaves = leaveRequests.filter(l => l.status === 'Pending').length;
   const unreadNotifications = notifications.filter(n => !n.read).length;
 
-  const toggleSidebar = () => {
-    setSidebarOpen(!sidebarOpen);
-  };
+  // Handle mobile responsiveness
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) {
+        setSidebarOpen(false);
+      } else {
+        setSidebarOpen(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
-  const formatCurrency = (amount) => {
-    if (!amount || amount === '0' || amount === 0) return '₱0';
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(parseFloat(amount));
-  };
-
-  // ====== GENERATE ATTENDANCE PDF (TRUE DOWNLOAD) ======
-  const generateAttendancePDF = async () => {
-    const loadingMsg = document.createElement('div');
-    loadingMsg.style.cssText = `
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: white; padding: 20px 40px; border-radius: 12px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2); z-index: 9999;
-      font-size: 18px; font-weight: 600; color: #4a6fa5;
-      display: flex; align-items: center; gap: 12px;
-    `;
-    loadingMsg.innerHTML = `
-      <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
-      Generating attendance report...
-    `;
-    document.body.appendChild(loadingMsg);
-
-    const sortedRecords = [...attendanceRecords].sort((a, b) => b.date.localeCompare(a.date));
-
-    const attendanceHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Attendance Report - ${employee?.fullName || 'Employee'}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            background: #f5f7fa; 
-            padding: 40px; 
-            display: flex;
-            justify-content: center;
-          }
-          .report-container {
-            max-width: 1000px;
-            width: 100%;
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-          }
-          .report-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 3px solid #4a6fa5;
-            padding-bottom: 20px;
-            margin-bottom: 20px;
-          }
-          .report-header .title h1 {
-            color: #1a2a4a;
-            font-size: 28px;
-            margin: 0;
-          }
-          .report-header .title p {
-            color: #6b7a8f;
-            font-size: 14px;
-            margin: 4px 0 0;
-          }
-          .report-header .logo h3 {
-            color: #4a6fa5;
-            margin: 0;
-          }
-          .report-header .logo p {
-            color: #8a9bb5;
-            font-size: 12px;
-          }
-          .employee-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 12px;
-            background: #f8fafd;
-            padding: 16px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-          }
-          .employee-info .info-item label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #8a9bb5;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-          }
-          .employee-info .info-item span {
-            font-size: 15px;
-            font-weight: 600;
-            color: #1a2a4a;
-          }
-          .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(6, 1fr);
-            gap: 12px;
-            margin-bottom: 20px;
-          }
-          .summary-card {
-            background: #f8fafd;
-            padding: 12px 16px;
-            border-radius: 8px;
-            text-align: center;
-          }
-          .summary-card .number {
-            font-size: 22px;
-            font-weight: 700;
-            color: #4a6fa5;
-          }
-          .summary-card .label {
-            font-size: 11px;
-            color: #8a9bb5;
-            text-transform: uppercase;
-          }
-          .summary-card.green .number { color: #27ae60; }
-          .summary-card.orange .number { color: #e67e22; }
-          .summary-card.red .number { color: #e74c3c; }
-          .summary-card.purple .number { color: #8e44ad; }
-          .summary-card.success .number { color: #2ecc71; }
-          .attendance-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-          }
-          .attendance-table th {
-            background: #4a6fa5;
-            color: white;
-            padding: 10px 14px;
-            text-align: left;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .attendance-table td {
-            padding: 10px 14px;
-            border-bottom: 1px solid #eef2f7;
-            font-size: 13px;
-          }
-          .attendance-table tr:nth-child(even) {
-            background: #fafbfd;
-          }
-          .attendance-table .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-            display: inline-block;
-          }
-          .status-badge.success { background: #d4edda; color: #155724; }
-          .status-badge.warning { background: #fff3cd; color: #856404; }
-          .status-badge.danger { background: #f8d7da; color: #721c24; }
-          .status-badge.info { background: #d1ecf1; color: #0c5460; }
-          .status-badge.secondary { background: #e2e3e5; color: #383d41; }
-          .status-badge.undertime { background: #fef3cd; color: #856404; }
-          .status-badge.overtime { background: #d4edda; color: #155724; }
-          .report-footer {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #eef2f7;
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: #8a9bb5;
-          }
-          .report-footer .total-records {
-            font-weight: 600;
-            color: #4a6fa5;
-          }
-          @media print {
-            body { padding: 20px; background: white; }
-            .report-container { box-shadow: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="report-container" id="report-container">
-          <div class="report-header">
-            <div class="title">
-              <h1>ATTENDANCE REPORT</h1>
-              <p>Municipality of Pagbilao, Quezon</p>
-            </div>
-            <div class="logo">
-              <h3>HR Management System</h3>
-              <p>${new Date().toLocaleDateString()}</p>
-            </div>
-          </div>
-
-          <div class="employee-info">
-            <div class="info-item">
-              <label>Employee Name</label>
-              <span>${employee?.fullName || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Department</label>
-              <span>${employee?.department || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Position</label>
-              <span>${employee?.position || 'N/A'}</span>
-            </div>
-          </div>
-
-          <div class="summary-grid">
-            <div class="summary-card">
-              <div class="number">${attendanceSummary.totalDays}</div>
-              <div class="label">Total Days</div>
-            </div>
-            <div class="summary-card green">
-              <div class="number">${attendanceSummary.presentDays || 0}</div>
-              <div class="label">Present</div>
-            </div>
-            <div class="summary-card orange">
-              <div class="number">${attendanceSummary.lateDays || 0}</div>
-              <div class="label">Late</div>
-            </div>
-            <div class="summary-card purple">
-              <div class="number">${attendanceSummary.underTimeDays || 0}</div>
-              <div class="label">Under Time</div>
-            </div>
-            <div class="summary-card success">
-              <div class="number">${attendanceSummary.overTimeDays || 0}</div>
-              <div class="label">Over Time</div>
-            </div>
-            <div class="summary-card red">
-              <div class="number">${attendanceSummary.absentDays || 0}</div>
-              <div class="label">Absent</div>
-            </div>
-          </div>
-
-          <table class="attendance-table">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time In</th>
-                <th>Time Out</th>
-                <th>Status</th>
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${sortedRecords.map(record => {
-                let remarks = '';
-                let statusClass = 'secondary';
-                if (record.status === 'On Time') {
-                  statusClass = 'success';
-                  remarks = 'On time';
-                } else if (record.status === 'Late') {
-                  statusClass = 'warning';
-                  remarks = 'Late arrival';
-                } else if (record.status === 'Under Time') {
-                  statusClass = 'undertime';
-                  remarks = record.undertimeMinutes ? `Undertime: ${record.undertimeMinutes} mins` : 'Undertime';
-                } else if (record.status === 'Over Time') {
-                  statusClass = 'overtime';
-                  remarks = record.overtimeMinutes ? `Overtime: ${record.overtimeMinutes} mins` : 'Overtime';
-                } else if (record.status === 'Present') {
-                  statusClass = 'success';
-                  remarks = 'Present';
-                }
-                return `
-                  <tr>
-                    <td>${record.date}</td>
-                    <td>${record.timeIn || '—'}</td>
-                    <td>${record.timeOut || '—'}</td>
-                    <td>
-                      <span class="status-badge ${statusClass}">
-                        ${record.status || 'Present'}
-                      </span>
-                    </td>
-                    <td>${remarks}</td>
-                  </tr>
-                `;
-              }).join('')}
-              ${sortedRecords.length === 0 ? `
-                <tr>
-                  <td colspan="5" style="text-align:center; color:#8a9bb5; padding:20px;">
-                    No attendance records found
-                  </td>
-                </tr>
-              ` : ''}
-            </tbody>
-          </table>
-
-          <div class="report-footer">
-            <div>
-              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-              <p>Office Hours: ${officeStartTime} - ${officeEndTime}</p>
-            </div>
-            <div>
-              <p class="total-records">Total Records: ${sortedRecords.length}</p>
-              <p>${employee?.fullName || 'Employee'} - Attendance Report</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const container = document.createElement('div');
-    container.innerHTML = attendanceHTML;
-    document.body.appendChild(container);
-    const element = container.querySelector('.report-container');
-
-    const fileName = `Attendance_Report_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`;
-
-    try {
-      await html2pdf()
-        .set({
-          margin: 10,
-          filename: fileName,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { 
-            scale: 2, 
-            useCORS: true,
-            letterRendering: true,
-            logging: false
-          },
-          jsPDF: { 
-            unit: 'mm', 
-            format: 'a4', 
-            orientation: 'landscape' 
-          }
-        })
-        .from(element)
-        .save();
-      
-      document.body.removeChild(container);
-      document.body.removeChild(loadingMsg);
-    } catch (error) {
-      console.error('PDF generation failed:', error);
-      document.body.removeChild(container);
-      document.body.removeChild(loadingMsg);
-      alert('Failed to generate PDF. Please try again.');
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
     }
-  };
-
-  // ====== GENERATE PAYSLIP PDF ======
-  const generatePayslipPDF = (payrollData) => {
-    const loadingMsg = document.createElement('div');
-    loadingMsg.style.cssText = `
-      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      background: white; padding: 20px 40px; border-radius: 12px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.2); z-index: 9999;
-      font-size: 18px; font-weight: 600; color: #4a6fa5;
-      display: flex; align-items: center; gap: 12px;
-    `;
-    loadingMsg.innerHTML = `
-      <span style="display: inline-block; animation: spin 1s linear infinite;">⏳</span>
-      Generating payslip...
-    `;
-    document.body.appendChild(loadingMsg);
-
-    const payslipHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Payslip - ${employee?.fullName || 'Employee'}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            background: #f5f7fa; 
-            padding: 40px; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-          }
-          .payslip-container {
-            max-width: 800px;
-            width: 100%;
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-          }
-          .payslip-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 3px solid #4a6fa5;
-            padding-bottom: 20px;
-            margin-bottom: 20px;
-          }
-          .payslip-header .title h1 {
-            color: #1a2a4a;
-            font-size: 28px;
-            margin: 0;
-          }
-          .payslip-header .title p {
-            color: #6b7a8f;
-            font-size: 14px;
-            margin: 4px 0 0;
-          }
-          .payslip-header .logo {
-            text-align: right;
-          }
-          .payslip-header .logo h3 {
-            color: #4a6fa5;
-            margin: 0;
-          }
-          .payslip-header .logo p {
-            font-size: 12px;
-            color: #8a9bb5;
-            margin: 2px 0 0;
-          }
-          .employee-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            background: #f8fafd;
-            padding: 16px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-          }
-          .employee-info .info-item {
-            display: flex;
-            flex-direction: column;
-          }
-          .employee-info .info-item label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #8a9bb5;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-          }
-          .employee-info .info-item span {
-            font-size: 15px;
-            font-weight: 600;
-            color: #1a2a4a;
-          }
-          .payslip-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-          }
-          .payslip-table th {
-            background: #4a6fa5;
-            color: white;
-            padding: 12px 16px;
-            text-align: left;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .payslip-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #eef2f7;
-            font-size: 14px;
-          }
-          .payslip-table tr:last-child td {
-            border-bottom: none;
-          }
-          .payslip-table .amount {
-            text-align: right;
-            font-weight: 500;
-          }
-          .payslip-table .total-row {
-            background: #f0f4fe;
-            font-weight: 700;
-          }
-          .payslip-table .total-row td {
-            font-size: 16px;
-          }
-          .payslip-table .deduction-row td {
-            color: #e74c3c;
-          }
-          .payslip-footer {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #eef2f7;
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: #8a9bb5;
-          }
-          .payslip-footer .status-badge {
-            padding: 4px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .payslip-footer .status-badge.paid {
-            background: #e4f5e9;
-            color: #27ae60;
-          }
-          .payslip-footer .status-badge.pending {
-            background: #fef0e0;
-            color: #e67e22;
-          }
-          .late-warning {
-            background: #fef9f0;
-            border-left: 4px solid #e67e22;
-            padding: 10px 16px;
-            margin: 10px 0;
-            border-radius: 4px;
-            font-size: 13px;
-            color: #856404;
-          }
-          @media print {
-            body { padding: 20px; background: white; }
-            .payslip-container { box-shadow: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="payslip-container" id="payslip-container">
-          <div class="payslip-header">
-            <div class="title">
-              <h1>PAYSLIP</h1>
-              <p>Municipality of Pagbilao, Quezon</p>
-            </div>
-            <div class="logo">
-              <h3>HR Management System</h3>
-              <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
-            </div>
-          </div>
-
-          <div class="employee-info">
-            <div class="info-item">
-              <label>Employee Name</label>
-              <span>${employee?.fullName || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Employee ID</label>
-              <span>${employee?.id || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Department</label>
-              <span>${employee?.department || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Position</label>
-              <span>${employee?.position || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Pay Period</label>
-              <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
-            </div>
-            <div class="info-item">
-              <label>Status</label>
-              <span>
-                <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
-                  ${payrollData.status || 'Pending'}
-                </span>
-              </span>
-            </div>
-          </div>
-
-          ${payrollData.lateDays > 0 ? `
-            <div class="late-warning">
-              ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
-              Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
-            </div>
-          ` : ''}
-
-          <table class="payslip-table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th style="text-align:right;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Basic Salary</td>
-                <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
-              </tr>
-              ${payrollData.lateDays > 0 ? `
-                <tr class="deduction-row">
-                  <td>Late Deduction (${payrollData.lateDays} days × ₱${MONETARY_DEDUCTION_RATE.toLocaleString()})</td>
-                  <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
-                </tr>
-              ` : ''}
-              ${(payrollData.originalDeductions || 0) > 0 ? `
-                <tr class="deduction-row">
-                  <td>Other Deductions</td>
-                  <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
-                </tr>
-              ` : ''}
-              <tr class="total-row">
-                <td><strong>Net Pay</strong></td>
-                <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="payslip-footer">
-            <div>
-              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-            </div>
-            <div>
-              <p>${employee?.fullName || 'Employee'} - Payslip</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const container = document.createElement('div');
-    container.innerHTML = payslipHTML;
-    document.body.appendChild(container);
-    const element = container.querySelector('.payslip-container');
-
-    const fileName = `Payslip_${employee?.fullName?.replace(/\s/g, '_') || 'Employee'}_${payrollData.periodMonth || ''}_${payrollData.periodYear || ''}.pdf`;
-
-    html2pdf()
-      .set({
-        margin: 10,
-        filename: fileName,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true,
-          letterRendering: true
-        },
-        jsPDF: { 
-          unit: 'mm', 
-          format: 'a4', 
-          orientation: 'portrait' 
-        }
-      })
-      .from(element)
-      .save()
-      .then(() => {
-        document.body.removeChild(container);
-        document.body.removeChild(loadingMsg);
-      })
-      .catch((error) => {
-        console.error('PDF generation failed:', error);
-        document.body.removeChild(container);
-        document.body.removeChild(loadingMsg);
-        alert('Failed to generate PDF. Please try again.');
-      });
-  };
-
-  // ====== VIEW/PRINT PAYSLIP ======
-  const viewPayslip = (payrollData) => {
-    const payslipHTML = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Payslip - ${employee?.fullName || 'Employee'}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { 
-            font-family: 'Segoe UI', Arial, sans-serif; 
-            background: #f5f7fa; 
-            padding: 40px; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-          }
-          .payslip-container {
-            max-width: 800px;
-            width: 100%;
-            background: white;
-            border-radius: 16px;
-            padding: 40px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-          }
-          .payslip-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 3px solid #4a6fa5;
-            padding-bottom: 20px;
-            margin-bottom: 20px;
-          }
-          .payslip-header .title h1 {
-            color: #1a2a4a;
-            font-size: 28px;
-            margin: 0;
-          }
-          .payslip-header .title p {
-            color: #6b7a8f;
-            font-size: 14px;
-            margin: 4px 0 0;
-          }
-          .payslip-header .logo {
-            text-align: right;
-          }
-          .payslip-header .logo h3 {
-            color: #4a6fa5;
-            margin: 0;
-          }
-          .payslip-header .logo p {
-            font-size: 12px;
-            color: #8a9bb5;
-            margin: 2px 0 0;
-          }
-          .employee-info {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            background: #f8fafd;
-            padding: 16px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-          }
-          .employee-info .info-item {
-            display: flex;
-            flex-direction: column;
-          }
-          .employee-info .info-item label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #8a9bb5;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-          }
-          .employee-info .info-item span {
-            font-size: 15px;
-            font-weight: 600;
-            color: #1a2a4a;
-          }
-          .payslip-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-          }
-          .payslip-table th {
-            background: #4a6fa5;
-            color: white;
-            padding: 12px 16px;
-            text-align: left;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .payslip-table td {
-            padding: 12px 16px;
-            border-bottom: 1px solid #eef2f7;
-            font-size: 14px;
-          }
-          .payslip-table tr:last-child td {
-            border-bottom: none;
-          }
-          .payslip-table .amount {
-            text-align: right;
-            font-weight: 500;
-          }
-          .payslip-table .total-row {
-            background: #f0f4fe;
-            font-weight: 700;
-          }
-          .payslip-table .total-row td {
-            font-size: 16px;
-          }
-          .payslip-table .deduction-row td {
-            color: #e74c3c;
-          }
-          .payslip-footer {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #eef2f7;
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: #8a9bb5;
-          }
-          .payslip-footer .status-badge {
-            padding: 4px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-          }
-          .payslip-footer .status-badge.paid {
-            background: #e4f5e9;
-            color: #27ae60;
-          }
-          .payslip-footer .status-badge.pending {
-            background: #fef0e0;
-            color: #e67e22;
-          }
-          .late-warning {
-            background: #fef9f0;
-            border-left: 4px solid #e67e22;
-            padding: 10px 16px;
-            margin: 10px 0;
-            border-radius: 4px;
-            font-size: 13px;
-            color: #856404;
-          }
-          .print-btn-container {
-            text-align: center;
-            margin: 20px 0;
-            padding: 20px;
-            background: #f8fafd;
-            border-radius: 8px;
-            display: flex;
-            justify-content: center;
-            gap: 12px;
-          }
-          .print-btn-container button {
-            padding: 12px 30px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-          }
-          .print-btn-container .btn-print {
-            background: #4a6fa5;
-            color: white;
-          }
-          .print-btn-container .btn-print:hover {
-            background: #3a5f8f;
-          }
-          .print-btn-container .btn-close {
-            background: #6c757d;
-            color: white;
-          }
-          .print-btn-container .btn-close:hover {
-            background: #5a6268;
-          }
-          @media print {
-            body { padding: 20px; background: white; }
-            .payslip-container { box-shadow: none; }
-            .print-btn-container { display: none !important; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="payslip-container" id="payslip-container">
-          <div class="payslip-header">
-            <div class="title">
-              <h1>PAYSLIP</h1>
-              <p>Municipality of Pagbilao, Quezon</p>
-            </div>
-            <div class="logo">
-              <h3>HR Management System</h3>
-              <p>${payrollData.periodMonth || ''} ${payrollData.periodYear || ''}</p>
-            </div>
-          </div>
-
-          <div class="employee-info">
-            <div class="info-item">
-              <label>Employee Name</label>
-              <span>${employee?.fullName || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Employee ID</label>
-              <span>${employee?.id || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Department</label>
-              <span>${employee?.department || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Position</label>
-              <span>${employee?.position || 'N/A'}</span>
-            </div>
-            <div class="info-item">
-              <label>Pay Period</label>
-              <span>${payrollData.periodStart || ''} to ${payrollData.periodEnd || ''}</span>
-            </div>
-            <div class="info-item">
-              <label>Status</label>
-              <span>
-                <span class="status-badge ${payrollData.status === 'Paid' ? 'paid' : 'pending'}">
-                  ${payrollData.status || 'Pending'}
-                </span>
-              </span>
-            </div>
-          </div>
-
-          ${payrollData.lateDays > 0 ? `
-            <div class="late-warning">
-              ⚠️ <strong>Late Deduction:</strong> ${payrollData.lateDays} late day(s) detected. 
-              Deduction: ₱${payrollData.lateDeduction?.toLocaleString() || '0'}
-            </div>
-          ` : ''}
-
-          <table class="payslip-table">
-            <thead>
-              <tr>
-                <th>Description</th>
-                <th style="text-align:right;">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Basic Salary</td>
-                <td class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</td>
-              </tr>
-              ${payrollData.lateDays > 0 ? `
-                <tr class="deduction-row">
-                  <td>Late Deduction (${payrollData.lateDays} days × ₱${MONETARY_DEDUCTION_RATE.toLocaleString()})</td>
-                  <td class="amount">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</td>
-                </tr>
-              ` : ''}
-              ${(payrollData.originalDeductions || 0) > 0 ? `
-                <tr class="deduction-row">
-                  <td>Other Deductions</td>
-                  <td class="amount">-₱${(payrollData.originalDeductions || 0).toLocaleString()}</td>
-                </tr>
-              ` : ''}
-              <tr class="total-row">
-                <td><strong>Net Pay</strong></td>
-                <td class="amount"><strong>₱${(payrollData.netPay || 0).toLocaleString()}</strong></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="payslip-footer">
-            <div>
-              <p>Generated on: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
-            </div>
-            <div>
-              <p>${employee?.fullName || 'Employee'} - Payslip</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="print-btn-container">
-          <button class="btn-print" onclick="window.print()">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9"></polyline>
-              <path d="M18 9H6"></path>
-              <path d="M18 16H6"></path>
-              <rect x="4" y="9" width="16" height="10" rx="1" ry="1"></rect>
-              <line x1="8" y1="13" x2="16" y2="13"></line>
-            </svg>
-            Print / Save as PDF
-          </button>
-          <button class="btn-close" onclick="window.close()">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-            Close
-          </button>
-        </div>
-      </body>
-      </html>
-    `;
-
-    const printWindow = window.open('', '_blank', 'width=900,height=800');
-    if (printWindow) {
-      printWindow.document.write(payslipHTML);
-      printWindow.document.close();
-      printWindow.focus();
-    } else {
-      alert('Please allow popups to view payslip');
-    }
-  };
-
-  // ====== PREVIEW MODAL ======
-  const renderPreviewModal = () => {
-    if (!previewFile) return null;
     
-    return (
-      <div className="modal-overlay" onClick={() => setPreviewFile(false)}>
-        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%', padding: '20px' }}>
-          <div className="modal-header">
-            <h3>{previewFileName || 'Document Preview'}</h3>
-            <button className="modal-close" onClick={() => setPreviewFile(false)}>✕</button>
-          </div>
-          <div style={{ width: '100%', height: '80vh', minHeight: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
-            {previewFileUrl && previewFileUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) ? (
-              <img 
-                src={previewFileUrl} 
-                alt={previewFileName}
-                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                onError={(e) => {
-                  fetch(previewFileUrl)
-                    .then(res => res.blob())
-                    .then(blob => {
-                      const blobUrl = URL.createObjectURL(blob);
-                      e.target.src = blobUrl;
-                    })
-                    .catch(() => {
-                      e.target.src = 'https://via.placeholder.com/400x300?text=Image+Not+Available';
-                    });
-                }}
-              />
-            ) : (
-              <iframe
-                src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewFileUrl)}&embedded=true`}
-                style={{ width: '100%', height: '100%', border: 'none' }}
-                title="Document Preview"
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    );
+    const audio = new Audio('/notification.mp3');
+    setNotificationSound(audio);
+  }, []);
+
+  // Fetch employee data when auth user changes
+  useEffect(() => {
+    if (authUser) {
+      fetchEmployeeData();
+    } else if (!authLoading) {
+      navigate('/login');
+    }
+  }, [authUser, authLoading]);
+
+  // ====== REAL-TIME EMPLOYEE DATA LISTENER ======
+  useEffect(() => {
+    if (employee && employee.id) {
+      const employeeDocRef = doc(db, 'employees', employee.id);
+      const unsubscribe = onSnapshot(employeeDocRef, (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const updatedData = { id: docSnapshot.id, ...docSnapshot.data() };
+          setEmployee(updatedData);
+          console.log('🔄 Employee data updated in real-time:', updatedData);
+          
+          if (updatedData.salary !== employee.salary) {
+            console.log('💰 Salary updated from', employee.salary, 'to', updatedData.salary);
+            fetchEmployeePayroll();
+          }
+        }
+      }, (error) => {
+        console.error('Error listening to employee updates:', error);
+      });
+      
+      return () => unsubscribe();
+    }
+  }, [employee?.id]);
+
+  // ====== VIEW PDF MODAL ======
+  const openPdfViewer = (formId) => {
+    setSelectedForm(formId);
+    setShowEditModal(true);
   };
 
-  // ====== RENDER COMPLIANCE TAB - FIXED VERSION (NO HOOKS INSIDE) ======
+  // ====== RENDER COMPLIANCE TAB ======
 const renderCompliance = () => {
   const formData = selectedForm ? complianceFiles.find(f => f.id === selectedForm) : null;
 
-  // Save signature position and size
-  const saveSignature = () => {
-    if (!signaturePreview) {
-      alert('Please upload a signature first.');
-      return;
-    }
-    
-    const data = {
-      preview: signaturePreview,
-      position: signaturePosition,
-      size: signatureSize,
-      scale: signatureScale
-    };
-    
-    localStorage.setItem('savedSignature', JSON.stringify(data));
-    setSignatureData(data);
-    
-    setSavedFieldData(prev => ({
-      ...prev,
-      signature: data
-    }));
-    
-    alert('Signature saved successfully!');
-  };
-
-  // Download PDF with signature - FIXED VERSION
-  const downloadPDFWithSignature = async () => {
-    if (!signaturePreview) {
-      alert('Please upload a signature first.');
-      return;
-    }
-
-    try {
-      // Get the container
-      const container = document.querySelector('.pdf-viewer-container');
-      if (!container) {
-        alert('PDF container not found.');
-        return;
-      }
-
-      // Get the signature overlay element directly
-      const overlay = container.querySelector('.signature-overlay');
-      if (!overlay) {
-        alert('Signature not found. Please place the signature first.');
-        return;
-      }
-
-      // Get actual positions from the DOM
-      const containerRect = container.getBoundingClientRect();
-      const overlayRect = overlay.getBoundingClientRect();
-
-      // Calculate percentage positions based on actual DOM positions
-      const containerWidth = containerRect.width || 800;
-      const containerHeight = containerRect.height || 1000;
-      
-      const relX = ((overlayRect.left - containerRect.left) / containerWidth) * 100;
-      const relY = ((overlayRect.top - containerRect.top) / containerHeight) * 100;
-      const relWidth = (overlayRect.width / containerWidth) * 100;
-      const relHeight = (overlayRect.height / containerHeight) * 100;
-
-      console.log('DOM Positions:', {
-        container: { width: containerWidth, height: containerHeight },
-        overlay: { left: overlayRect.left, top: overlayRect.top, width: overlayRect.width, height: overlayRect.height },
-        percentages: { relX, relY, relWidth, relHeight }
-      });
-
-      // Get the PDF file URL
-      const pdfUrl = formData.file;
-
-      // Fetch the PDF
-      const response = await fetch(pdfUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch PDF: ${response.status}`);
-      }
-      const pdfData = await response.arrayBuffer();
-
-      // Load the PDF using pdf-lib
-      const pdfDoc = await PDFDocument.load(pdfData);
-      const pages = pdfDoc.getPages();
-      const firstPage = pages[0];
-      const { width, height } = firstPage.getSize();
-
-      // Convert signature image to PNG
-      const canvas = document.createElement('canvas');
-      canvas.width = signatureSize.width * 2;
-      canvas.height = signatureSize.height * 2;
-      const ctx = canvas.getContext('2d');
-      
-      const img = new Image();
-      img.src = signaturePreview;
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-      });
-      
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      
-      const signatureImageData = canvas.toDataURL('image/png');
-      const signatureImageBytes = await fetch(signatureImageData).then(res => res.arrayBuffer());
-      const signatureImage = await pdfDoc.embedPng(signatureImageBytes);
-
-      // Calculate position on PDF page
-      const pdfX = (relX / 100) * width;
-      const pdfY = height - ((relY + relHeight) / 100) * height;
-      const pdfWidth = (relWidth / 100) * width;
-      const pdfHeight = (relHeight / 100) * height;
-
-      console.log('PDF Positions:', { pdfX, pdfY, pdfWidth, pdfHeight });
-
-      // Draw the signature on the PDF
-      firstPage.drawImage(signatureImage, {
-        x: pdfX,
-        y: pdfY,
-        width: pdfWidth,
-        height: pdfHeight,
-        opacity: 1,
-      });
-
-      // Save and download
-      const pdfBytes = await pdfDoc.save();
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${formData.name.replace(/\s/g, '_')}_signed.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-      alert('PDF with signature downloaded successfully!');
-    } catch (error) {
-      console.error('Error downloading PDF with signature:', error);
-      alert('Error downloading PDF: ' + error.message);
-    }
-  };
-
-  // Handle scroll to keep signature in correct position
-  const handleScroll = (e) => {
-    // The signature position is already relative to the container
-    // No need to update position on scroll
-  };
-
   return (
-    <div className="employee-compliance-content">
-      <div className="section-header">
-        <h2>My Compliance</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            onClick={downloadPDFWithSignature}
-            className="btn-add-modern"
-            style={{
-              background: '#27ae60',
-              color: 'white',
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <GetAppIcon style={{ fontSize: 18 }} />
-            Download Signed PDF
-          </button>
-          <button onClick={() => setShowUploadForm(true)} className="btn-add-modern">
-            <UploadIcon style={{ fontSize: 18, marginRight: 8 }} />
-            Upload Document
-          </button>
-        </div>
+    <div className="employee-compliance-content" style={{ padding: '20px' }}>
+      <div className="section-header" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a2a4a' }}>My Compliance</h2>
+        <button 
+          onClick={() => setShowUploadForm(true)} 
+          className="btn-add-modern"
+          style={{
+            padding: '6px 14px',
+            background: '#4a6fa5',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: '500',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <UploadIcon style={{ fontSize: 16 }} />
+          Upload Document
+        </button>
       </div>
 
-      <div className="compliance-progress-card">
-        <div className="progress-header">
-          <h3>Compliance Rate</h3>
-          <span className="progress-percentage">{complianceRate}%</span>
+      {/* Progress Card */}
+      <div style={{
+        background: 'white',
+        borderRadius: '12px',
+        padding: '20px 24px',
+        marginBottom: '24px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        border: '1px solid #eef2f7'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <span style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>Compliance Rate</span>
+          <span style={{ fontSize: '20px', fontWeight: '700', color: '#4a6fa5' }}>{complianceRate}%</span>
         </div>
-        <div className="progress-bar-large">
+        <div style={{ 
+          width: '100%', 
+          height: '8px', 
+          background: '#eef2f7', 
+          borderRadius: '4px',
+          overflow: 'hidden'
+        }}>
           <div 
-            className="progress-fill" 
             style={{ 
               width: `${complianceRate}%`,
-              background: complianceRate === 100 ? '#27ae60' : '#4a6fa5'
+              height: '100%',
+              background: complianceRate === 100 ? '#27ae60' : '#4a6fa5',
+              borderRadius: '4px',
+              transition: 'width 0.5s ease'
             }}
           />
         </div>
-        <p className="progress-text">
+        <p style={{ 
+          marginTop: '8px', 
+          fontSize: '13px', 
+          color: '#888',
+          marginBottom: 0
+        }}>
           {documents.filter(d => d.status === 'Complete').length} of {documents.length} documents complete
         </p>
       </div>
 
-      {/* Editable Compliance Forms Section */}
-      <div className="editable-forms-section" style={{ marginTop: '24px' }}>
-        <h3 style={{ marginBottom: '16px' }}>
-          <TextFieldsIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
-          Editable Compliance Forms
+      {/* Forms Grid */}
+      <div style={{ marginBottom: '24px' }}>
+        <h3 style={{ 
+          fontSize: '16px', 
+          fontWeight: 'bold', 
+          color: '#333',
+          marginBottom: '8px'
+        }}>
+          <TextFieldsIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+          Compliance Forms
         </h3>
-        <p style={{ color: '#666', fontSize: '13px', marginBottom: '16px' }}>
-          Click on any form to view and fill in the fields.
+        <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
+          Click a form to view and edit the PDF
         </p>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+        <div style={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
+          gap: '12px' 
+        }}>
           {complianceFiles.map(form => (
             <button
               key={form.id}
-              onClick={() => openEditableForm(form.id)}
+              onClick={() => openPdfViewer(form.id)}
               style={{
-                padding: '16px',
+                padding: '16px 20px',
                 background: 'white',
-                border: '2px solid #eef2f7',
+                border: '1px solid #eef2f7',
                 borderRadius: '10px',
                 cursor: 'pointer',
-                transition: 'all 0.3s ease',
+                transition: 'all 0.2s ease',
                 textAlign: 'left',
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
-                gap: '8px'
+                gap: '12px'
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = '#4a6fa5';
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 4px 16px rgba(74,111,165,0.15)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(74,111,165,0.1)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.borderColor = '#eef2f7';
-                e.currentTarget.style.transform = 'translateY(0)';
                 e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              <DescriptionIcon style={{ fontSize: 32, color: '#4a6fa5' }} />
-              <span style={{ fontWeight: '600', fontSize: '14px' }}>{form.name}</span>
-              <span style={{ fontSize: '11px', color: '#888' }}>{form.type.toUpperCase()}</span>
-              {savedFieldData[form.id] && Object.values(savedFieldData[form.id]).some(v => v) && (
-                <span style={{ fontSize: '10px', color: '#27ae60' }}>✅ Fields filled</span>
-              )}
+              <DescriptionIcon style={{ fontSize: 28, color: '#4a6fa5' }} />
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontWeight: '500', fontSize: '13px', color: '#333' }}>{form.name}</div>
+                <div style={{ fontSize: '11px', color: '#999' }}>{form.type.toUpperCase()}</div>
+              </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Editable Form Modal */}
-      {showEditModal && formData && (
-        <div className="modal-overlay" onClick={() => {
-          setShowEditModal(false);
-          setSignatureFile(null);
-          setSignaturePreview(null);
-          setShowSignatureControls(false);
-        }}>
-          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ 
-            maxWidth: '95vw', 
-            maxHeight: '95vh',
-            width: '95vw',
-            padding: '20px',
-            overflow: 'auto'
-          }}>
-            <div className="modal-header">
-              <h3>
-                <TextFieldsIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
-                View & Sign: {formData.name}
-              </h3>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <button 
-                  className="modal-close" 
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setSignatureFile(null);
-                    setSignaturePreview(null);
-                    setShowSignatureControls(false);
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-            
-            {/* E-Signature Upload Section */}
-            <div style={{ 
-              background: '#f8fafd', 
-              padding: '16px 20px', 
-              borderRadius: '8px',
-              marginBottom: '16px',
-              border: '1px solid #eef2f7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '12px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '14px', fontWeight: '600', color: '#333' }}>
-                  <DragIndicatorIcon style={{ fontSize: 16, verticalAlign: 'middle', marginRight: 4 }} />
-                  E-Signature
-                </span>
-                {!signaturePreview ? (
-                  <label style={{
-                    padding: '6px 16px',
-                    background: '#4a6fa5',
-                    color: 'white',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    transition: 'background 0.2s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#3a5f8f'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#4a6fa5'}
-                  >
-                    <UploadIcon style={{ fontSize: 16 }} />
-                    Upload Signature
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleSignatureUpload}
-                      style={{ display: 'none' }}
-                    />
-                  </label>
-                ) : (
-                  <span style={{ fontSize: '13px', color: '#27ae60', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CheckCircleIcon style={{ fontSize: 16 }} />
-                    Signature uploaded - Drag to position, resize from corner
-                  </span>
-                )}
-              </div>
-              
-              {signaturePreview && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <div style={{
-                    border: '1px solid #eef2f7',
-                    borderRadius: '6px',
-                    padding: '4px 8px',
-                    background: 'white'
-                  }}>
-                    <img 
-                      src={signaturePreview} 
-                      alt="Signature" 
-                      style={{ 
-                        maxHeight: '40px', 
-                        maxWidth: '150px',
-                        objectFit: 'contain'
-                      }} 
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                      onClick={() => zoomSignature('in')}
-                      style={{
-                        padding: '4px 10px',
-                        background: '#4a6fa5',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      title="Zoom In"
-                    >
-                      <ZoomInIcon style={{ fontSize: 14 }} />
-                    </button>
-                    <button
-                      onClick={() => zoomSignature('out')}
-                      style={{
-                        padding: '4px 10px',
-                        background: '#4a6fa5',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      title="Zoom Out"
-                    >
-                      <ZoomOutIcon style={{ fontSize: 14 }} />
-                    </button>
-                    <button
-                      onClick={resetSignaturePosition}
-                      style={{
-                        padding: '4px 10px',
-                        background: '#f39c12',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                      }}
-                      title="Reset Position"
-                    >
-                      Reset
-                    </button>
-                    <button
-                      onClick={removeSignature}
-                      style={{
-                        padding: '4px 12px',
-                        background: '#e74c3c',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#c0392b'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#e74c3c'}
-                    >
-                      <DeleteIcon style={{ fontSize: 14 }} />
-                      Remove
-                    </button>
-                    <button
-                      onClick={saveSignature}
-                      style={{
-                        padding: '4px 16px',
-                        background: '#27ae60',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontSize: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontWeight: '600'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = '#219a52'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = '#27ae60'}
-                      title="Save Signature"
-                    >
-                      <SaveIcon style={{ fontSize: 14 }} />
-                      Save
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {/* PDF/Image Viewer with Signature Overlay */}
-            <div 
-              className="pdf-viewer-container"
-              style={{ 
-                padding: '20px 0',
-                background: '#f5f7fa',
-                borderRadius: '8px',
-                padding: '20px',
-                position: 'relative',
-                overflow: 'auto',
-                maxHeight: '70vh'
-              }}
-              onScroll={handleScroll}
-            >
-              <div style={{ 
-                background: 'white', 
-                borderRadius: '8px', 
-                padding: '20px',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                minHeight: '500px',
-                position: 'relative',
-                overflow: 'hidden'
-              }}>
-                {/* PDF/Image Display */}
-                <div style={{ 
-                  display: 'flex', 
-                  justifyContent: 'center', 
-                  alignItems: 'center',
-                  padding: '20px',
-                  background: '#f8fafd',
-                  borderRadius: '8px',
-                  position: 'relative',
-                  minHeight: '500px',
-                  width: '100%'
-                }}>
-                  {formData.type === 'pdf' ? (
-                    <iframe
-                      src={formData.file}
-                      style={{
-                        width: '100%',
-                        height: '600px',
-                        border: 'none',
-                        borderRadius: '8px',
-                        background: 'white'
-                      }}
-                      title={formData.name}
-                    />
-                  ) : (
-                    <img 
-                      src={formData.file} 
-                      alt={formData.name}
-                      style={{
-                        maxWidth: '100%',
-                        maxHeight: '600px',
-                        objectFit: 'contain',
-                        borderRadius: '8px'
-                      }}
-                    />
-                  )}
-                  
-                  {/* Signature Overlay - Draggable and Resizable */}
-                  {signaturePreview && (
-                    <div
-                      ref={signatureContainerRef}
-                      className="signature-overlay"
-                      style={{
-                        position: 'absolute',
-                        left: signaturePosition.x + 'px',
-                        top: signaturePosition.y + 'px',
-                        width: signatureSize.width + 'px',
-                        height: signatureSize.height + 'px',
-                        cursor: isDragging ? 'grabbing' : 'grab',
-                        border: isDragging || isResizing ? '2px dashed #4a6fa5' : '2px dashed transparent',
-                        borderRadius: '4px',
-                        zIndex: 100,
-                        userSelect: 'none',
-                        touchAction: 'none',
-                        transition: isDragging || isResizing ? 'none' : 'border 0.2s ease'
-                      }}
-                      onMouseDown={handleSignatureMouseDown}
-                      onMouseEnter={() => setShowSignatureControls(true)}
-                      onMouseLeave={() => setShowSignatureControls(false)}
-                    >
-                      <img
-                        ref={signatureImageRef}
-                        src={signaturePreview}
-                        alt="Signature"
-                        style={{
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'contain',
-                          pointerEvents: 'none',
-                          opacity: 0.9
-                        }}
-                        draggable={false}
-                      />
-                      
-                      {/* Resize Handle - Bottom Right Corner */}
-                      <div
-                        className="resize-handle"
-                        style={{
-                          position: 'absolute',
-                          bottom: '-6px',
-                          right: '-6px',
-                          width: '14px',
-                          height: '14px',
-                          backgroundColor: '#4a6fa5',
-                          borderRadius: '50%',
-                          cursor: 'nwse-resize',
-                          border: '2px solid white',
-                          boxShadow: '0 2px 6px rgba(0,0,0,0.2)',
-                          pointerEvents: 'auto',
-                          display: showSignatureControls ? 'block' : 'none'
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          setIsResizing(true);
-                          setResizeStart({ x: e.clientX, y: e.clientY });
-                        }}
-                      />
-                      
-                      {/* Drag Indicator */}
-                      <div
-                        style={{
-                          position: 'absolute',
-                          top: '-20px',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          backgroundColor: 'rgba(74, 111, 165, 0.8)',
-                          color: 'white',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          whiteSpace: 'nowrap',
-                          display: showSignatureControls ? 'block' : 'none',
-                          pointerEvents: 'none'
-                        }}
-                      >
-                        Drag to move
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {/* Instructions Footer */}
-            <div style={{ 
-              marginTop: '16px', 
-              display: 'flex', 
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              borderTop: '1px solid #eef2f7',
-              paddingTop: '16px',
-              flexWrap: 'wrap',
-              gap: '10px'
-            }}>
-              <div style={{ fontSize: '12px', color: '#888', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-                <span>💡Upload your signature image, then drag to position</span>
-                <span>↕ Drag from the signature to move</span>
-                <span>↘ Drag the blue dot to resize</span>
-                <span>💾 Click "Save" to store your signature</span>
-                {signaturePreview && (
-                  <span style={{ color: '#27ae60', fontWeight: '600' }}>✓ Signature placed</span>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                {signaturePreview && (
-                  <button 
-                    onClick={downloadPDFWithSignature}
-                    style={{
-                      padding: '10px 24px',
-                      background: '#27ae60',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      color: 'white',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = '#219a52'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = '#27ae60'}
-                  >
-                    <GetAppIcon style={{ fontSize: 18 }} />
-                    Download Signed PDF
-                  </button>
-                )}
-                <button 
-                  onClick={() => {
-                    setShowEditModal(false);
-                    setSignatureFile(null);
-                    setSignaturePreview(null);
-                    setShowSignatureControls(false);
-                  }}
-                  style={{
-                    padding: '10px 24px',
-                    background: '#4a6fa5',
-                    border: 'none',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    fontWeight: '600',
-                    color: 'white'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = '#3a5f8f'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = '#4a6fa5'}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Uploaded Documents */}
       <div className="documents-list">
+        <h3 style={{ 
+          fontSize: '16px', 
+          fontWeight: 'bold', 
+          color: '#333',
+          marginBottom: '12px'
+        }}>
+          Uploaded Documents
+        </h3>
         {documents.map(doc => (
           <div key={doc.id} className="doc-item-card">
             <div className="doc-item-info">
@@ -3307,6 +1563,108 @@ const renderCompliance = () => {
         )}
       </div>
 
+      {/* PDF Viewer Modal */}
+      {showEditModal && formData && (
+        <div 
+          className="modal-overlay" 
+          onClick={() => setShowEditModal(false)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              maxWidth: '95vw', 
+              maxHeight: '95vh',
+              width: '95vw',
+              background: 'white',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+            }}
+          >
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '16px 20px',
+              borderBottom: '1px solid #eef2f7',
+              flexShrink: 0
+            }}>
+              <h3 style={{ fontSize: '18px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <PictureAsPdfIcon style={{ fontSize: 20 }} />
+                {formData.name}
+              </h3>
+              <button 
+                onClick={() => setShowEditModal(false)}
+                style={{
+                  padding: '6px 12px',
+                  fontSize: '20px',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#666',
+                  borderRadius: '4px'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#f0f0f0'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div style={{ 
+              padding: '12px',
+              background: '#f5f7fa',
+              minHeight: isMobile ? '60vh' : '70vh',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center'
+            }}>
+              {formData.type === 'pdf' ? (
+                <iframe
+                  src={formData.file}
+                  style={{
+                    width: '100%',
+                    height: isMobile ? '60vh' : '75vh',
+                    border: 'none',
+                    borderRadius: '8px',
+                    background: 'white'
+                  }}
+                  title={formData.name}
+                />
+              ) : (
+                <img 
+                  src={formData.file} 
+                  alt={formData.name}
+                  style={{
+                    maxWidth: '100%',
+                    maxHeight: isMobile ? '60vh' : '75vh',
+                    objectFit: 'contain',
+                    borderRadius: '8px',
+                    background: 'white'
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Form Modal */}
       {showUploadForm && (
         <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
           <div className="modal-form" onClick={(e) => e.stopPropagation()}>
@@ -3397,7 +1755,7 @@ const renderCompliance = () => {
   const renderDashboard = () => (
     <div className="employee-dashboard-content">
       <div className="welcome-header">
-        <h1>Welcome, {employee.fullName}</h1>
+        <h1>Welcome, {employee?.fullName}</h1>
         <p>Here's your HR overview</p>
       </div>
 
@@ -3622,26 +1980,6 @@ const renderCompliance = () => {
         <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="stats-badge">{new Date().toLocaleDateString()}</span>
-          <button 
-            onClick={generateAttendancePDF}
-            className="btn-add-modern"
-            style={{
-              background: '#27ae60',
-              color: 'white',
-              padding: '8px 16px',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <GetAppIcon style={{ fontSize: 18 }} />
-            Download PDF
-          </button>
         </div>
       </div>
 
@@ -4155,139 +2493,6 @@ const renderCompliance = () => {
     );
   };
 
-  // ====== RENDER PAYSLIP MODAL ======
-  const renderPayslipModal = () => {
-    if (!showPayslipModal || !selectedPayroll) return null;
-
-    const payroll = selectedPayroll;
-
-    return (
-      <div className="modal-overlay" onClick={() => setShowPayslipModal(false)}>
-        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
-          <div className="modal-header">
-            <h3>
-              <PictureAsPdfIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
-              Payslip Details
-            </h3>
-            <button className="modal-close" onClick={() => setShowPayslipModal(false)}>✕</button>
-          </div>
-          <div style={{ padding: '10px 0' }}>
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: '1fr 1fr', 
-              gap: '12px',
-              background: '#f8fafd',
-              padding: '16px',
-              borderRadius: '10px',
-              marginBottom: '16px'
-            }}>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Employee</label>
-                <p style={{ fontWeight: '600', margin: '2px 0' }}>{employee.fullName}</p>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Period</label>
-                <p style={{ fontWeight: '600', margin: '2px 0' }}>{payroll.periodStart} → {payroll.periodEnd}</p>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Department</label>
-                <p style={{ fontWeight: '600', margin: '2px 0' }}>{employee.department || 'N/A'}</p>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Status</label>
-                <p style={{ fontWeight: '600', margin: '2px 0' }}>
-                  <span className={`status-badge ${payroll.status === 'Paid' ? 'success' : 'warning'}`}>
-                    {payroll.status || 'Pending'}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: '1fr 1fr',
-              gap: '10px',
-              background: '#f8fafd',
-              padding: '16px',
-              borderRadius: '10px',
-              marginBottom: '16px'
-            }}>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Basic Salary</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: '#4a6fa5' }}>
-                  ₱{(payroll.basicSalary || 0).toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Days</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: payroll.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
-                  {payroll.lateDays || 0} {payroll.lateDays > 0 ? '⚠️' : '✅'}
-                </p>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Deduction</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: (payroll.lateDeduction || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
-                  ₱{(payroll.lateDeduction || 0).toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Other Deductions</label>
-                <p style={{ fontWeight: '600', fontSize: '16px', color: (payroll.originalDeductions || 0) > 0 ? '#e67e22' : '#27ae60' }}>
-                  ₱{(payroll.originalDeductions || 0).toLocaleString()}
-                </p>
-              </div>
-              <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #eef2f7', paddingTop: '12px' }}>
-                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Net Pay</label>
-                <p style={{ fontWeight: '700', fontSize: '24px', color: '#4a6fa5' }}>
-                  ₱{(payroll.netPay || 0).toLocaleString()}
-                </p>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button 
-                onClick={() => viewPayslip(payroll)}
-                className="btn-save"
-                style={{
-                  background: '#4a6fa5',
-                  color: 'white',
-                  padding: '10px 24px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
-              >
-                <PrintIcon style={{ fontSize: 18 }} />
-                View / Print Payslip
-              </button>
-              <button 
-                onClick={() => setShowPayslipModal(false)}
-                className="btn-cancel"
-                style={{
-                  background: '#f0f2f7',
-                  color: '#2c3e50',
-                  padding: '10px 24px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '14px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   // ====== RENDER PAYROLL ======
   const renderPayroll = () => {
     const hasCurrentPayroll = !!employeePayroll;
@@ -4298,8 +2503,6 @@ const renderCompliance = () => {
 
     return (
       <div className="employee-payroll-content">
-        {renderPayslipModal()}
-
         <div className="section-header">
           <h2><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -4327,31 +2530,6 @@ const renderCompliance = () => {
               <span className="stats-badge">
                 {employeePayroll.periodMonth} {employeePayroll.periodYear}
               </span>
-            )}
-            {hasCurrentPayroll && (
-              <button 
-                onClick={() => {
-                  setSelectedPayroll(employeePayroll);
-                  setShowPayslipModal(true);
-                }}
-                className="btn-add-modern"
-                style={{
-                  background: '#4a6fa5',
-                  color: 'white',
-                  padding: '8px 16px',
-                  border: 'none',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-              >
-                <DescriptionIcon style={{ fontSize: 18 }} />
-                View Payslip
-              </button>
             )}
           </div>
         </div>
@@ -4526,16 +2704,6 @@ const renderCompliance = () => {
                       <td style={{ padding: '10px 14px', textAlign: 'right' }}>{formatCurrency(record.basicSalary)}</td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', color: record.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
                         {record.lateDays || 0}
-                        {record.leaveCreditsUsed > 0 && (
-                          <span style={{ fontSize: '11px', display: 'block', color: '#27ae60' }}>
-                            Leave: {record.leaveCreditsUsed.toFixed(1)} days
-                          </span>
-                        )}
-                        {record.monetaryDeduction > 0 && (
-                          <span style={{ fontSize: '11px', display: 'block', color: '#e74c3c' }}>
-                            ₱{record.monetaryDeduction.toFixed(2)}
-                          </span>
-                        )}
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', color: (record.totalDeductions || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
                         {formatCurrency(record.totalDeductions || 0)}
@@ -4569,24 +2737,6 @@ const renderCompliance = () => {
                         >
                           <VisibilityIcon style={{ fontSize: 16 }} />
                           View
-                        </button>
-                        <button
-                          onClick={() => generatePayslipPDF(record)}
-                          style={{
-                            background: 'transparent',
-                            color: '#27ae60',
-                            border: 'none',
-                            cursor: 'pointer',
-                            padding: '4px 12px',
-                            fontSize: '12px',
-                            fontWeight: '500',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                        >
-                          <GetAppIcon style={{ fontSize: 16 }} />
-                          Download
                         </button>
                       </td>
                     </tr>
@@ -4622,22 +2772,135 @@ const renderCompliance = () => {
 
       <div className="profile-card">
         <div className="profile-avatar">
-          <span>{employee.fullName?.charAt(0) || '?'}</span>
+          <span>{employee?.fullName?.charAt(0) || '?'}</span>
         </div>
         <div className="profile-details">
-          <h3>{employee.fullName}</h3>
-          <p><BusinessIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee.department}</p>
-          <p><WorkIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee.position}</p>
-          <p><EmailIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee.email}</p>
-          <p><CalendarTodayIcon style={{ fontSize: 16, marginRight: 8 }} /> Hired: {employee.dateHired || 'N/A'}</p>
-          <p><AttachMoneyIcon style={{ fontSize: 16, marginRight: 8 }} /> Salary: {formatCurrency(employee.salary)}</p>
-          <p><PersonIcon style={{ fontSize: 16, marginRight: 8 }} /> Status: <span className={`status-dot ${employee.status === 'Inactive' ? 'inactive' : 'active'}`}>
-            {employee.status || 'Active'}
+          <h3>{employee?.fullName}</h3>
+          <p><BusinessIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee?.department}</p>
+          <p><WorkIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee?.position}</p>
+          <p><EmailIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee?.email}</p>
+          <p><CalendarTodayIcon style={{ fontSize: 16, marginRight: 8 }} /> Hired: {employee?.dateHired || 'N/A'}</p>
+          <p><AttachMoneyIcon style={{ fontSize: 16, marginRight: 8 }} /> Salary: {formatCurrency(employee?.salary)}</p>
+          <p><PersonIcon style={{ fontSize: 16, marginRight: 8 }} /> Status: <span className={`status-dot ${employee?.status === 'Inactive' ? 'inactive' : 'active'}`}>
+            {employee?.status || 'Active'}
           </span></p>
         </div>
       </div>
     </div>
   );
+
+  // ====== RENDER PAYSLIP MODAL ======
+  const renderPayslipModal = () => {
+    if (!showPayslipModal || !selectedPayroll) return null;
+
+    const payroll = selectedPayroll;
+
+    return (
+      <div className="modal-overlay" onClick={() => setShowPayslipModal(false)}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
+          <div className="modal-header">
+            <h3>
+              <PictureAsPdfIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
+              Payslip Details
+            </h3>
+            <button className="modal-close" onClick={() => setShowPayslipModal(false)}>✕</button>
+          </div>
+          <div style={{ padding: '10px 0' }}>
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: '1fr 1fr', 
+              gap: '12px',
+              background: '#f8fafd',
+              padding: '16px',
+              borderRadius: '10px',
+              marginBottom: '16px'
+            }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Employee</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{employee?.fullName}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Period</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{payroll.periodStart} → {payroll.periodEnd}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Department</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>{employee?.department || 'N/A'}</p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Status</label>
+                <p style={{ fontWeight: '600', margin: '2px 0' }}>
+                  <span className={`status-badge ${payroll.status === 'Paid' ? 'success' : 'warning'}`}>
+                    {payroll.status || 'Pending'}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: '1fr 1fr',
+              gap: '10px',
+              background: '#f8fafd',
+              padding: '16px',
+              borderRadius: '10px',
+              marginBottom: '16px'
+            }}>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Basic Salary</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: '#4a6fa5' }}>
+                  ₱{(payroll.basicSalary || 0).toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Days</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: payroll.lateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                  {payroll.lateDays || 0} {payroll.lateDays > 0 ? '⚠️' : '✅'}
+                </p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Late Deduction</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: (payroll.lateDeduction || 0) > 0 ? '#e74c3c' : '#27ae60' }}>
+                  ₱{(payroll.lateDeduction || 0).toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Other Deductions</label>
+                <p style={{ fontWeight: '600', fontSize: '16px', color: (payroll.originalDeductions || 0) > 0 ? '#e67e22' : '#27ae60' }}>
+                  ₱{(payroll.originalDeductions || 0).toLocaleString()}
+                </p>
+              </div>
+              <div style={{ gridColumn: '1 / -1', borderTop: '2px solid #eef2f7', paddingTop: '12px' }}>
+                <label style={{ fontSize: '11px', color: '#8a9bb5', textTransform: 'uppercase' }}>Net Pay</label>
+                <p style={{ fontWeight: '700', fontSize: '24px', color: '#4a6fa5' }}>
+                  ₱{(payroll.netPay || 0).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button 
+                onClick={() => setShowPayslipModal(false)}
+                className="btn-cancel"
+                style={{
+                  background: '#f0f2f7',
+                  color: '#2c3e50',
+                  padding: '10px 24px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // ====== SIDEBAR ======
   const Sidebar = () => (
@@ -4647,9 +2910,9 @@ const renderCompliance = () => {
         <h3>HR System</h3>
         <p>Pagbilao LGU</p>
         <div className="user-badge">
-          <span className="user-name">{employee.fullName}</span>
-          <span className="user-role">{employee.position}</span>
-          <span className="user-dept">{employee.department}</span>
+          <span className="user-name">{employee?.fullName}</span>
+          <span className="user-role">{employee?.position}</span>
+          <span className="user-dept">{employee?.department}</span>
         </div>
       </div>
 
@@ -4720,6 +2983,48 @@ const renderCompliance = () => {
     </div>
   );
 
+  // ====== PREVIEW MODAL ======
+  const renderPreviewModal = () => {
+    if (!previewFile) return null;
+    
+    return (
+      <div className="modal-overlay" onClick={() => setPreviewFile(false)}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%', padding: '20px' }}>
+          <div className="modal-header">
+            <h3>{previewFileName || 'Document Preview'}</h3>
+            <button className="modal-close" onClick={() => setPreviewFile(false)}>✕</button>
+          </div>
+          <div style={{ width: '100%', height: '80vh', minHeight: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
+            {previewFileUrl && previewFileUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) ? (
+              <img 
+                src={previewFileUrl} 
+                alt={previewFileName}
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                onError={(e) => {
+                  fetch(previewFileUrl)
+                    .then(res => res.blob())
+                    .then(blob => {
+                      const blobUrl = URL.createObjectURL(blob);
+                      e.target.src = blobUrl;
+                    })
+                    .catch(() => {
+                      e.target.src = 'https://via.placeholder.com/400x300?text=Image+Not+Available';
+                    });
+                }}
+              />
+            ) : (
+              <iframe
+                src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewFileUrl)}&embedded=true`}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Document Preview"
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ====== MAIN RETURN ======
   if (loading || authLoading) {
     return <div className="loading">Loading your portal...</div>;
@@ -4751,7 +3056,7 @@ const renderCompliance = () => {
             <MenuIcon />
           </button>
           <span className="mobile-title">HR System</span>
-          <span className="mobile-user">{employee.fullName?.charAt(0) || '?'}</span>
+          <span className="mobile-user">{employee?.fullName?.charAt(0) || '?'}</span>
         </div>
       )}
 
@@ -4770,6 +3075,8 @@ const renderCompliance = () => {
         {activeTab === 'payroll' && renderPayroll()}
         {activeTab === 'profile' && renderProfile()}
       </div>
+
+      {renderPayslipModal()}
     </div>
   );
 }

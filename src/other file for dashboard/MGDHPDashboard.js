@@ -661,12 +661,12 @@ function MGDHDashboard() {
         </div>
         {isTimedIn && isTimedOut && (
           <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
-            ✅ You have completed your attendance entry. You can time in again if needed.
+            You have completed your attendance entry. You can time in again if needed.
           </div>
         )}
         {isTimedIn && !isTimedOut && (
           <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
-            ⏳ You are currently timed in. Click "Time Out" when leaving.
+            You are currently timed in. Click "Time Out" when leaving.
           </div>
         )}
       </div>
@@ -785,7 +785,7 @@ function MGDHDashboard() {
       }));
       setAllEmployees(allEmployeesData);
 
-      console.log(`📊 Total users: ${allUsers.length}, Total employees: ${allEmployeesData.length}`);
+      console.log(`Total users: ${allUsers.length}, Total employees: ${allEmployeesData.length}`);
 
       // ====== ORGANIZE EMPLOYEES BY DEPARTMENT ======
       let teamList = [];
@@ -814,7 +814,7 @@ function MGDHDashboard() {
         // Remove the MGDH themselves from the team list
         teamList = uniqueTeam.filter(member => member.id !== userId);
         
-        console.log(`✅ Found ${teamList.length} team members in department: ${userDepartment}`);
+        console.log(`Found ${teamList.length} team members in department: ${userDepartment}`);
       } else {
         // If no department, show all employees except the MGDH
         teamList = allEmployeesData.filter(emp => emp.id !== userId);
@@ -824,7 +824,7 @@ function MGDHDashboard() {
           !allEmployeesData.some(e => e.id === u.id)
         );
         teamList = [...teamList, ...usersWithoutEmployees];
-        console.warn('⚠️ MGDH user has no department assigned. Showing all users.');
+        console.warn('MGDH user has no department assigned. Showing all users.');
       }
       
       setTeamMembers(teamList);
@@ -973,7 +973,7 @@ function MGDHDashboard() {
         setShowNotificationAlert(true);
         
         if (Notification.permission === 'granted') {
-          new Notification('📢 New Notification', {
+          new Notification('New Notification', {
             body: latest.message || 'You have a new notification',
             icon: '/favicon.ico'
           });
@@ -1000,7 +1000,7 @@ function MGDHDashboard() {
     const collections = ['users', 'employees', 'leaveRequests', 'attendance', 'documents', 'notifications'];
     collections.forEach(collectionName => {
       onSnapshot(collection(db, collectionName), () => {
-        console.log(`🔄 ${collectionName} collection changed, refreshing MGDH data...`);
+        console.log(`${collectionName} collection changed, refreshing MGDH data...`);
         fetchMGDHData();
       });
     });
@@ -1131,7 +1131,7 @@ function MGDHDashboard() {
         createdAt: new Date().toISOString()
       });
 
-      alert(`✅ Leave request ${newStatus.toLowerCase()} successfully!\nEmployee has been notified.`);
+      alert(`Leave request ${newStatus.toLowerCase()} successfully!\nEmployee has been notified.`);
       
       await fetchMGDHData();
     } catch (error) {
@@ -1324,7 +1324,7 @@ function MGDHDashboard() {
           </div>
         </div>
 
-        <div className="stat-card-modern">
+        {/* <div className="stat-card-modern">
           <div className="stat-card-content">
             <div className="stat-icon-wrapper teal">
               <BusinessIcon className="stat-icon" />
@@ -1334,7 +1334,7 @@ function MGDHDashboard() {
               <p className="stat-number">{departments.length}</p>
             </div>
           </div>
-        </div>
+        </div> */}
 
         <div className="stat-card-modern">
           <div className="stat-card-content">

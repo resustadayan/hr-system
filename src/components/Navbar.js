@@ -1,13 +1,22 @@
 // src/components/Navbar.js
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { logout } from '../firebase';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import EventNoteIcon from '@mui/icons-material/EventNote';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import PeopleIcon from '@mui/icons-material/People';
+import LogoutIcon from '@mui/icons-material/Logout';
 import logo from '../assets/hrmo logo.jpg';
 
 function Navbar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -33,26 +42,46 @@ function Navbar() {
     }
   };
 
+  const navItems = [
+    { path: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
+    { path: '/attendance', label: 'Attendance', icon: AccessTimeIcon },
+    { path: '/leave', label: 'Leave Requests', icon: EventNoteIcon },
+    { path: '/compliance', label: 'Compliance', icon: AssignmentTurnedInIcon },
+    { path: '/analytics', label: 'Analytics', icon: BarChartIcon },
+    { path: '/payroll', label: 'Payroll', icon: AttachMoneyIcon },
+    { path: '/users', label: 'Users', icon: PeopleIcon }
+  ];
+
   return (
     <>
       {/* Desktop Sidebar */}
       <div className="sidebar">
         <div className="sidebar-top">
           <img src={logo} alt="LGU Logo" className="sidebar-logo" />
-          <h3>HR System</h3>
-          <p>Pagbilao LGU</p>
+          <h3>HRMO Admin</h3>
+          <p>Pagbilao LGU System</p>
         </div>
 
         <div className="sidebar-menu">
-          <Link to="/dashboard" className="sidebar-link">Dashboard</Link>
-          <Link to="/attendance" className="sidebar-link">Attendance</Link>
-          <Link to="/leave" className="sidebar-link">Leave Request</Link>
-          <Link to="/compliance" className="sidebar-link">Compliance</Link>
-          {/* <Link to="/interventions" className="sidebar-link">Interventions</Link> */}
-          <Link to="/analytics" className="sidebar-link">Analytics</Link>
-          <Link to="/payroll" className="sidebar-link">Payroll</Link>
-          <Link to="/users" className="sidebar-link">Users</Link>
-          <button onClick={handleLogout} className="logout-btn">Logout</button>
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`sidebar-link ${isActive ? 'active' : ''}`}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+              >
+                <Icon style={{ fontSize: 20 }} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+          <button onClick={handleLogout} className="logout-btn" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <LogoutIcon style={{ fontSize: 20 }} />
+            <span>Logout</span>
+          </button>
         </div>
       </div>
 
@@ -75,35 +104,28 @@ function Navbar() {
       {/* Mobile Menu Dropdown */}
       {isMobile && isMobileMenuOpen && (
         <div className="mobile-menu-dropdown">
-          <Link to="/dashboard" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Dashboard
-          </Link>
-          <Link to="/attendance" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Attendance
-          </Link>
-          <Link to="/leave" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Leave Request
-          </Link>
-          <Link to="/compliance" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Compliance
-          </Link>
-          {/* <Link to="/interventions" onClick={() => setIsMobileMenuOpen(false)}>
-          <span></span>
-          </Link> */}
-          <Link to="/analytics" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Analytics
-          </Link>
-          <Link to="/payroll" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Payroll
-          </Link>
-          <Link to="/users" onClick={() => setIsMobileMenuOpen(false)}>
-            <span></span> Users
-          </Link>
+          {navItems.map(item => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.path;
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={isActive ? 'active' : ''}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+              >
+                <Icon style={{ fontSize: 20 }} />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
           <button onClick={() => {
             setIsMobileMenuOpen(false);
             handleLogout();
-          }} className="mobile-logout-btn">
-            <span></span> Logout
+          }} className="mobile-logout-btn" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <LogoutIcon style={{ fontSize: 20 }} />
+            <span>Logout</span>
           </button>
         </div>
       )}

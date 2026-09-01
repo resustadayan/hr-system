@@ -257,7 +257,7 @@ function Dashboard() {
     { key: 'pendingLeaves', icon: HourglassEmptyIcon, color: 'orange', label: 'Pending Leaves', value: stats.pendingLeaves },
     { key: 'complianceRate', icon: BarChartIcon, color: 'purple', label: 'Compliance Rate', value: `${stats.complianceRate}%` },
     { key: 'payrollRecords', icon: AttachMoneyIcon, color: 'teal', label: 'Payroll Records', value: stats.payrollRecords },
-    { key: 'departments', icon: BusinessIcon, color: 'pink', label: 'Departments', value: stats.departments },
+    // { key: 'departments', icon: BusinessIcon, color: 'pink', label: 'Departments', value: stats.departments },
     { key: 'missingDocuments', icon: DescriptionIcon, color: 'red', label: 'Missing Documents', value: stats.missingDocuments },
     { key: 'users', icon: PersonIcon, color: 'gray', label: 'System Users', value: stats.users }
   ];
