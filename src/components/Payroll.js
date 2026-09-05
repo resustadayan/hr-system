@@ -315,7 +315,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     setProcessSuccess(false);
     
     try {
-      console.log('🔄 Starting payroll processing...');
+      console.log('Starting payroll processing...');
       
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
@@ -700,7 +700,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           <div className="stat-info">
             <h3>Paid</h3>
             <p>{summary.paidCount}</p>
-            <small>employees</small>
+            <small>Employees</small>
           </div>
         </div>
         <div className="stat-card orange">
@@ -708,7 +708,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           <div className="stat-info">
             <h3>Pending</h3>
             <p>{summary.pendingCount}</p>
-            <small>employees</small>
+            <small>Employees</small>
           </div>
         </div>
         <div className="stat-card teal">
@@ -724,7 +724,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       {/* Filter Bar */}
       <div className="search-filter-bar">
         <div className="filter-group">
-          <BusinessIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
+          {/* <BusinessIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
           <select
             value={filterDepartment}
             onChange={(e) => setFilterDepartment(e.target.value)}
@@ -734,7 +734,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             {departments.map(dept => (
               <option key={dept} value={dept}>{dept}</option>
             ))}
-          </select>
+          </select> */}
         </div>
         <div className="filter-group">
           <WorkIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
@@ -771,7 +771,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       {/* Department Breakdown */}
       {summary.departmentBreakdown.length > 0 && (
         <div className="chart-section-modern">
-          <h3><BarChartIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Payroll by Department</h3>
+          <h3><BarChartIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Payroll</h3>
           <div className="dept-breakdown-modern">
             {summary.departmentBreakdown.map((dept, index) => {
               const percentage = summary.totalPayroll > 0 ? (dept.amount / summary.totalPayroll) * 100 : 0;

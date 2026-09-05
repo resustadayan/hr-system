@@ -6069,3 +6069,65 @@ body.printing-pdf .user-management .users-table-modern tbody td:last-child {
     background: #3a5a8a !important;
   }
 }
+
+/* Balance Modal Styles */
+.balance-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.balance-card {
+  padding: 14px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.balance-card.primary { background: #d4edda; }
+.balance-card.warning { background: #fff3cd; }
+.balance-card.info { background: #cce5ff; }
+.balance-card.secondary { background: #d1ecf1; }
+
+.balance-card .label {
+  font-size: 11px;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.balance-card .value {
+  font-size: 24px;
+  font-weight: bold;
+}
+
+/* Balance indicator in employee select */
+.employee-balance-indicator {
+  font-size: 12px;
+  color: #666;
+}
+
+.employee-balance-indicator.low {
+  color: #e74c3c;
+}
+
+.employee-balance-indicator.medium {
+  color: #e67e22;
+}
+
+.employee-balance-indicator.high {
+  color: #27ae60;
+}
+
+/* Insufficient balance warning */
+.balance-warning {
+  color: #e74c3c;
+  font-weight: 600;
+  margin-left: 10px;
+}
+
+.balance-info-box {
+  background: #f0f4fe;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #d4e0f7;
+  margin-top: 10px;
+}

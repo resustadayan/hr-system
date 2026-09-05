@@ -170,80 +170,103 @@ function Attendance() {
     return 0;
   });
 
+  // Group records by employee for AM/PM display
+  const getRecordsGroupedByEmployee = () => {
+    const grouped = {};
+    sortedRecords.forEach(record => {
+      if (!grouped[record.employeeId]) {
+        grouped[record.employeeId] = [];
+      }
+      grouped[record.employeeId].push(record);
+    });
+    return grouped;
+  };
+
+  // Get AM/PM entries for an employee with separate statuses
+  const getAMPMEntries = (employeeRecords) => {
+    const sorted = [...employeeRecords].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
+    
+    let amTimeIn = '—';
+    let amTimeOut = '—';
+    let amStatus = '—';
+    let pmTimeIn = '—';
+    let pmTimeOut = '—';
+    let pmStatus = '—';
+    let combinedStatus = 'Present';
+    let remarks = '';
+    let recordId = null;
+
+    sorted.forEach(record => {
+      const entryNum = record.entryNumber || 1;
+      const timeIn = record.timeIn || '';
+      const timeOut = record.timeOut || '';
+      const status = record.status || 'Present';
+      recordId = record.id;
+      
+      if (entryNum === 1 || entryNum === 0) {
+        amTimeIn = timeIn || '—';
+        amTimeOut = timeOut || '—';
+        amStatus = status;
+      } else if (entryNum === 2) {
+        pmTimeIn = timeIn || '—';
+        pmTimeOut = timeOut || '—';
+        pmStatus = status;
+      }
+      
+      if (record.status === 'Under Time' && record.undertimeMinutes) {
+        remarks = remarks ? `${remarks}, Undertime: ${record.undertimeMinutes} mins` : `Undertime: ${record.undertimeMinutes} mins`;
+      } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+        remarks = remarks ? `${remarks}, Overtime: ${record.overtimeMinutes} mins` : `Overtime: ${record.overtimeMinutes} mins`;
+      } else if (record.status === 'Late') {
+        remarks = remarks ? `${remarks}, Late` : 'Late';
+      } else if (record.status === 'On Time') {
+        remarks = remarks ? `${remarks}, On time` : 'On time';
+      }
+    });
+
+    // Determine combined daily status
+    // Priority: PM Status > AM Status
+    if (pmStatus && pmStatus !== '—' && pmStatus !== 'Present' && pmStatus !== 'On Time') {
+      combinedStatus = pmStatus;
+    } else if (amStatus && amStatus !== '—' && (amStatus === 'Late' || amStatus === 'Under Time')) {
+      combinedStatus = amStatus;
+    } else if (amStatus === 'Over Time' || pmStatus === 'Over Time') {
+      combinedStatus = 'Over Time';
+    } else if (amStatus === 'On Time' || pmStatus === 'On Time' || amStatus === 'Present' || pmStatus === 'Present') {
+      combinedStatus = 'On Time';
+    }
+
+    if (remarks && remarks.startsWith(', ')) {
+      remarks = remarks.substring(2);
+    }
+
+    return {
+      amTimeIn,
+      amTimeOut,
+      amStatus,
+      pmTimeIn,
+      pmTimeOut,
+      pmStatus,
+      combinedStatus,
+      remarks,
+      recordId
+    };
+  };
+
+  // Get status color for PDF/Print
+  const getStatusColor = (status) => {
+    if (status === 'Late' || status === 'Under Time') return '#e67e22';
+    if (status === 'Over Time') return '#27ae60';
+    if (status === 'On Time' || status === 'Present') return '#2ecc71';
+    return '#888';
+  };
+
   // ===== EXPORT FUNCTIONS =====
-
-  // Export to Excel
-  // const exportToExcel = () => {
-  //   try {
-  //     // Prepare data for Excel
-  //     const excelData = [
-  //       {
-  //         'Metric': 'Attendance Summary',
-  //         'Date': filterDate,
-  //         'Present': summary.present,
-  //         'Late': summary.late,
-  //         'Absent': summary.absent,
-  //         'Total Employees': summary.total
-  //       },
-  //       {} // Empty row for spacing
-  //     ];
-
-  //     // Add attendance records
-  //     sortedRecords.forEach((record, index) => {
-  //       excelData.push({
-  //         '#': index + 1,
-  //         'Employee': getEmployeeName(record.employeeId),
-  //         'Department': getEmployeeDepartment(record.employeeId),
-  //         'Date': record.date,
-  //         'Time In': record.timeIn || '—',
-  //         'Time Out': record.timeOut || '—',
-  //         'Status': record.status || 'Present',
-  //         'Recorded By': record.recordedBy || 'Admin'
-  //       });
-  //     });
-
-  //     if (sortedRecords.length === 0) {
-  //       excelData.push({
-  //         '#': '—',
-  //         'Employee': 'No records found',
-  //         'Department': '—',
-  //         'Date': filterDate,
-  //         'Time In': '—',
-  //         'Time Out': '—',
-  //         'Status': '—',
-  //         'Recorded By': '—'
-  //       });
-  //     }
-
-  //     const wb = XLSX.utils.book_new();
-  //     const ws = XLSX.utils.json_to_sheet(excelData);
-      
-  //     // Set column widths
-  //     ws['!cols'] = [
-  //       { wch: 6 },
-  //       { wch: 25 },
-  //       { wch: 18 },
-  //       { wch: 14 },
-  //       { wch: 12 },
-  //       { wch: 12 },
-  //       { wch: 14 },
-  //       { wch: 14 }
-  //     ];
-      
-  //     XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
-      
-  //     const filename = `Attendance_Report_${filterDate}.xlsx`;
-  //     XLSX.writeFile(wb, filename);
-  //   } catch (error) {
-  //     console.error('Error exporting to Excel:', error);
-  //     alert('Failed to export Excel file. Please try again.');
-  //   }
-  // };
 
   // Export to PDF
   const exportToPDF = () => {
     try {
-      const doc = new jsPDF('p', 'mm', 'a4');
+      const doc = new jsPDF('l', 'mm', 'a4'); // Landscape orientation
       const pageWidth = doc.internal.pageSize.getWidth();
       
       // Header
@@ -301,47 +324,65 @@ function Attendance() {
       yPosition = doc.lastAutoTable.finalY + 12;
       
       // Check if we need a new page
-      if (yPosition > 240) {
+      if (yPosition > 180) {
         doc.addPage();
         yPosition = 20;
       }
       
-      // Attendance Records
+      // Attendance Records with AM/PM columns including statuses
       doc.setFontSize(14);
       doc.setTextColor(44, 62, 80);
-      doc.text('Attendance Records', 20, yPosition);
+      doc.text('Attendance Records (AM/PM Entries)', 20, yPosition);
       yPosition += 8;
       
-      if (sortedRecords.length > 0) {
-        const attendanceRows = sortedRecords.map((record, index) => [
-          (index + 1).toString(),
-          getEmployeeName(record.employeeId),
-          getEmployeeDepartment(record.employeeId),
-          record.timeIn || '—',
-          record.timeOut || '—',
-          record.status || 'Present'
-        ]);
+      const groupedRecords = getRecordsGroupedByEmployee();
+      const employeeIds = Object.keys(groupedRecords);
+      
+      if (employeeIds.length > 0) {
+        const attendanceRows = employeeIds.map((empId, index) => {
+          const empRecords = groupedRecords[empId];
+          const { amTimeIn, amTimeOut, amStatus, pmTimeIn, pmTimeOut, pmStatus, combinedStatus, remarks } = getAMPMEntries(empRecords);
+          
+          return [
+            (index + 1).toString(),
+            getEmployeeName(empId),
+            getEmployeeDepartment(empId),
+            amTimeIn,
+            amTimeOut,
+            amStatus,
+            pmTimeIn,
+            pmTimeOut,
+            pmStatus,
+            combinedStatus,
+            remarks || '—'
+          ];
+        });
         
         autoTable(doc, {
           startY: yPosition,
-          head: [['#', 'Employee', 'Department', 'Time In', 'Time Out', 'Status']],
+          head: [['#', 'Employee', 'Dept', 'AM In', 'AM Out', 'AM Status', 'PM In', 'PM Out', 'PM Status', 'Daily Status', 'Remarks']],
           body: attendanceRows,
           theme: 'striped',
           headStyles: { 
             fillColor: [74, 111, 165], 
             textColor: [255, 255, 255],
-            fontSize: 11,
+            fontSize: 9,
             fontStyle: 'bold'
           },
-          styles: { fontSize: 10 },
-          margin: { left: 20, right: 20 },
+          styles: { fontSize: 8 },
+          margin: { left: 12, right: 12 },
           columnStyles: {
-            0: { cellWidth: 12 },
-            1: { cellWidth: 40 },
-            2: { cellWidth: 35 },
-            3: { cellWidth: 25 },
-            4: { cellWidth: 25 },
-            5: { cellWidth: 25 }
+            0: { cellWidth: 8 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 22 },
+            3: { cellWidth: 14 },
+            4: { cellWidth: 14 },
+            5: { cellWidth: 16 },
+            6: { cellWidth: 14 },
+            7: { cellWidth: 14 },
+            8: { cellWidth: 16 },
+            9: { cellWidth: 18 },
+            10: { cellWidth: 30 }
           }
         });
       } else {
@@ -376,13 +417,44 @@ function Attendance() {
   // Handle Print
   const handlePrint = () => {
     try {
+      const groupedRecords = getRecordsGroupedByEmployee();
+      const employeeIds = Object.keys(groupedRecords);
+      
+      let recordsHTML = '';
+      if (employeeIds.length > 0) {
+        recordsHTML = employeeIds.map((empId, index) => {
+          const empRecords = groupedRecords[empId];
+          const { amTimeIn, amTimeOut, amStatus, pmTimeIn, pmTimeOut, pmStatus, combinedStatus, remarks } = getAMPMEntries(empRecords);
+          
+          const amColor = getStatusColor(amStatus);
+          const pmColor = getStatusColor(pmStatus);
+          const combinedColor = getStatusColor(combinedStatus);
+          
+          return `
+            <tr style="background: ${index % 2 === 0 ? '#f8f9fa' : 'white'};">
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd;">${getEmployeeName(empId)}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd;">${getEmployeeDepartment(empId)}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${amTimeIn}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${amTimeOut}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center; color: ${amColor}; font-weight: 600;">${amStatus}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${pmTimeIn}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center;">${pmTimeOut}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center; color: ${pmColor}; font-weight: 600;">${pmStatus}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; text-align: center; color: ${combinedColor}; font-weight: 700;">${combinedStatus}</td>
+              <td style="padding: 6px 8px; border: 1px solid #ddd; font-size: 11px; color: #666;">${remarks || '—'}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
       const printContent = `
-        <div style="padding: 20px; font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto;">
-          <div style="text-align: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 3px solid #4a6fa5;">
-            <h1 style="color: #2c3e50; font-size: 28px; margin: 0;">Human Resource Management</h1>
-            <h2 style="color: #4a6fa5; font-size: 20px; margin: 5px 0;">Pagbilao, Quezon</h2>
-            <h3 style="color: #34495e; font-size: 18px; margin: 10px 0;">Attendance Report</h3>
-            <p style="color: #7f8c8d; font-size: 14px;">
+        <div style="padding: 15px; font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; font-size: 12px;">
+          <div style="text-align: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 3px solid #4a6fa5;">
+            <h1 style="color: #2c3e50; font-size: 24px; margin: 0;">Human Resource Management</h1>
+            <h2 style="color: #4a6fa5; font-size: 18px; margin: 5px 0;">Pagbilao, Quezon</h2>
+            <h3 style="color: #34495e; font-size: 16px; margin: 8px 0;">Attendance Report (AM/PM Entries)</h3>
+            <p style="color: #7f8c8d; font-size: 13px;">
               Date: ${new Date(filterDate).toLocaleDateString('en-US', { 
                 weekday: 'long', 
                 year: 'numeric', 
@@ -390,72 +462,62 @@ function Attendance() {
                 day: 'numeric' 
               })}
             </p>
-            <p style="color: #7f8c8d; font-size: 12px;">
+            <p style="color: #7f8c8d; font-size: 11px;">
               Generated: ${new Date().toLocaleString()}
             </p>
           </div>
 
-          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
-            <div style="background: #27ae60; padding: 15px; border-radius: 8px; color: white; text-align: center;">
-              <div style="font-size: 28px; font-weight: bold;">${summary.present}</div>
-              <div style="font-size: 14px; opacity: 0.9;">Present</div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;">
+            <div style="background: #27ae60; padding: 12px; border-radius: 6px; color: white; text-align: center;">
+              <div style="font-size: 24px; font-weight: bold;">${summary.present}</div>
+              <div style="font-size: 13px; opacity: 0.9;">Present</div>
             </div>
-            <div style="background: #e67e22; padding: 15px; border-radius: 8px; color: white; text-align: center;">
-              <div style="font-size: 28px; font-weight: bold;">${summary.late}</div>
-              <div style="font-size: 14px; opacity: 0.9;">Late</div>
+            <div style="background: #e67e22; padding: 12px; border-radius: 6px; color: white; text-align: center;">
+              <div style="font-size: 24px; font-weight: bold;">${summary.late}</div>
+              <div style="font-size: 13px; opacity: 0.9;">Late</div>
             </div>
-            <div style="background: #e74c3c; padding: 15px; border-radius: 8px; color: white; text-align: center;">
-              <div style="font-size: 28px; font-weight: bold;">${summary.absent}</div>
-              <div style="font-size: 14px; opacity: 0.9;">Absent</div>
+            <div style="background: #e74c3c; padding: 12px; border-radius: 6px; color: white; text-align: center;">
+              <div style="font-size: 24px; font-weight: bold;">${summary.absent}</div>
+              <div style="font-size: 13px; opacity: 0.9;">Absent</div>
             </div>
-            <div style="background: #4a6fa5; padding: 15px; border-radius: 8px; color: white; text-align: center;">
-              <div style="font-size: 28px; font-weight: bold;">${summary.total}</div>
-              <div style="font-size: 14px; opacity: 0.9;">Total Employees</div>
+            <div style="background: #4a6fa5; padding: 12px; border-radius: 6px; color: white; text-align: center;">
+              <div style="font-size: 24px; font-weight: bold;">${summary.total}</div>
+              <div style="font-size: 13px; opacity: 0.9;">Total Employees</div>
             </div>
           </div>
 
-          <div style="margin-bottom: 30px;">
-            <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;">Attendance Records</h4>
-            ${sortedRecords.length > 0 ? `
-              <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <div style="margin-bottom: 20px; overflow-x: auto;">
+            <h4 style="color: #2c3e50; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; margin-bottom: 10px;">Attendance Records</h4>
+            ${employeeIds.length > 0 ? `
+              <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                 <thead>
                   <tr style="background: #4a6fa5; color: white;">
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">#</th>
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Employee</th>
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Department</th>
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Time In</th>
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Time Out</th>
-                    <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Status</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">#</th>
+                    <th style="padding: 6px 8px; text-align: left; border: 1px solid #ddd;">Employee</th>
+                    <th style="padding: 6px 8px; text-align: left; border: 1px solid #ddd;">Department</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">AM In</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">AM Out</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">AM Status</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">PM In</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">PM Out</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">PM Status</th>
+                    <th style="padding: 6px 8px; text-align: center; border: 1px solid #ddd;">Daily Status</th>
+                    <th style="padding: 6px 8px; text-align: left; border: 1px solid #ddd;">Remarks</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${sortedRecords.map((record, index) => `
-                    <tr style="background: ${index % 2 === 0 ? '#f8f9fa' : 'white'};">
-                      <td style="padding: 10px; border: 1px solid #ddd;">${index + 1}</td>
-                      <td style="padding: 10px; border: 1px solid #ddd;">${getEmployeeName(record.employeeId)}</td>
-                      <td style="padding: 10px; border: 1px solid #ddd;">${getEmployeeDepartment(record.employeeId)}</td>
-                      <td style="padding: 10px; border: 1px solid #ddd;">${record.timeIn || '—'}</td>
-                      <td style="padding: 10px; border: 1px solid #ddd;">${record.timeOut || '—'}</td>
-                      <td style="padding: 10px; border: 1px solid #ddd;">
-                        <span style="background: ${record.status === 'On Time' || record.status === 'Present' ? '#27ae60' : '#e67e22'}; 
-                                     color: white; 
-                                     padding: 4px 12px; 
-                                     border-radius: 4px; 
-                                     font-size: 12px;
-                                     font-weight: 600;">
-                          ${record.status || 'Present'}
-                        </span>
-                      </td>
-                    </tr>
-                  `).join('')}
+                  ${recordsHTML}
                 </tbody>
               </table>
+              <p style="margin-top: 6px; font-size: 10px; color: #888; font-style: italic;">
+                Note: Entry #1 = AM, Entry #2 = PM | Daily status determined by PM (if exists), otherwise AM
+              </p>
             ` : `
-              <p style="text-align: center; color: #7f8c8d; padding: 30px 0;">No attendance records found for this date.</p>
+              <p style="text-align: center; color: #7f8c8d; padding: 20px 0;">No attendance records found for this date.</p>
             `}
           </div>
 
-          <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #ecf0f1; text-align: center; color: #7f8c8d; font-size: 12px;">
+          <div style="margin-top: 20px; padding-top: 15px; border-top: 2px solid #ecf0f1; text-align: center; color: #7f8c8d; font-size: 11px;">
             <p>This report is auto-generated from HRM Pagbilao System</p>
             <p>Document ID: HR-ATTENDANCE-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}</p>
             <p>© ${new Date().getFullYear()} HRM Pagbilao, Quezon</p>
@@ -471,11 +533,13 @@ function Attendance() {
             <head>
               <title>Attendance Report</title>
               <style>
-                body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+                body { font-family: Arial, sans-serif; margin: 0; padding: 15px; }
                 @media print {
                   body { padding: 0; }
                   .no-print { display: none; }
                 }
+                table { font-size: 11px; }
+                th, td { padding: 5px 7px; }
               </style>
             </head>
             <body>
@@ -512,26 +576,6 @@ function Attendance() {
           <p className="header-subtitle">Monitor and record daily employee attendance</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* <button onClick={refreshData} className="btn-add-modern" style={{ background: '#4a6fa5' }} disabled={refreshing}>
-            <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button> */}
-          {/* <button onClick={exportToExcel} className="btn-export excel" style={{
-            background: '#217346',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '14px',
-            fontWeight: '500'
-          }}>
-            <FileDownloadIcon style={{ fontSize: 18 }} />
-            Excel
-          </button> */}
           <button onClick={exportToPDF} className="btn-export pdf" style={{
             background: '#dc3545',
             color: 'white',
@@ -616,89 +660,12 @@ function Attendance() {
         </div>
       </div>
 
-      {/* Record Attendance Form */}
-      {/* <div className="form-card-modern">
-        <h3>
-          <AddIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
-          Record Attendance
-        </h3>
-        <div className="form-grid-inline">
-          <div className="form-group">
-            <label>
-              <PersonIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Select Employee
-            </label>
-            <select 
-              value={selectedEmployee} 
-              onChange={(e) => setSelectedEmployee(e.target.value)}
-              required
-            >
-              <option value="">— Select Employee —</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.fullName || emp.name} - {emp.department}</option>
-              ))}
-            </select>
-          </div>
-          
-          <div className="form-group">
-            <label>
-              <CalendarTodayIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Date
-            </label>
-            <input 
-              type="date" 
-              value={date} 
-              onChange={(e) => setDate(e.target.value)}
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>
-              <AccessTimeIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Time In
-            </label>
-            <input 
-              type="time" 
-              value={timeIn} 
-              onChange={(e) => setTimeIn(e.target.value)}
-              placeholder="Time In"
-              required
-            />
-          </div>
-          
-          <div className="form-group">
-            <label>
-              <AccessTimeIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Time Out (Optional)
-            </label>
-            <input 
-              type="time" 
-              value={timeOut} 
-              onChange={(e) => setTimeOut(e.target.value)}
-              placeholder="Time Out"
-            />
-          </div>
-          
-          <div className="form-group btn-group">
-            <button 
-              onClick={recordAttendance} 
-              className="btn-record"
-              disabled={loading}
-            >
-              <SaveIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-              {loading ? 'Recording...' : 'Record Attendance'}
-            </button>
-          </div>
-        </div>
-      </div> */}
-
-      {/* View Attendance Records */}
+      {/* View Attendance Records with AM/PM and Statuses */}
       <div className="form-card-modern">
         <div className="filter-header">
           <h3>
             <EventNoteIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
-            View Attendance Records
+            View Attendance Records (AM/PM)
           </h3>
           <div className="filter-controls">
             <input 
@@ -707,7 +674,7 @@ function Attendance() {
               onChange={(e) => setFilterDate(e.target.value)}
               className="filter-date"
             />
-            <span className="record-count">{sortedRecords.length} records</span>
+            <span className="record-count">{Object.keys(getRecordsGroupedByEmployee()).length} employees</span>
           </div>
         </div>
 
@@ -718,58 +685,86 @@ function Attendance() {
                 <th>#</th>
                 <th>Employee</th>
                 <th>Department</th>
-                <th>Date</th>
-                <th>Time In</th>
-                <th>Time Out</th>
-                <th>Status</th>
-                <th>Source</th>
+                <th>AM Time In</th>
+                <th>AM Time Out</th>
+                <th>AM Status</th>
+                <th>PM Time In</th>
+                <th>PM Time Out</th>
+                <th>PM Status</th>
+                <th>Daily Status</th>
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
-              {sortedRecords.map((record, index) => (
-                <tr key={record.id} className={record.status === 'Late' ? 'late-row' : ''}>
-                  <td>{index + 1}</td>
-                  <td>
-                    <div className="employee-info">
-                      <div className="employee-avatar small">
-                        {getEmployeeName(record.employeeId).charAt(0)}
-                      </div>
-                      <span className="employee-name">{getEmployeeName(record.employeeId)}</span>
-                    </div>
-                  </td>
-                  <td><span className="dept-tag">{getEmployeeDepartment(record.employeeId)}</span></td>
-                  <td>{record.date}</td>
-                  <td className="time-cell">{record.timeIn || '—'}</td>
-                  <td className="time-cell">{record.timeOut || '—'}</td>
-                  <td>
-                    <span className={`status-badge ${record.status === 'On Time' || record.status === 'Present' ? 'success' : 'warning'}`}>
-                      {record.status === 'On Time' || record.status === 'Present' ? (
-                        <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                      ) : (
-                        <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
-                      )}
-                      {record.status || 'Present'}
-                    </span>
-                  </td>
-                  <td>
-                    <span className="source-badge">
-                      {record.recordedBy === 'Admin' ? 'Admin' : 'Employee'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {sortedRecords.length === 0 && (
-                <tr>
-                  <td colSpan="8" className="empty-state">
-                    <InboxIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 10px' }} />
-                    <p>No attendance records found</p>
-                    <span>No records for {new Date(filterDate).toLocaleDateString()}</span>
-                  </td>
-                </tr>
-              )}
+              {(() => {
+                const groupedRecords = getRecordsGroupedByEmployee();
+                const employeeIds = Object.keys(groupedRecords);
+                
+                if (employeeIds.length > 0) {
+                  return employeeIds.map((empId, index) => {
+                    const empRecords = groupedRecords[empId];
+                    const { amTimeIn, amTimeOut, amStatus, pmTimeIn, pmTimeOut, pmStatus, combinedStatus, remarks } = getAMPMEntries(empRecords);
+                    
+                    return (
+                      <tr key={empId} className={combinedStatus === 'Late' || combinedStatus === 'Under Time' ? 'late-row' : ''}>
+                        <td>{index + 1}</td>
+                        <td>
+                          <div className="employee-info">
+                            <div className="employee-avatar small">
+                              {getEmployeeName(empId).charAt(0)}
+                            </div>
+                            <span className="employee-name">{getEmployeeName(empId)}</span>
+                          </div>
+                        </td>
+                        <td><span className="dept-tag">{getEmployeeDepartment(empId)}</span></td>
+                        <td className="time-cell">{amTimeIn}</td>
+                        <td className="time-cell">{amTimeOut}</td>
+                        <td className="status-cell">
+                          <span className={`status-badge ${amStatus === 'Late' || amStatus === 'Under Time' ? 'warning' : amStatus === 'Over Time' ? 'success' : amStatus === 'On Time' ? 'success' : amStatus !== '—' ? 'secondary' : 'secondary'}`}>
+                            {amStatus}
+                          </span>
+                        </td>
+                        <td className="time-cell">{pmTimeIn}</td>
+                        <td className="time-cell">{pmTimeOut}</td>
+                        <td className="status-cell">
+                          <span className={`status-badge ${pmStatus === 'Late' || pmStatus === 'Under Time' ? 'warning' : pmStatus === 'Over Time' ? 'success' : pmStatus === 'On Time' ? 'success' : pmStatus !== '—' ? 'secondary' : 'secondary'}`}>
+                            {pmStatus}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-badge ${combinedStatus === 'Late' || combinedStatus === 'Under Time' ? 'warning' : combinedStatus === 'Over Time' ? 'success' : 'success'}`}>
+                            {combinedStatus === 'Late' || combinedStatus === 'Under Time' ? (
+                              <WarningIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                            ) : (
+                              <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                            )}
+                            {combinedStatus}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: '12px', color: '#666' }}>{remarks || '—'}</td>
+                      </tr>
+                    );
+                  });
+                } else {
+                  return (
+                    <tr>
+                      <td colSpan="11" className="empty-state">
+                        <InboxIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 10px' }} />
+                        <p>No attendance records found</p>
+                        <span>No records for {new Date(filterDate).toLocaleDateString()}</span>
+                      </td>
+                    </tr>
+                  );
+                }
+              })()}
             </tbody>
           </table>
         </div>
+        {Object.keys(getRecordsGroupedByEmployee()).length > 0 && (
+          <div style={{ marginTop: '8px', fontSize: '11px', color: '#aaa', textAlign: 'center' }}>
+            <em>Entry #1 = AM, Entry #2 = PM | Daily status determined by PM (if exists), otherwise AM</em>
+          </div>
+        )}
       </div>
     </div>
   );

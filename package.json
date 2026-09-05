@@ -19,7 +19,6 @@
     "fabric": "^7.4.0",
     "file-saver": "^2.0.5",
     "firebase": "^12.13.0",
-    "html2pdf.js": "^0.14.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "pdf-lib": "^1.17.1",
@@ -58,6 +57,7 @@
     ]
   },
   "devDependencies": {
+    "react-app-rewired": "^2.2.1",
     "webpack-bundle-analyzer": "^5.3.1"
   }
 }

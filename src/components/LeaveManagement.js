@@ -1,7 +1,7 @@
 // src/components/LeaveManagement.js
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, query, where } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, query, where, getDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,10 +30,13 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import PrintIcon from '@mui/icons-material/Print';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import BalanceIcon from '@mui/icons-material/Balance';
+import VisibilityIcon from '@mui/icons-material/Visibility';
 
 function LeaveManagement() {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [employees, setEmployees] = useState([]);
+  const [leaveBalances, setLeaveBalances] = useState({});
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState('all');
   const [formData, setFormData] = useState({
@@ -45,11 +48,15 @@ function LeaveManagement() {
   });
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
   const leaveRef = useRef(null);
 
   useEffect(() => {
     fetchEmployees();
     fetchLeaveRequests();
+    fetchLeaveBalances();
   }, []);
 
   const fetchEmployees = async () => {
@@ -65,11 +72,66 @@ function LeaveManagement() {
     setLeaveRequests(requests);
   };
 
+  const fetchLeaveBalances = async () => {
+    const querySnapshot = await getDocs(collection(db, 'leaveBalances'));
+    const balances = {};
+    querySnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      balances[data.employeeId] = {
+        id: doc.id,
+        ...data
+      };
+    });
+    setLeaveBalances(balances);
+  };
+
   const refreshData = async () => {
     setRefreshing(true);
     await fetchEmployees();
     await fetchLeaveRequests();
+    await fetchLeaveBalances();
     setRefreshing(false);
+  };
+
+  const getEmployeeLeaveBalance = (employeeId) => {
+    const balance = leaveBalances[employeeId];
+    if (!balance) {
+      return { vacationLeave: 0, sickLeave: 0, maternityLeave: 0, paternityLeave: 0 };
+    }
+    return {
+      vacationLeave: balance.vacationLeave || 0,
+      sickLeave: balance.sickLeave || 0,
+      maternityLeave: balance.maternityLeave || 0,
+      paternityLeave: balance.paternityLeave || 0
+    };
+  };
+
+  const getLeaveTypeBalance = (employeeId, leaveType) => {
+    const balance = getEmployeeLeaveBalance(employeeId);
+    switch(leaveType) {
+      case 'Vacation': return balance.vacationLeave;
+      case 'Sick': return balance.sickLeave;
+      case 'Maternity': return balance.maternityLeave;
+      case 'Paternity': return balance.paternityLeave;
+      default: return 0;
+    }
+  };
+
+  const getEmployeeName = (employeeId) => {
+    const emp = employees.find(e => e.id === employeeId);
+    return emp ? emp.fullName : 'Unknown';
+  };
+
+  const getEmployeeDepartment = (employeeId) => {
+    const emp = employees.find(e => e.id === employeeId);
+    return emp ? emp.department : 'N/A';
+  };
+
+  const calculateDays = (start, end) => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diffTime = Math.abs(endDate - startDate);
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
   const submitLeave = async () => {
@@ -78,19 +140,49 @@ function LeaveManagement() {
       return;
     }
 
+    const days = calculateDays(formData.startDate, formData.endDate);
+    const availableBalance = getLeaveTypeBalance(formData.employeeId, formData.type);
+
+    // Check if employee has enough leave credits
+    if (days > availableBalance) {
+      setErrorMessage(`❌ Insufficient ${formData.type} leave credits!\nAvailable: ${availableBalance} days\nRequested: ${days} days\nPlease reduce the number of days or choose a different leave type.`);
+      return;
+    }
+
+    setErrorMessage('');
     setLoading(true);
+
     try {
-      const days = calculateDays(formData.startDate, formData.endDate);
+      // Add leave request
       await addDoc(collection(db, 'leaveRequests'), {
         ...formData,
         days: days,
         status: 'Pending',
         dateSubmitted: new Date().toISOString()
       });
+
+      // Update leave balance
+      const balance = leaveBalances[formData.employeeId];
+      if (balance && balance.id) {
+        const updates = {};
+        switch(formData.type) {
+          case 'Vacation': updates.vacationLeave = (balance.vacationLeave || 0) - days; break;
+          case 'Sick': updates.sickLeave = (balance.sickLeave || 0) - days; break;
+          case 'Maternity': updates.maternityLeave = (balance.maternityLeave || 0) - days; break;
+          case 'Paternity': updates.paternityLeave = (balance.paternityLeave || 0) - days; break;
+          default: break;
+        }
+        await updateDoc(doc(db, 'leaveBalances', balance.id), {
+          ...updates,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
       alert('✅ Leave request submitted successfully');
       setShowForm(false);
       setFormData({ employeeId: '', type: 'Vacation', startDate: '', endDate: '', reason: '' });
       await fetchLeaveRequests();
+      await fetchLeaveBalances();
     } catch (error) {
       console.error('Error submitting leave:', error);
       alert('❌ Failed to submit leave request');
@@ -109,21 +201,20 @@ function LeaveManagement() {
     }
   };
 
-  const calculateDays = (start, end) => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-    const diffTime = Math.abs(endDate - startDate);
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+  const handleEmployeeSelect = (employeeId) => {
+    setFormData({...formData, employeeId});
+    setErrorMessage('');
   };
 
-  const getEmployeeName = (employeeId) => {
+  const viewEmployeeBalance = (employeeId) => {
     const emp = employees.find(e => e.id === employeeId);
-    return emp ? emp.fullName : 'Unknown';
-  };
-
-  const getEmployeeDepartment = (employeeId) => {
-    const emp = employees.find(e => e.id === employeeId);
-    return emp ? emp.department : 'N/A';
+    const balance = getEmployeeLeaveBalance(employeeId);
+    setSelectedEmployee({
+      name: emp ? emp.fullName : 'Unknown',
+      department: emp ? emp.department : 'N/A',
+      ...balance
+    });
+    setShowBalanceModal(true);
   };
 
   const filteredRequests = leaveRequests.filter(req => {
@@ -147,7 +238,7 @@ function LeaveManagement() {
     const icons = {
       'Vacation': <BeachAccessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Sick': <SickIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
-      'Wellness': <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
+      'Emergency': <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Maternity': <ChildCareIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Paternity': <ManIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
       'Others': <MoreHorizIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
@@ -155,76 +246,13 @@ function LeaveManagement() {
     return icons[type] || <MoreHorizIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />;
   };
 
-  // ===== EXPORT FUNCTIONS =====
+  const getBalanceColor = (balance) => {
+    if (balance > 5) return '#27ae60';
+    if (balance > 0) return '#e67e22';
+    return '#e74c3c';
+  };
 
-  // Export to Excel
-  // const exportToExcel = () => {
-  //   try {
-  //     const summaryData = {
-  //       'Metric': 'Leave Summary',
-  //       'Total Requests': leaveRequests.length,
-  //       'Pending': leaveRequests.filter(r => r.status === 'Pending').length,
-  //       'Approved': leaveRequests.filter(r => r.status === 'Approved').length,
-  //       'Rejected': leaveRequests.filter(r => r.status === 'Rejected').length
-  //     };
-
-  //     const excelData = [summaryData, {}];
-
-  //     // Add leave records
-  //     filteredRequests.forEach((req, index) => {
-  //       excelData.push({
-  //         '#': index + 1,
-  //         'Employee': getEmployeeName(req.employeeId),
-  //         'Department': getEmployeeDepartment(req.employeeId),
-  //         'Leave Type': req.type || 'Vacation',
-  //         'Start Date': req.startDate || '—',
-  //         'End Date': req.endDate || '—',
-  //         'Days': req.days || 0,
-  //         'Status': req.status || 'Pending',
-  //         'Reason': req.reason || '—'
-  //       });
-  //     });
-
-  //     if (filteredRequests.length === 0) {
-  //       excelData.push({
-  //         '#': '—',
-  //         'Employee': 'No leave requests found',
-  //         'Department': '—',
-  //         'Leave Type': '—',
-  //         'Start Date': '—',
-  //         'End Date': '—',
-  //         'Days': '—',
-  //         'Status': '—',
-  //         'Reason': '—'
-  //       });
-  //     }
-
-  //     const wb = XLSX.utils.book_new();
-  //     const ws = XLSX.utils.json_to_sheet(excelData);
-      
-  //     ws['!cols'] = [
-  //       { wch: 6 },
-  //       { wch: 25 },
-  //       { wch: 18 },
-  //       { wch: 16 },
-  //       { wch: 14 },
-  //       { wch: 14 },
-  //       { wch: 8 },
-  //       { wch: 14 },
-  //       { wch: 30 }
-  //     ];
-      
-  //     XLSX.utils.book_append_sheet(wb, ws, 'Leave Requests');
-      
-  //     const filename = `Leave_Requests_${new Date().toISOString().split('T')[0]}.xlsx`;
-  //     XLSX.writeFile(wb, filename);
-  //   } catch (error) {
-  //     console.error('Error exporting to Excel:', error);
-  //     alert('Failed to export Excel file. Please try again.');
-  //   }
-  // };
-
-  // Export to PDF
+  // Export to PDF (enhanced with balance info)
   const exportToPDF = () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
@@ -249,7 +277,7 @@ function LeaveManagement() {
       
       let yPosition = 48;
       
-      // Summary Cards as a table
+      // Summary Cards
       doc.setFontSize(14);
       doc.setTextColor(44, 62, 80);
       doc.text('Summary', 20, yPosition);
@@ -283,7 +311,6 @@ function LeaveManagement() {
       
       yPosition = doc.lastAutoTable.finalY + 12;
       
-      // Check if we need a new page
       if (yPosition > 240) {
         doc.addPage();
         yPosition = 20;
@@ -335,7 +362,6 @@ function LeaveManagement() {
         doc.text('No leave requests found.', pageWidth / 2, yPosition + 10, { align: 'center' });
       }
       
-      // Footer on all pages
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -372,9 +398,6 @@ function LeaveManagement() {
             <h3 style="color: #34495e; font-size: 18px; margin: 10px 0;">Leave Management Report</h3>
             <p style="color: #7f8c8d; font-size: 14px;">
               Generated: ${new Date().toLocaleString()}
-            </p>
-            <p style="color: #7f8c8d; font-size: 12px;">
-              Filter: ${filter.charAt(0).toUpperCase() + filter.slice(1)}
             </p>
           </div>
 
@@ -444,7 +467,6 @@ function LeaveManagement() {
 
           <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #ecf0f1; text-align: center; color: #7f8c8d; font-size: 12px;">
             <p>This report is auto-generated from HRM Pagbilao System</p>
-            <p>Document ID: HR-LEAVE-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}</p>
             <p>© ${new Date().getFullYear()} HRM Pagbilao, Quezon</p>
           </div>
         </div>
@@ -499,26 +521,10 @@ function LeaveManagement() {
           <p className="header-subtitle">Manage and track employee leave requests</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* <button onClick={refreshData} className="btn-add-modern" style={{ background: '#4a6fa5' }} disabled={refreshing}>
+          <button onClick={refreshData} className="btn-add-modern" style={{ background: '#4a6fa5' }} disabled={refreshing}>
             <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
             {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button> */}
-          {/* <button onClick={exportToExcel} className="btn-export excel" style={{
-            background: '#217346',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '14px',
-            fontWeight: '500'
-          }}>
-            <FileDownloadIcon style={{ fontSize: 18 }} />
-            Excel
-          </button> */}
+          </button>
           <button onClick={exportToPDF} className="btn-export pdf" style={{
             background: '#dc3545',
             color: 'white',
@@ -551,15 +557,46 @@ function LeaveManagement() {
             <PrintIcon style={{ fontSize: 18 }} />
             Print
           </button>
-          {/* <button 
+          <button 
             onClick={() => setShowForm(true)} 
             className="btn-add-modern"
           >
             <AddIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
             New Leave Request
-          </button> */}
+          </button>
         </div>
       </div>
+
+      {/* Error Message */}
+      {errorMessage && (
+        <div style={{
+          background: '#f8d7da',
+          color: '#721c24',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          border: '1px solid #f5c6cb'
+        }}>
+          <WarningIcon style={{ color: '#721c24' }} />
+          <span style={{ whiteSpace: 'pre-line' }}>{errorMessage}</span>
+          <button 
+            onClick={() => setErrorMessage('')}
+            style={{
+              marginLeft: 'auto',
+              background: 'transparent',
+              border: 'none',
+              fontSize: '18px',
+              cursor: 'pointer',
+              color: '#721c24'
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="stats-row">
@@ -609,22 +646,10 @@ function LeaveManagement() {
             onChange={(e) => setFilter(e.target.value)}
             className="filter-select"
           >
-            <option value="all">
-              <AssignmentIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              All Requests
-            </option>
-            <option value="pending">
-              <HourglassEmptyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Pending
-            </option>
-            <option value="approved">
-              <CheckCircleIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Approved
-            </option>
-            <option value="rejected">
-              <CancelIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-              Rejected
-            </option>
+            <option value="all">All Requests</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
           </select>
         </div>
         <div className="stats-badge">
@@ -655,6 +680,20 @@ function LeaveManagement() {
                       {getEmployeeName(req.employeeId).charAt(0)}
                     </div>
                     <span className="employee-name">{getEmployeeName(req.employeeId)}</span>
+                    <button 
+                      onClick={() => viewEmployeeBalance(req.employeeId)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#4a6fa5',
+                        cursor: 'pointer',
+                        marginLeft: '6px',
+                        fontSize: '12px'
+                      }}
+                      title="View Leave Balance"
+                    >
+                      <BalanceIcon style={{ fontSize: 16 }} />
+                    </button>
                   </div>
                 </td>
                 <td><span className="dept-tag">{getEmployeeDepartment(req.employeeId)}</span></td>
@@ -712,7 +751,7 @@ function LeaveManagement() {
 
       {/* Modal Form */}
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+        <div className="modal-overlay" onClick={() => { setShowForm(false); setErrorMessage(''); }}>
           <div className="modal-form leave-form" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>
@@ -721,7 +760,7 @@ function LeaveManagement() {
               </h3>
               <button 
                 className="modal-close" 
-                onClick={() => setShowForm(false)}
+                onClick={() => { setShowForm(false); setErrorMessage(''); }}
               >
                 <CloseIcon />
               </button>
@@ -735,13 +774,18 @@ function LeaveManagement() {
                   </label>
                   <select 
                     value={formData.employeeId} 
-                    onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
+                    onChange={(e) => handleEmployeeSelect(e.target.value)}
                     required
                   >
                     <option value="">— Select Employee —</option>
-                    {employees.map(emp => (
-                      <option key={emp.id} value={emp.id}>{emp.fullName}</option>
-                    ))}
+                    {employees.map(emp => {
+                      const balance = getEmployeeLeaveBalance(emp.id);
+                      return (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.fullName} (VL: {balance.vacationLeave} | SL: {balance.sickLeave})
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
                 <div className="form-group">
@@ -754,30 +798,11 @@ function LeaveManagement() {
                     onChange={(e) => setFormData({...formData, type: e.target.value})}
                     required
                   >
-                    <option value="Vacation">
-                      <BeachAccessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Vacation
-                    </option>
-                    <option value="Sick">
-                      <SickIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Sick
-                    </option>
-                    <option value="Emergency">
-                      <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Wellness
-                    </option>
-                    <option value="Maternity">
-                      <ChildCareIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Maternity
-                    </option>
-                    <option value="Paternity">
-                      <ManIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Paternity
-                    </option>
-                    <option value="Others">
-                      <MoreHorizIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                      Others
-                    </option>
+                    <option value="Vacation">Vacation</option>
+                    <option value="Sick">Sick</option>
+                    <option value="Maternity">Maternity</option>
+                    <option value="Paternity">Paternity</option>
+                    <option value="Emergency">Emergency</option>
                   </select>
                 </div>
                 <div className="form-group">
@@ -816,6 +841,36 @@ function LeaveManagement() {
                     rows="3"
                   />
                 </div>
+                {formData.employeeId && formData.type && (
+                  <div className="form-group full-width" style={{ 
+                    background: '#f0f4fe', 
+                    padding: '12px 16px', 
+                    borderRadius: '8px',
+                    border: '1px solid #d4e0f7'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: '600', color: '#1a2a4a' }}>
+                        Available Balance:
+                      </span>
+                      <span style={{ 
+                        fontWeight: 'bold', 
+                        color: getBalanceColor(getLeaveTypeBalance(formData.employeeId, formData.type))
+                      }}>
+                        {getLeaveTypeBalance(formData.employeeId, formData.type)} days
+                      </span>
+                    </div>
+                    {formData.startDate && formData.endDate && (
+                      <div style={{ marginTop: '4px', fontSize: '13px', color: '#666' }}>
+                        Requested: {calculateDays(formData.startDate, formData.endDate)} days
+                        {calculateDays(formData.startDate, formData.endDate) > getLeaveTypeBalance(formData.employeeId, formData.type) && (
+                          <span style={{ color: '#e74c3c', marginLeft: '10px', fontWeight: '600' }}>
+                            ⚠️ Insufficient credits!
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="form-actions">
                 <button type="submit" className="btn-save" disabled={loading}>
@@ -825,13 +880,101 @@ function LeaveManagement() {
                 <button 
                   type="button" 
                   className="btn-cancel" 
-                  onClick={() => setShowForm(false)}
+                  onClick={() => { setShowForm(false); setErrorMessage(''); }}
                 >
                   <CancelIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
                   Cancel
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Balance Modal */}
+      {showBalanceModal && selectedEmployee && (
+        <div className="modal-overlay" onClick={() => setShowBalanceModal(false)}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>
+                <BalanceIcon style={{ fontSize: 22, marginRight: 10, verticalAlign: 'middle' }} />
+                Leave Balance
+              </h3>
+              <button className="modal-close" onClick={() => setShowBalanceModal(false)}>
+                <CloseIcon />
+              </button>
+            </div>
+            <div style={{ padding: '10px 0' }}>
+              <div style={{ 
+                background: '#f8fafd', 
+                padding: '16px', 
+                borderRadius: '10px',
+                marginBottom: '16px'
+              }}>
+                <p style={{ margin: 0, fontWeight: '600', fontSize: '18px' }}>
+                  {selectedEmployee.name}
+                </p>
+                <p style={{ margin: '4px 0 0', color: '#666', fontSize: '14px' }}>
+                  <BusinessIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                  {selectedEmployee.department}
+                </p>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div style={{ 
+                  background: '#d4edda', 
+                  padding: '14px', 
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#155724', textTransform: 'uppercase' }}>Vacation</div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#155724' }}>
+                    {selectedEmployee.vacationLeave || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#155724' }}>days</div>
+                </div>
+                <div style={{ 
+                  background: '#fff3cd', 
+                  padding: '14px', 
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#856404', textTransform: 'uppercase' }}>Sick</div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#856404' }}>
+                    {selectedEmployee.sickLeave || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#856404' }}>days</div>
+                </div>
+                <div style={{ 
+                  background: '#cce5ff', 
+                  padding: '14px', 
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#004085', textTransform: 'uppercase' }}>Maternity</div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#004085' }}>
+                    {selectedEmployee.maternityLeave || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#004085' }}>days</div>
+                </div>
+                <div style={{ 
+                  background: '#d1ecf1', 
+                  padding: '14px', 
+                  borderRadius: '8px',
+                  textAlign: 'center'
+                }}>
+                  <div style={{ fontSize: '11px', color: '#0c5460', textTransform: 'uppercase' }}>Paternity</div>
+                  <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0c5460' }}>
+                    {selectedEmployee.paternityLeave || 0}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#0c5460' }}>days</div>
+                </div>
+              </div>
+              <div style={{ marginTop: '16px', padding: '12px', background: '#f0f4fe', borderRadius: '8px', textAlign: 'center' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: '#4a6fa5' }}>
+                  💡 Employee can file leave if they have sufficient credits
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -33,6 +33,14 @@ import LoginIcon from '@mui/icons-material/Login';
 import Logout from '@mui/icons-material/Logout';
 import WarningIcon from '@mui/icons-material/Warning';
 import TimelineIcon from '@mui/icons-material/Timeline';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import PrintIcon from '@mui/icons-material/Print';
+import BalanceIcon from '@mui/icons-material/Balance';
+import BeachAccessIcon from '@mui/icons-material/BeachAccess';
+import SickIcon from '@mui/icons-material/Sick';
+import ChildCareIcon from '@mui/icons-material/ChildCare';
+import ManIcon from '@mui/icons-material/Man';
 import logo from '../assets/hrmo logo.jpg';
 
 // Late deduction rate (matches EmployeePortal.js)
@@ -66,6 +74,11 @@ function MGDHDashboard() {
   const [userEmail, setUserEmail] = useState('');
   const [mgdhUserId, setMgdhUserId] = useState('');
   const [allEmployees, setAllEmployees] = useState([]);
+  
+  // ====== LEAVE BALANCE STATES ======
+  const [leaveBalances, setLeaveBalances] = useState({});
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [selectedEmployeeBalance, setSelectedEmployeeBalance] = useState(null);
   
   // ====== ATTENDANCE STATES ======
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -129,6 +142,120 @@ function MGDHDashboard() {
     return `${hours}:${minutes}`;
   };
 
+  // ====== GET EMPLOYEE LEAVE BALANCE ======
+  const getEmployeeLeaveBalance = (employeeId) => {
+    const balance = leaveBalances[employeeId];
+    if (!balance) {
+      return { vacationLeave: 0, sickLeave: 0, maternityLeave: 0, paternityLeave: 0 };
+    }
+    return {
+      vacationLeave: balance.vacationLeave || 0,
+      sickLeave: balance.sickLeave || 0,
+      maternityLeave: balance.maternityLeave || 0,
+      paternityLeave: balance.paternityLeave || 0
+    };
+  };
+
+  const getLeaveTypeIcon = (type) => {
+    const icons = {
+      'Vacation': <BeachAccessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
+      'Sick': <SickIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
+      'Maternity': <ChildCareIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
+      'Paternity': <ManIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
+      'Emergency': <WarningIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
+    };
+    return icons[type] || <CalendarTodayIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />;
+  };
+
+  const getBalanceColor = (balance) => {
+    if (balance > 5) return '#27ae60';
+    if (balance > 0) return '#e67e22';
+    return '#e74c3c';
+  };
+
+  // ====== GROUP ATTENDANCE BY DATE FOR AM/PM ======
+  const getGroupedAttendance = (records) => {
+    const grouped = {};
+    records.forEach(record => {
+      if (!grouped[record.date]) {
+        grouped[record.date] = [];
+      }
+      grouped[record.date].push(record);
+    });
+    return grouped;
+  };
+
+  // ====== GET AM/PM ENTRIES FOR A DATE WITH SEPARATE STATUSES ======
+  const getAMPMEntriesWithStatus = (dateRecords) => {
+    const sorted = [...dateRecords].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
+    
+    let amTimeIn = '—';
+    let amTimeOut = '—';
+    let amStatus = '—';
+    let pmTimeIn = '—';
+    let pmTimeOut = '—';
+    let pmStatus = '—';
+    let combinedStatus = 'Present';
+    let remarks = '';
+    let recordId = null;
+
+    sorted.forEach(record => {
+      const entryNum = record.entryNumber || 1;
+      const timeIn = record.timeIn || '';
+      const timeOut = record.timeOut || '';
+      const status = record.status || 'Present';
+      recordId = record.id;
+      
+      if (entryNum === 1 || entryNum === 0) {
+        amTimeIn = timeIn || '—';
+        amTimeOut = timeOut || '—';
+        amStatus = status;
+      } else if (entryNum === 2) {
+        pmTimeIn = timeIn || '—';
+        pmTimeOut = timeOut || '—';
+        pmStatus = status;
+      }
+      
+      if (record.status === 'Under Time' && record.undertimeMinutes) {
+        remarks = remarks ? `${remarks}, Undertime: ${record.undertimeMinutes} mins` : `Undertime: ${record.undertimeMinutes} mins`;
+      } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+        remarks = remarks ? `${remarks}, Overtime: ${record.overtimeMinutes} mins` : `Overtime: ${record.overtimeMinutes} mins`;
+      } else if (record.status === 'Late') {
+        remarks = remarks ? `${remarks}, Late` : 'Late';
+      } else if (record.status === 'On Time') {
+        remarks = remarks ? `${remarks}, On time` : 'On time';
+      }
+    });
+
+    // Determine combined daily status
+    // Priority: PM Status > AM Status
+    if (pmStatus && pmStatus !== '—' && pmStatus !== 'Present' && pmStatus !== 'On Time') {
+      combinedStatus = pmStatus;
+    } else if (amStatus && amStatus !== '—' && (amStatus === 'Late' || amStatus === 'Under Time')) {
+      combinedStatus = amStatus;
+    } else if (amStatus === 'Over Time' || pmStatus === 'Over Time') {
+      combinedStatus = 'Over Time';
+    } else if (amStatus === 'On Time' || pmStatus === 'On Time' || amStatus === 'Present' || pmStatus === 'Present') {
+      combinedStatus = 'On Time';
+    }
+
+    if (remarks && remarks.startsWith(', ')) {
+      remarks = remarks.substring(2);
+    }
+
+    return {
+      amTimeIn,
+      amTimeOut,
+      amStatus,
+      pmTimeIn,
+      pmTimeOut,
+      pmStatus,
+      combinedStatus,
+      remarks,
+      recordId
+    };
+  };
+
   // ====== FETCH MGDH EMPLOYEE DATA FOR ATTENDANCE ======
   const fetchMgdhEmployeeData = async (email) => {
     try {
@@ -185,6 +312,8 @@ function MGDHDashboard() {
           employeeId: userId,
           vacationLeave: 15,
           sickLeave: 15,
+          maternityLeave: 105,
+          paternityLeave: 7,
           createdAt: new Date().toISOString()
         });
         console.log('Created leave balance for MGDH');
@@ -537,201 +666,255 @@ function MGDHDashboard() {
     }
   };
 
+  // ====== GET STATUS BADGE FOR INDIVIDUAL AM/PM ======
+  const getStatusBadgeSimple = (status) => {
+    if (status === '—') {
+      return <span className="status-badge secondary">—</span>;
+    }
+    switch(status) {
+      case 'On Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 12, marginRight: 3 }} /> On Time</span>;
+      case 'Late':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 12, marginRight: 3 }} /> Late</span>;
+      case 'Under Time':
+        return <span className="status-badge warning"><WarningIcon style={{ fontSize: 12, marginRight: 3 }} /> Under Time</span>;
+      case 'Over Time':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 12, marginRight: 3 }} /> Over Time</span>;
+      case 'Present':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 12, marginRight: 3 }} /> Present</span>;
+      default:
+        return <span className="status-badge secondary">{status}</span>;
+    }
+  };
+
   // ====== ATTENDANCE TAB ======
-  const renderAttendance = () => (
-    <div className="mgdh-attendance-content">
-      <div className="section-header">
-        <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
-        <span className="stats-badge">{new Date().toLocaleDateString()}</span>
-      </div>
+  const renderAttendance = () => {
+    // Group attendance records by date for AM/PM display
+    const groupedRecords = getGroupedAttendance(attendanceRecords);
+    const sortedDates = Object.keys(groupedRecords).sort((a, b) => b.localeCompare(a));
+    
+    return (
+      <div className="mgdh-attendance-content">
+        <div className="section-header">
+          <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance (AM/PM)</h2>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="stats-badge">{new Date().toLocaleDateString()}</span>
+          </div>
+        </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-icon blue"><EventNoteIcon /></div>
-          <div className="stat-info">
-            <h3>Total Days</h3>
-            <p>{attendanceSummary.totalDays}</p>
+        <div className="stats-row">
+          <div className="stat-card">
+            <div className="stat-icon blue"><EventNoteIcon /></div>
+            <div className="stat-info">
+              <h3>Total Days</h3>
+              <p>{attendanceSummary.totalDays}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon green"><CheckCircleIcon /></div>
+            <div className="stat-info">
+              <h3>Present</h3>
+              <p>{attendanceSummary.presentDays}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon orange"><WarningIcon /></div>
+            <div className="stat-info">
+              <h3>Late</h3>
+              <p>{attendanceSummary.lateDays}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon purple"><WarningIcon /></div>
+            <div className="stat-info">
+              <h3>Under Time</h3>
+              <p>{attendanceSummary.underTimeDays || 0}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon success"><CheckCircleIcon /></div>
+            <div className="stat-info">
+              <h3>Over Time</h3>
+              <p>{attendanceSummary.overTimeDays || 0}</p>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-icon red"><CancelIcon /></div>
+            <div className="stat-info">
+              <h3>Absent</h3>
+              <p>{attendanceSummary.absentDays || 0}</p>
+            </div>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon green"><CheckCircleIcon /></div>
-          <div className="stat-info">
-            <h3>Present</h3>
-            <p>{attendanceSummary.presentDays}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon orange"><WarningIcon /></div>
-          <div className="stat-info">
-            <h3>Late</h3>
-            <p>{attendanceSummary.lateDays}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon purple"><WarningIcon /></div>
-          <div className="stat-info">
-            <h3>Under Time</h3>
-            <p>{attendanceSummary.underTimeDays || 0}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon success"><CheckCircleIcon /></div>
-          <div className="stat-info">
-            <h3>Over Time</h3>
-            <p>{attendanceSummary.overTimeDays || 0}</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon red"><CancelIcon /></div>
-          <div className="stat-info">
-            <h3>Absent</h3>
-            <p>{attendanceSummary.absentDays || 0}</p>
-          </div>
-        </div>
-      </div>
 
-      <div className="form-card-modern">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <AccessTimeIcon />
-          Today's Attendance
-        </h3>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '15px',
-          padding: '10px 0'
-        }}>
-          <div>
-            <p style={{ margin: '5px 0' }}>
-              <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
-            </p>
-            {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
-            {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
-            <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
-              <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
-            </p>
+        <div className="form-card-modern">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AccessTimeIcon />
+            Today's Attendance
+          </h3>
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'space-between', 
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '15px',
+            padding: '10px 0'
+          }}>
+            <div>
+              <p style={{ margin: '5px 0' }}>
+                <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
+              </p>
+              {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
+              {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
+              <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
+                <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button 
+                onClick={handleTimeIn} 
+                className="btn-time-in"
+                disabled={attendanceLoading}
+                style={{
+                  padding: '12px 30px',
+                  background: '#4a6fa5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  opacity: attendanceLoading ? 0.7 : 1
+                }}
+              >
+                <LoginIcon style={{ fontSize: 20 }} />
+                {attendanceLoading ? 'Processing...' : 'Time In'}
+              </button>
+              <button 
+                onClick={handleTimeOut} 
+                className="btn-time-out"
+                disabled={attendanceLoading || !isTimedIn}
+                style={{
+                  padding: '12px 30px',
+                  background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px'
+                }}
+              >
+                <Logout style={{ fontSize: 20 }} />
+                {attendanceLoading ? 'Processing...' : 'Time Out'}
+              </button>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button 
-              onClick={handleTimeIn} 
-              className="btn-time-in"
-              disabled={attendanceLoading}
-              style={{
-                padding: '12px 30px',
-                background: '#4a6fa5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: attendanceLoading ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                opacity: attendanceLoading ? 0.7 : 1
-              }}
-            >
-              <LoginIcon style={{ fontSize: 20 }} />
-              {attendanceLoading ? 'Processing...' : 'Time In'}
-            </button>
-            <button 
-              onClick={handleTimeOut} 
-              className="btn-time-out"
-              disabled={attendanceLoading || !isTimedIn}
-              style={{
-                padding: '12px 30px',
-                background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}
-            >
-              <Logout style={{ fontSize: 20 }} />
-              {attendanceLoading ? 'Processing...' : 'Time Out'}
-            </button>
-          </div>
+          {isTimedIn && isTimedOut && (
+            <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
+              You have completed your attendance entry. You can time in again if needed.
+            </div>
+          )}
+          {isTimedIn && !isTimedOut && (
+            <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
+              You are currently timed in. Click "Time Out" when leaving.
+            </div>
+          )}
         </div>
-        {isTimedIn && isTimedOut && (
-          <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
-            You have completed your attendance entry. You can time in again if needed.
-          </div>
-        )}
-        {isTimedIn && !isTimedOut && (
-          <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
-            You are currently timed in. Click "Time Out" when leaving.
-          </div>
-        )}
-      </div>
 
-      <div className="form-card-modern">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <TimelineIcon />
-          Attendance History
-        </h3>
-        <div className="table-container">
-          <table className="attendance-table-modern">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time In</th>
-                <th>Time Out</th>
-                <th>Status</th>
-                <th>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendanceRecords.length > 0 ? (
-                [...attendanceRecords]
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .slice(0, 20)
-                  .map(record => {
-                    let remarks = '';
-                    if (record.status === 'Under Time' && record.undertimeMinutes) {
-                      remarks = `⏱️ Undertime: ${record.undertimeMinutes} mins`;
-                    } else if (record.status === 'Over Time' && record.overtimeMinutes) {
-                      remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
-                    } else if (record.status === 'Late') {
-                      remarks = '⏰ Late arrival';
-                    } else if (record.status === 'On Time') {
-                      remarks = '✅ On time';
-                    }
-                    // For multiple entries, show entry number
-                    if (record.entryNumber && record.entryNumber > 1) {
-                      remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
-                    }
+        <div className="form-card-modern">
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <TimelineIcon />
+            Attendance History (AM/PM)
+            <span style={{ fontSize: '12px', color: '#888', fontWeight: 'normal', marginLeft: 'auto' }}>
+              {attendanceRecords.length} records
+            </span>
+          </h3>
+          <div className="table-container">
+            <table className="attendance-table-modern">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Date</th>
+                  <th>AM Time In</th>
+                  <th>AM Time Out</th>
+                  <th>AM Status</th>
+                  <th>PM Time In</th>
+                  <th>PM Time Out</th>
+                  <th>PM Status</th>
+                  <th>Daily Status</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attendanceRecords.length > 0 ? (
+                  sortedDates.slice(0, 20).map((date, index) => {
+                    const dateRecords = groupedRecords[date];
+                    const { amTimeIn, amTimeOut, amStatus, pmTimeIn, pmTimeOut, pmStatus, combinedStatus, remarks } = getAMPMEntriesWithStatus(dateRecords);
+                    
                     return (
-                      <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''}>
-                        <td>{record.date}</td>
-                        <td className="time-cell">{record.timeIn || '—'}</td>
-                        <td className="time-cell">{record.timeOut || '—'}</td>
-                        <td>
-                          {getAttendanceStatusBadge(record.status || 'Present')}
-                        </td>
-                        <td style={{ fontSize: '12px', color: '#666' }}>{remarks}</td>
+                      <tr key={date} className={combinedStatus === 'Late' || combinedStatus === 'Under Time' ? 'late-row' : ''}>
+                        <td>{index + 1}</td>
+                        <td>{date}</td>
+                        <td className="time-cell">{amTimeIn}</td>
+                        <td className="time-cell">{amTimeOut}</td>
+                        <td className="status-cell">{getStatusBadgeSimple(amStatus)}</td>
+                        <td className="time-cell">{pmTimeIn}</td>
+                        <td className="time-cell">{pmTimeOut}</td>
+                        <td className="status-cell">{getStatusBadgeSimple(pmStatus)}</td>
+                        <td>{getAttendanceStatusBadge(combinedStatus)}</td>
+                        <td style={{ fontSize: '12px', color: '#666' }}>{remarks || '—'}</td>
                       </tr>
                     );
                   })
-              ) : (
-                <tr>
-                  <td colSpan="5" className="empty-state">
-                    <p>No attendance records found</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  <tr>
+                    <td colSpan="10" className="empty-state">
+                      <p>No attendance records found</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {attendanceRecords.length > 20 && (
+            <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '13px', color: '#888' }}>
+              Showing last 20 days. 
+            </div>
+          )}
+          <div style={{ marginTop: '8px', fontSize: '11px', color: '#aaa', textAlign: 'center' }}>
+            <em>Entry #1 = AM, Entry #2 = PM | Daily status determined by PM (if exists), otherwise AM</em>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // ====== FETCH LEAVE BALANCES ======
+  const fetchLeaveBalances = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'leaveBalances'));
+      const balances = {};
+      querySnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        balances[data.employeeId] = {
+          id: doc.id,
+          ...data
+        };
+      });
+      setLeaveBalances(balances);
+      return balances;
+    } catch (error) {
+      console.error('Error fetching leave balances:', error);
+      return {};
+    }
+  };
 
   // ====== FETCH MGDH DATA WITH DEPARTMENT ORGANIZATION ======
   const fetchMGDHData = async () => {
@@ -785,6 +968,9 @@ function MGDHDashboard() {
       }));
       setAllEmployees(allEmployeesData);
 
+      // Fetch leave balances
+      const balances = await fetchLeaveBalances();
+
       console.log(`Total users: ${allUsers.length}, Total employees: ${allEmployeesData.length}`);
 
       // ====== ORGANIZE EMPLOYEES BY DEPARTMENT ======
@@ -792,7 +978,6 @@ function MGDHDashboard() {
       
       if (userDepartment && userDepartment.trim() !== '') {
         // Find employees from the same department
-        // First try to match by department field in employees collection
         const departmentEmployees = allEmployeesData.filter(emp => 
           emp.department === userDepartment || 
           emp.dept === userDepartment ||
@@ -827,7 +1012,13 @@ function MGDHDashboard() {
         console.warn('MGDH user has no department assigned. Showing all users.');
       }
       
-      setTeamMembers(teamList);
+      // Enhance team members with leave balance data
+      const teamWithBalances = teamList.map(member => ({
+        ...member,
+        leaveBalance: getEmployeeLeaveBalance(member.id, balances)
+      }));
+      
+      setTeamMembers(teamWithBalances);
       setTotalEmployees(teamList.length);
       
       // Store team member IDs for filtering
@@ -997,7 +1188,7 @@ function MGDHDashboard() {
     if (!user) return;
 
     // Listen to all changes - this will auto-update when new users register
-    const collections = ['users', 'employees', 'leaveRequests', 'attendance', 'documents', 'notifications'];
+    const collections = ['users', 'employees', 'leaveRequests', 'attendance', 'documents', 'notifications', 'leaveBalances'];
     collections.forEach(collectionName => {
       onSnapshot(collection(db, collectionName), () => {
         console.log(`${collectionName} collection changed, refreshing MGDH data...`);
@@ -1089,6 +1280,25 @@ function MGDHDashboard() {
         return;
       }
 
+      // Check if employee has enough leave balance before approving
+      if (action === 'approve') {
+        const balance = getEmployeeLeaveBalance(leaveData.employeeId);
+        let availableBalance = 0;
+        switch(leaveData.type) {
+          case 'Vacation': availableBalance = balance.vacationLeave; break;
+          case 'Sick': availableBalance = balance.sickLeave; break;
+          case 'Maternity': availableBalance = balance.maternityLeave; break;
+          case 'Paternity': availableBalance = balance.paternityLeave; break;
+          default: availableBalance = 0;
+        }
+        
+        if (leaveData.days > availableBalance) {
+          alert(`❌ Insufficient leave credits!\n${leaveData.employeeName || 'Employee'} has only ${availableBalance} ${leaveData.type} leave days available.\nRequested: ${leaveData.days} days.\nPlease reject this request or ask the employee to adjust.`);
+          setProcessingAction(false);
+          return;
+        }
+      }
+
       const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
       
       await updateDoc(doc(db, 'leaveRequests', leaveId), { 
@@ -1096,6 +1306,36 @@ function MGDHDashboard() {
         reviewedBy: userName,
         reviewedAt: new Date().toISOString()
       });
+
+      // If approved, deduct leave balance
+      if (action === 'approve') {
+        const balance = leaveBalances[leaveData.employeeId];
+        if (balance && balance.id) {
+          const updates = {};
+          switch(leaveData.type) {
+            case 'Vacation': updates.vacationLeave = (balance.vacationLeave || 0) - leaveData.days; break;
+            case 'Sick': updates.sickLeave = (balance.sickLeave || 0) - leaveData.days; break;
+            case 'Maternity': updates.maternityLeave = (balance.maternityLeave || 0) - leaveData.days; break;
+            case 'Paternity': updates.paternityLeave = (balance.paternityLeave || 0) - leaveData.days; break;
+            default: break;
+          }
+          await updateDoc(doc(db, 'leaveBalances', balance.id), {
+            ...updates,
+            updatedAt: new Date().toISOString()
+          });
+          
+          // Update local state
+          const updatedBalances = { ...leaveBalances };
+          if (updatedBalances[leaveData.employeeId]) {
+            updatedBalances[leaveData.employeeId] = {
+              ...updatedBalances[leaveData.employeeId],
+              ...updates,
+              updatedAt: new Date().toISOString()
+            };
+            setLeaveBalances(updatedBalances);
+          }
+        }
+      }
 
       await addDoc(collection(db, 'notifications'), {
         employeeId: leaveData.employeeId,
@@ -1106,7 +1346,7 @@ function MGDHDashboard() {
         leaveDays: leaveData.days,
         status: newStatus,
         reviewedBy: userName,
-        message: `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been ${newStatus.toLowerCase()} by ${userName}.`,
+        message: `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been ${newStatus.toLowerCase()} by ${userName}.${action === 'approve' ? ` ${leaveData.days} ${leaveData.type} days deducted.` : ''}`,
         type: 'leave_action',
         read: false,
         forEmployee: true,
@@ -1123,7 +1363,7 @@ function MGDHDashboard() {
         leaveDays: leaveData.days,
         status: newStatus,
         reviewedBy: userName,
-        message: `✅ ${leaveData.employeeName || 'Employee'}'s ${leaveData.type} leave request was ${newStatus.toLowerCase()} by ${userName}.`,
+        message: `✅ ${leaveData.employeeName || 'Employee'}'s ${leaveData.type} leave request was ${newStatus.toLowerCase()} by ${userName}.${action === 'approve' ? ` ${leaveData.days} ${leaveData.type} days deducted.` : ''}`,
         type: 'leave_action_confirmation',
         read: false,
         forEmployee: false,
@@ -1131,7 +1371,7 @@ function MGDHDashboard() {
         createdAt: new Date().toISOString()
       });
 
-      alert(`Leave request ${newStatus.toLowerCase()} successfully!\nEmployee has been notified.`);
+      alert(`Leave request ${newStatus.toLowerCase()} successfully!\n${action === 'approve' ? `✅ ${leaveData.days} ${leaveData.type} days deducted.` : ''}\nEmployee has been notified.`);
       
       await fetchMGDHData();
     } catch (error) {
@@ -1196,6 +1436,19 @@ function MGDHDashboard() {
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
+  };
+
+  // ====== VIEW EMPLOYEE BALANCE ======
+  const viewEmployeeBalance = (employeeId) => {
+    const emp = teamMembers.find(e => e.id === employeeId) || allEmployees.find(e => e.id === employeeId);
+    const balance = getEmployeeLeaveBalance(employeeId);
+    setSelectedEmployeeBalance({
+      name: emp?.fullName || emp?.name || getEmployeeName(employeeId),
+      department: emp?.department || emp?.dept || getEmployeeDepartment(employeeId) || 'N/A',
+      position: emp?.position || 'N/A',
+      ...balance
+    });
+    setShowBalanceModal(true);
   };
 
   if (loading) {
@@ -1324,18 +1577,6 @@ function MGDHDashboard() {
           </div>
         </div>
 
-        {/* <div className="stat-card-modern">
-          <div className="stat-card-content">
-            <div className="stat-icon-wrapper teal">
-              <BusinessIcon className="stat-icon" />
-            </div>
-            <div className="stat-text">
-              <h4>DEPARTMENTS</h4>
-              <p className="stat-number">{departments.length}</p>
-            </div>
-          </div>
-        </div> */}
-
         <div className="stat-card-modern">
           <div className="stat-card-content">
             <div className="stat-icon-wrapper red">
@@ -1367,33 +1608,68 @@ function MGDHDashboard() {
           {pendingLeaves.length === 0 ? (
             <p className="no-data">No pending leave requests</p>
           ) : (
-            pendingLeaves.slice(0, 4).map(leave => (
-              <div key={leave.id} className="pending-item">
-                <div className="pending-info">
-                  <span className="pending-name">{getEmployeeName(leave.employeeId)}</span>
-                  <span className="pending-type">{leave.type}</span>
-                  <span className="pending-days">{leave.days} days</span>
+            pendingLeaves.slice(0, 4).map(leave => {
+              const balance = getEmployeeLeaveBalance(leave.employeeId);
+              let availableBalance = 0;
+              switch(leave.type) {
+                case 'Vacation': availableBalance = balance.vacationLeave; break;
+                case 'Sick': availableBalance = balance.sickLeave; break;
+                case 'Maternity': availableBalance = balance.maternityLeave; break;
+                case 'Paternity': availableBalance = balance.paternityLeave; break;
+                default: availableBalance = 0;
+              }
+              const hasEnoughCredits = leave.days <= availableBalance;
+              
+              return (
+                <div key={leave.id} className="pending-item">
+                  <div className="pending-info">
+                    <span className="pending-name">{getEmployeeName(leave.employeeId)}</span>
+                    <span className="pending-type">{getLeaveTypeIcon(leave.type)} {leave.type}</span>
+                    <span className="pending-days">{leave.days} days</span>
+                    <span className={`pending-balance ${hasEnoughCredits ? 'sufficient' : 'insufficient'}`} 
+                      style={{ fontSize: '11px', marginLeft: '8px' }}>
+                      Balance: {availableBalance} days
+                      {!hasEnoughCredits && <span style={{ color: '#e74c3c', marginLeft: '4px' }}>⚠️</span>}
+                    </span>
+                  </div>
+                  <div className="pending-actions">
+                    <button 
+                      onClick={() => handleLeaveAction(leave.id, 'approve')}
+                      className="btn-approve"
+                      disabled={processingAction || !hasEnoughCredits}
+                      title={!hasEnoughCredits ? 'Insufficient leave credits' : 'Approve'}
+                      style={{ opacity: !hasEnoughCredits ? 0.5 : 1 }}
+                    >
+                      <CheckIcon />
+                    </button>
+                    <button 
+                      onClick={() => handleLeaveAction(leave.id, 'reject')}
+                      className="btn-reject"
+                      disabled={processingAction}
+                      title="Reject"
+                    >
+                      <ClearIcon />
+                    </button>
+                    <button 
+                      onClick={() => viewEmployeeBalance(leave.employeeId)}
+                      className="btn-view-balance"
+                      title="View Leave Balance"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#4a6fa5',
+                        cursor: 'pointer',
+                        padding: '4px 6px',
+                        borderRadius: '4px',
+                        fontSize: '14px'
+                      }}
+                    >
+                      <BalanceIcon style={{ fontSize: 18 }} />
+                    </button>
+                  </div>
                 </div>
-                <div className="pending-actions">
-                  <button 
-                    onClick={() => handleLeaveAction(leave.id, 'approve')}
-                    className="btn-approve"
-                    disabled={processingAction}
-                    title="Approve"
-                  >
-                    <CheckIcon />
-                  </button>
-                  <button 
-                    onClick={() => handleLeaveAction(leave.id, 'reject')}
-                    className="btn-reject"
-                    disabled={processingAction}
-                    title="Reject"
-                  >
-                    <ClearIcon />
-                  </button>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
           {pendingLeaves.length > 4 && (
             <button className="btn-view-all" onClick={() => setActiveTab('leave')}>
@@ -1432,7 +1708,9 @@ function MGDHDashboard() {
     <div className="mgdh-leave-content">
       <div className="section-header">
         <h2>Leave Requests</h2>
-        <span className="stats-badge">{pendingLeaves.length} pending</span>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <span className="stats-badge">{pendingLeaves.length} pending</span>
+        </div>
       </div>
 
       <div className="table-container">
@@ -1444,46 +1722,91 @@ function MGDHDashboard() {
               <th>Type</th>
               <th>Dates</th>
               <th>Days</th>
+              <th>Balance</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {allLeaveRequests.map(leave => (
-              <tr key={leave.id} className={leave.status === 'Pending' ? 'pending-row' : ''}>
-                <td>{getEmployeeName(leave.employeeId)}</td>
-                <td>{getEmployeePosition(leave.employeeId)}</td>
-                <td>{leave.type}</td>
-                <td>{leave.startDate} → {leave.endDate}</td>
-                <td>{leave.days}</td>
-                <td>{getStatusBadge(leave.status)}</td>
-                <td>
-                  {leave.status === 'Pending' && (
-                    <div className="action-group">
+            {allLeaveRequests.map(leave => {
+              const balance = getEmployeeLeaveBalance(leave.employeeId);
+              let availableBalance = 0;
+              switch(leave.type) {
+                case 'Vacation': availableBalance = balance.vacationLeave; break;
+                case 'Sick': availableBalance = balance.sickLeave; break;
+                case 'Maternity': availableBalance = balance.maternityLeave; break;
+                case 'Paternity': availableBalance = balance.paternityLeave; break;
+                default: availableBalance = 0;
+              }
+              const hasEnoughCredits = leave.days <= availableBalance;
+              
+              return (
+                <tr key={leave.id} className={leave.status === 'Pending' ? 'pending-row' : ''}>
+                  <td>{getEmployeeName(leave.employeeId)}</td>
+                  <td>{getEmployeePosition(leave.employeeId)}</td>
+                  <td>{getLeaveTypeIcon(leave.type)} {leave.type}</td>
+                  <td>{leave.startDate} → {leave.endDate}</td>
+                  <td>{leave.days}</td>
+                  <td>
+                    <span style={{ 
+                      color: getBalanceColor(availableBalance),
+                      fontWeight: '600',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      {availableBalance} days
+                      {!hasEnoughCredits && leave.status === 'Pending' && (
+                        <WarningIcon style={{ fontSize: 16, color: '#e74c3c' }} title="Insufficient credits" />
+                      )}
                       <button 
-                        onClick={() => handleLeaveAction(leave.id, 'approve')}
-                        className="btn-action approve"
-                        disabled={processingAction}
+                        onClick={() => viewEmployeeBalance(leave.employeeId)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#4a6fa5',
+                          cursor: 'pointer',
+                          padding: '2px 4px',
+                          borderRadius: '4px',
+                          fontSize: '14px'
+                        }}
+                        title="View Full Balance"
                       >
-                        <ThumbUpIcon style={{ fontSize: 16 }} /> Approve
+                        <BalanceIcon style={{ fontSize: 16 }} />
                       </button>
-                      <button 
-                        onClick={() => handleLeaveAction(leave.id, 'reject')}
-                        className="btn-action reject"
-                        disabled={processingAction}
-                      >
-                        <ThumbDownIcon style={{ fontSize: 16 }} /> Reject
-                      </button>
-                    </div>
-                  )}
-                  {leave.status !== 'Pending' && (
-                    <span className="no-action">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+                    </span>
+                  </td>
+                  <td>{getStatusBadge(leave.status)}</td>
+                  <td>
+                    {leave.status === 'Pending' && (
+                      <div className="action-group">
+                        <button 
+                          onClick={() => handleLeaveAction(leave.id, 'approve')}
+                          className="btn-action approve"
+                          disabled={processingAction || !hasEnoughCredits}
+                          style={{ opacity: !hasEnoughCredits ? 0.5 : 1 }}
+                          title={!hasEnoughCredits ? `Insufficient credits (${availableBalance} available)` : 'Approve'}
+                        >
+                          <ThumbUpIcon style={{ fontSize: 16 }} /> Approve
+                        </button>
+                        <button 
+                          onClick={() => handleLeaveAction(leave.id, 'reject')}
+                          className="btn-action reject"
+                          disabled={processingAction}
+                        >
+                          <ThumbDownIcon style={{ fontSize: 16 }} /> Reject
+                        </button>
+                      </div>
+                    )}
+                    {leave.status !== 'Pending' && (
+                      <span className="no-action">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
             {allLeaveRequests.length === 0 && (
-              <tr><td colSpan="7" className="empty-state">No leave requests found</td></tr>
+              <tr><td colSpan="8" className="empty-state">No leave requests found</td></tr>
             )}
           </tbody>
         </table>
@@ -1491,7 +1814,7 @@ function MGDHDashboard() {
     </div>
   );
 
-  // Team Overview Content
+  // Team Overview Content with Leave Balances
   const renderTeamOverview = () => (
     <div className="mgdh-team-content">
       <div className="section-header">
@@ -1505,6 +1828,8 @@ function MGDHDashboard() {
           const compliance = getComplianceStatus(member.id);
           const memberLeaves = allLeaveRequests.filter(l => l.employeeId === member.id);
           const pendingCount = memberLeaves.filter(l => l.status === 'Pending').length;
+          const balance = getEmployeeLeaveBalance(member.id);
+          const totalBalance = (balance.vacationLeave || 0) + (balance.sickLeave || 0);
 
           return (
             <div key={member.id} className="team-member-card">
@@ -1529,6 +1854,48 @@ function MGDHDashboard() {
                   <span className="stat-value">{pendingCount}</span>
                 </div>
               </div>
+              <div className="member-balance" style={{ 
+                marginTop: '8px', 
+                padding: '8px 12px', 
+                background: '#f0f4fe', 
+                borderRadius: '6px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: '100%',
+                fontSize: '12px'
+              }}>
+                <span style={{ fontWeight: '600', color: '#1a2a4a' }}>
+                  <BalanceIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                  Leave Balance:
+                </span>
+                <span>
+                  <span style={{ color: getBalanceColor(balance.vacationLeave) }}>VL: {balance.vacationLeave}</span>
+                  <span style={{ color: getBalanceColor(balance.sickLeave), marginLeft: '8px' }}>SL: {balance.sickLeave}</span>
+                  {balance.maternityLeave > 0 && (
+                    <span style={{ color: getBalanceColor(balance.maternityLeave), marginLeft: '8px' }}>ML: {balance.maternityLeave}</span>
+                  )}
+                  {balance.paternityLeave > 0 && (
+                    <span style={{ color: getBalanceColor(balance.paternityLeave), marginLeft: '8px' }}>PL: {balance.paternityLeave}</span>
+                  )}
+                  <button 
+                    onClick={() => viewEmployeeBalance(member.id)}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#4a6fa5',
+                      cursor: 'pointer',
+                      padding: '2px 4px',
+                      borderRadius: '4px',
+                      fontSize: '14px',
+                      marginLeft: '4px'
+                    }}
+                    title="View Full Balance"
+                  >
+                    <VisibilityIcon style={{ fontSize: 14 }} />
+                  </button>
+                </span>
+              </div>
             </div>
           );
         })}
@@ -1539,7 +1906,7 @@ function MGDHDashboard() {
     </div>
   );
 
-  // Notifications Content with Mark as Read/Unread
+  // Notifications Content
   const renderNotifications = () => {
     const sortedNotifications = [...allNotifications].sort((a, b) => 
       new Date(b.createdAt) - new Date(a.createdAt)
@@ -1710,6 +2077,106 @@ function MGDHDashboard() {
     );
   };
 
+  // ====== BALANCE MODAL ======
+  const renderBalanceModal = () => {
+    if (!showBalanceModal || !selectedEmployeeBalance) return null;
+
+    return (
+      <div className="modal-overlay" onClick={() => setShowBalanceModal(false)}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+          <div className="modal-header">
+            <h3>
+              <BalanceIcon style={{ fontSize: 22, marginRight: 10, verticalAlign: 'middle' }} />
+              Leave Balance
+            </h3>
+            <button className="modal-close" onClick={() => setShowBalanceModal(false)}>
+              <CloseIcon />
+            </button>
+          </div>
+          <div style={{ padding: '10px 0' }}>
+            <div style={{ 
+              background: '#f8fafd', 
+              padding: '16px', 
+              borderRadius: '10px',
+              marginBottom: '16px'
+            }}>
+              <p style={{ margin: 0, fontWeight: '600', fontSize: '18px' }}>
+                {selectedEmployeeBalance.name}
+              </p>
+              <p style={{ margin: '4px 0 0', color: '#666', fontSize: '14px' }}>
+                <BusinessIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                {selectedEmployeeBalance.department} | {selectedEmployeeBalance.position}
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ 
+                background: '#d4edda', 
+                padding: '14px', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '11px', color: '#155724', textTransform: 'uppercase' }}>
+                  <BeachAccessIcon style={{ fontSize: 14, verticalAlign: 'middle' }} /> Vacation
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#155724' }}>
+                  {selectedEmployeeBalance.vacationLeave || 0}
+                </div>
+                <div style={{ fontSize: '12px', color: '#155724' }}>days</div>
+              </div>
+              <div style={{ 
+                background: '#fff3cd', 
+                padding: '14px', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '11px', color: '#856404', textTransform: 'uppercase' }}>
+                  <SickIcon style={{ fontSize: 14, verticalAlign: 'middle' }} /> Sick
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#856404' }}>
+                  {selectedEmployeeBalance.sickLeave || 0}
+                </div>
+                <div style={{ fontSize: '12px', color: '#856404' }}>days</div>
+              </div>
+              <div style={{ 
+                background: '#cce5ff', 
+                padding: '14px', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '11px', color: '#004085', textTransform: 'uppercase' }}>
+                  <ChildCareIcon style={{ fontSize: 14, verticalAlign: 'middle' }} /> Maternity
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#004085' }}>
+                  {selectedEmployeeBalance.maternityLeave || 0}
+                </div>
+                <div style={{ fontSize: '12px', color: '#004085' }}>days</div>
+              </div>
+              <div style={{ 
+                background: '#d1ecf1', 
+                padding: '14px', 
+                borderRadius: '8px',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '11px', color: '#0c5460', textTransform: 'uppercase' }}>
+                  <ManIcon style={{ fontSize: 14, verticalAlign: 'middle' }} /> Paternity
+                </div>
+                <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0c5460' }}>
+                  {selectedEmployeeBalance.paternityLeave || 0}
+                </div>
+                <div style={{ fontSize: '12px', color: '#0c5460' }}>days</div>
+              </div>
+            </div>
+            <div style={{ marginTop: '16px', padding: '12px', background: '#f0f4fe', borderRadius: '8px', textAlign: 'center' }}>
+              <p style={{ margin: 0, fontSize: '13px', color: '#4a6fa5' }}>
+                💡 Employee can file leave if they have sufficient credits
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="mgdh-dashboard">
       {/* Notification Alert Banner */}
@@ -1769,6 +2236,8 @@ function MGDHDashboard() {
         {activeTab === 'team' && renderTeamOverview()}
         {activeTab === 'notifications' && renderNotifications()}
       </div>
+
+      {renderBalanceModal()}
     </div>
   );
 }

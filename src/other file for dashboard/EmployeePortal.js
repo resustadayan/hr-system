@@ -1,12 +1,13 @@
 // src/other file for dashboard/EmployeePortal.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../components/contexts/AuthContext';
 import { logout } from '../firebase';
 import imageCompression from 'browser-image-compression';
-import html2pdf from 'html2pdf.js';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 // Material-UI Icons
 import EditIcon from '@mui/icons-material/Edit';
@@ -202,6 +203,215 @@ function EmployeePortal() {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
+  };
+
+  // ====== PDF GENERATION WITH JSPDF ======
+  const downloadAttendancePDF = () => {
+    if (attendanceRecords.length === 0) {
+      alert('No attendance records to download.');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // Header
+      doc.setFontSize(18);
+      doc.setTextColor(26, 42, 74);
+      doc.text('ATTENDANCE RECORD', pageWidth / 2, 20, { align: 'center' });
+
+      doc.setFontSize(12);
+      doc.setTextColor(102, 102, 102);
+      const employeeInfo = `${employee?.fullName || ''} - ${employee?.position || ''} ${employee?.department ? '| ' + employee?.department : ''}`;
+      doc.text(employeeInfo, pageWidth / 2, 28, { align: 'center' });
+
+      doc.setFontSize(10);
+      doc.setTextColor(136, 136, 136);
+      const generatedDate = `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
+      doc.text(generatedDate, pageWidth / 2, 34, { align: 'center' });
+
+      // Summary Section
+      const summaryData = [
+        ['Total Days', attendanceSummary.totalDays || 0],
+        ['Present', attendanceSummary.presentDays || 0],
+        ['Late', attendanceSummary.lateDays || 0],
+        ['Under Time', attendanceSummary.underTimeDays || 0],
+        ['Over Time', attendanceSummary.overTimeDays || 0],
+        ['Absent', attendanceSummary.absentDays || 0]
+      ];
+
+      let yPos = 42;
+      doc.setFillColor(248, 250, 253);
+      doc.rect(14, yPos - 4, pageWidth - 28, 34, 'F');
+
+      let xPos = 20;
+      summaryData.forEach((item, index) => {
+        const colWidth = (pageWidth - 40) / 6;
+        const centerX = xPos + colWidth / 2;
+        
+        doc.setFontSize(9);
+        doc.setTextColor(0, 0, 0);
+        doc.text(item[0], centerX, yPos + 4, { align: 'center' });
+        
+        doc.setFontSize(14);
+        doc.setTextColor(74, 111, 165);
+        doc.text(String(item[1]), centerX, yPos + 16, { align: 'center' });
+        
+        xPos += colWidth;
+      });
+
+      // Table
+      yPos += 34;
+      
+      // Group records by date
+      const recordsByDate = {};
+      attendanceRecords.forEach(record => {
+        if (!recordsByDate[record.date]) {
+          recordsByDate[record.date] = [];
+        }
+        recordsByDate[record.date].push(record);
+      });
+
+      const sortedDates = Object.keys(recordsByDate).sort((a, b) => b.localeCompare(a));
+      
+      // Prepare table data
+      const tableData = sortedDates.slice(0, 100).map((date, index) => {
+        const dayRecords = recordsByDate[date].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
+        
+        let amTimeIn = '—';
+        let amTimeOut = '—';
+        let amStatus = '—';
+        let pmTimeIn = '—';
+        let pmTimeOut = '—';
+        let pmStatus = '—';
+        let combinedStatus = 'Present';
+        let remarks = '';
+
+        dayRecords.forEach(record => {
+          const entryNum = record.entryNumber || 1;
+          const timeInVal = record.timeIn || '';
+          const timeOutVal = record.timeOut || '';
+          const status = record.status || 'Present';
+          
+          if (entryNum === 1 || entryNum === 0) {
+            amTimeIn = timeInVal || '—';
+            amTimeOut = timeOutVal || '—';
+            amStatus = status;
+          } else if (entryNum === 2) {
+            pmTimeIn = timeInVal || '—';
+            pmTimeOut = timeOutVal || '—';
+            pmStatus = status;
+          }
+          
+          if (record.status === 'Under Time' && record.undertimeMinutes) {
+            remarks = remarks ? `${remarks}, Undertime: ${record.undertimeMinutes} mins` : `Undertime: ${record.undertimeMinutes} mins`;
+          } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+            remarks = remarks ? `${remarks}, Overtime: ${record.overtimeMinutes} mins` : `Overtime: ${record.overtimeMinutes} mins`;
+          } else if (record.status === 'Late') {
+            remarks = remarks ? `${remarks}, Late` : 'Late';
+          } else if (record.status === 'On Time') {
+            remarks = remarks ? `${remarks}, On time` : 'On time';
+          }
+        });
+
+        if (pmStatus && pmStatus !== '—' && pmStatus !== 'Present' && pmStatus !== 'On Time') {
+          combinedStatus = pmStatus;
+        } else if (amStatus && amStatus !== '—' && (amStatus === 'Late' || amStatus === 'Under Time')) {
+          combinedStatus = amStatus;
+        } else if (amStatus === 'Over Time' || pmStatus === 'Over Time') {
+          combinedStatus = 'Over Time';
+        } else if (amStatus === 'On Time' || pmStatus === 'On Time' || amStatus === 'Present' || pmStatus === 'Present') {
+          combinedStatus = 'On Time';
+        }
+
+        if (remarks && remarks.startsWith(', ')) {
+          remarks = remarks.substring(2);
+        }
+
+        return [
+          String(index + 1),
+          date,
+          amTimeIn,
+          amTimeOut,
+          amStatus,
+          pmTimeIn,
+          pmTimeOut,
+          pmStatus,
+          combinedStatus,
+          remarks || '—'
+        ];
+      });
+
+      doc.autoTable({
+        startY: yPos,
+        head: [['#', 'Date', 'AM In', 'AM Out', 'AM Status', 'PM In', 'PM Out', 'PM Status', 'Daily Status', 'Remarks']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [74, 111, 165],
+          textColor: [255, 255, 255],
+          fontSize: 8,
+          fontStyle: 'bold',
+          halign: 'left'
+        },
+        bodyStyles: {
+          fontSize: 7,
+          cellPadding: 2
+        },
+        columnStyles: {
+          0: { cellWidth: 10 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 18 },
+          3: { cellWidth: 18 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 18 },
+          6: { cellWidth: 18 },
+          7: { cellWidth: 22 },
+          8: { cellWidth: 25 },
+          9: { cellWidth: 35 }
+        },
+        didDrawCell: function(data) {
+          // Color status cells
+          if (data.section === 'body') {
+            const status = data.cell.raw;
+            const colIndex = data.column.index;
+            if (colIndex === 4 || colIndex === 7 || colIndex === 8) {
+              if (status === 'Late' || status === 'Under Time') {
+                data.cell.styles.textColor = [230, 126, 34];
+                data.cell.styles.fontStyle = 'bold';
+              } else if (status === 'Over Time') {
+                data.cell.styles.textColor = [39, 174, 96];
+                data.cell.styles.fontStyle = 'bold';
+              } else if (status === 'On Time' || status === 'Present') {
+                data.cell.styles.textColor = [46, 204, 113];
+                data.cell.styles.fontStyle = 'bold';
+              }
+            }
+          }
+        }
+      });
+
+      // Footer
+      const finalY = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(8);
+      doc.setTextColor(136, 136, 136);
+      doc.text('This is a system-generated attendance record.', pageWidth / 2, finalY, { align: 'center' });
+      doc.text('Entry #1 = AM, Entry #2 = PM | Daily status is determined by PM (if exists), otherwise AM', pageWidth / 2, finalY + 5, { align: 'center' });
+
+      // Save PDF
+      doc.save(`Attendance_Record_${employee?.fullName || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`);
+
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
   // ====== SMART FILE VIEWER ======
@@ -1322,6 +1532,7 @@ function EmployeePortal() {
   const pendingLeaves = leaveRequests.filter(l => l.status === 'Pending').length;
   const unreadNotifications = notifications.filter(n => !n.read).length;
 
+  // ====== EFFECTS ======
   // Handle mobile responsiveness
   useEffect(() => {
     const handleResize = () => {
@@ -1386,370 +1597,370 @@ function EmployeePortal() {
   };
 
   // ====== RENDER COMPLIANCE TAB ======
-const renderCompliance = () => {
-  const formData = selectedForm ? complianceFiles.find(f => f.id === selectedForm) : null;
+  const renderCompliance = () => {
+    const formData = selectedForm ? complianceFiles.find(f => f.id === selectedForm) : null;
 
-  return (
-    <div className="employee-compliance-content" style={{ padding: '20px' }}>
-      <div className="section-header" style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        marginBottom: '24px',
-        flexWrap: 'wrap',
-        gap: '12px'
-      }}>
-        <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a2a4a' }}>My Compliance</h2>
-        <button 
-          onClick={() => setShowUploadForm(true)} 
-          className="btn-add-modern"
-          style={{
-            padding: '6px 14px',
-            background: '#4a6fa5',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: '500',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <UploadIcon style={{ fontSize: 16 }} />
-          Upload Document
-        </button>
-      </div>
-
-      {/* Progress Card */}
-      <div style={{
-        background: 'white',
-        borderRadius: '12px',
-        padding: '20px 24px',
-        marginBottom: '24px',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-        border: '1px solid #eef2f7'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-          <span style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>Compliance Rate</span>
-          <span style={{ fontSize: '20px', fontWeight: '700', color: '#4a6fa5' }}>{complianceRate}%</span>
-        </div>
-        <div style={{ 
-          width: '100%', 
-          height: '8px', 
-          background: '#eef2f7', 
-          borderRadius: '4px',
-          overflow: 'hidden'
+    return (
+      <div className="employee-compliance-content" style={{ padding: '20px' }}>
+        <div className="section-header" style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: '24px',
+          flexWrap: 'wrap',
+          gap: '12px'
         }}>
-          <div 
-            style={{ 
-              width: `${complianceRate}%`,
-              height: '100%',
-              background: complianceRate === 100 ? '#27ae60' : '#4a6fa5',
-              borderRadius: '4px',
-              transition: 'width 0.5s ease'
-            }}
-          />
-        </div>
-        <p style={{ 
-          marginTop: '8px', 
-          fontSize: '13px', 
-          color: '#888',
-          marginBottom: 0
-        }}>
-          {documents.filter(d => d.status === 'Complete').length} of {documents.length} documents complete
-        </p>
-      </div>
-
-      {/* Forms Grid */}
-      <div style={{ marginBottom: '24px' }}>
-        <h3 style={{ 
-          fontSize: '16px', 
-          fontWeight: 'bold', 
-          color: '#333',
-          marginBottom: '8px'
-        }}>
-          <TextFieldsIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-          Compliance Forms
-        </h3>
-        <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
-          Click a form to view and edit the PDF
-        </p>
-        
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
-          gap: '12px' 
-        }}>
-          {complianceFiles.map(form => (
-            <button
-              key={form.id}
-              onClick={() => openPdfViewer(form.id)}
-              style={{
-                padding: '16px 20px',
-                background: 'white',
-                border: '1px solid #eef2f7',
-                borderRadius: '10px',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                textAlign: 'left',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = '#4a6fa5';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(74,111,165,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = '#eef2f7';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <DescriptionIcon style={{ fontSize: 28, color: '#4a6fa5' }} />
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontWeight: '500', fontSize: '13px', color: '#333' }}>{form.name}</div>
-                <div style={{ fontSize: '11px', color: '#999' }}>{form.type.toUpperCase()}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Uploaded Documents */}
-      <div className="documents-list">
-        <h3 style={{ 
-          fontSize: '16px', 
-          fontWeight: 'bold', 
-          color: '#333',
-          marginBottom: '12px'
-        }}>
-          Uploaded Documents
-        </h3>
-        {documents.map(doc => (
-          <div key={doc.id} className="doc-item-card">
-            <div className="doc-item-info">
-              <span className="doc-item-name">{doc.documentType}</span>
-              {getDocStatusBadge(doc.status)}
-            </div>
-            <div className="doc-item-actions">
-              {doc.fileUrl && (
-                <button
-                  onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
-                  className="btn-view-doc"
-                  style={{
-                    padding: '4px 12px',
-                    background: '#4a6fa5',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '13px'
-                  }}
-                >
-                  <VisibilityIcon style={{ fontSize: 16 }} />
-                  View
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
-        {documents.length === 0 && (
-          <p className="no-data">No documents found</p>
-        )}
-      </div>
-
-      {/* PDF Viewer Modal */}
-      {showEditModal && formData && (
-        <div 
-          className="modal-overlay" 
-          onClick={() => setShowEditModal(false)}
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px'
-          }}
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: '95vw', 
-              maxHeight: '95vh',
-              width: '95vw',
-              background: 'white',
-              borderRadius: '12px',
-              overflow: 'hidden',
+          <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a2a4a' }}>My Compliance</h2>
+          <button 
+            onClick={() => setShowUploadForm(true)} 
+            className="btn-add-modern"
+            style={{
+              padding: '6px 14px',
+              background: '#4a6fa5',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: 'pointer',
               display: 'flex',
-              flexDirection: 'column',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              alignItems: 'center',
+              gap: '6px'
             }}
           >
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              padding: '16px 20px',
-              borderBottom: '1px solid #eef2f7',
-              flexShrink: 0
-            }}>
-              <h3 style={{ fontSize: '18px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <PictureAsPdfIcon style={{ fontSize: 20 }} />
-                {formData.name}
-              </h3>
-              <button 
-                onClick={() => setShowEditModal(false)}
+            <UploadIcon style={{ fontSize: 16 }} />
+            Upload Document
+          </button>
+        </div>
+
+        {/* Progress Card */}
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          padding: '20px 24px',
+          marginBottom: '24px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          border: '1px solid #eef2f7'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <span style={{ fontSize: '14px', fontWeight: '500', color: '#333' }}>Compliance Rate</span>
+            <span style={{ fontSize: '20px', fontWeight: '700', color: '#4a6fa5' }}>{complianceRate}%</span>
+          </div>
+          <div style={{ 
+            width: '100%', 
+            height: '8px', 
+            background: '#eef2f7', 
+            borderRadius: '4px',
+            overflow: 'hidden'
+          }}>
+            <div 
+              style={{ 
+                width: `${complianceRate}%`,
+                height: '100%',
+                background: complianceRate === 100 ? '#27ae60' : '#4a6fa5',
+                borderRadius: '4px',
+                transition: 'width 0.5s ease'
+              }}
+            />
+          </div>
+          <p style={{ 
+            marginTop: '8px', 
+            fontSize: '13px', 
+            color: '#888',
+            marginBottom: 0
+          }}>
+            {documents.filter(d => d.status === 'Complete').length} of {documents.length} documents complete
+          </p>
+        </div>
+
+        {/* Forms Grid */}
+        <div style={{ marginBottom: '24px' }}>
+          <h3 style={{ 
+            fontSize: '16px', 
+            fontWeight: 'bold', 
+            color: '#333',
+            marginBottom: '8px'
+          }}>
+            <TextFieldsIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+            Compliance Forms
+          </h3>
+          <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
+            Click a form to view and edit the PDF
+          </p>
+          
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', 
+            gap: '12px' 
+          }}>
+            {complianceFiles.map(form => (
+              <button
+                key={form.id}
+                onClick={() => openPdfViewer(form.id)}
                 style={{
-                  padding: '6px 12px',
-                  fontSize: '20px',
-                  background: 'transparent',
-                  border: 'none',
+                  padding: '16px 20px',
+                  background: 'white',
+                  border: '1px solid #eef2f7',
+                  borderRadius: '10px',
                   cursor: 'pointer',
-                  color: '#666',
-                  borderRadius: '4px'
+                  transition: 'all 0.2s ease',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#f0f0f0'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#4a6fa5';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(74,111,165,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#eef2f7';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
               >
-                ✕
+                <DescriptionIcon style={{ fontSize: 28, color: '#4a6fa5' }} />
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontWeight: '500', fontSize: '13px', color: '#333' }}>{form.name}</div>
+                  <div style={{ fontSize: '11px', color: '#999' }}>{form.type.toUpperCase()}</div>
+                </div>
               </button>
-            </div>
-            
-            <div style={{ 
-              padding: '12px',
-              background: '#f5f7fa',
-              minHeight: isMobile ? '60vh' : '70vh',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center'
-            }}>
-              {formData.type === 'pdf' ? (
-                <iframe
-                  src={formData.file}
-                  style={{
-                    width: '100%',
-                    height: isMobile ? '60vh' : '75vh',
-                    border: 'none',
-                    borderRadius: '8px',
-                    background: 'white'
-                  }}
-                  title={formData.name}
-                />
-              ) : (
-                <img 
-                  src={formData.file} 
-                  alt={formData.name}
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: isMobile ? '60vh' : '75vh',
-                    objectFit: 'contain',
-                    borderRadius: '8px',
-                    background: 'white'
-                  }}
-                />
-              )}
-            </div>
+            ))}
           </div>
         </div>
-      )}
 
-      {/* Upload Form Modal */}
-      {showUploadForm && (
-        <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
-          <div className="modal-form" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Upload Document</h3>
-              <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
-            </div>
-            
-            <div className="form-grid">
-              <div className="form-group full-width">
-                <label>Document Type</label>
-                <select
-                  value={selectedDocType}
-                  onChange={(e) => setSelectedDocType(e.target.value)}
-                  className="upload-select"
-                  required
-                >
-                  <option value="">Select Document Type</option>
-                  <option value="Certificates">Certificates</option>
-                  <option value="DTR">Daily Time Record (DTR)</option>
-                  <option value="IPCR">Performance Commitment and Review (IPCR)</option>
-                  <option value="Leave">Leave Form</option>
-                  <option value="Personal Data Sheet">Personal Data Sheet</option>
-                  <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-                </select>
+        {/* Uploaded Documents */}
+        <div className="documents-list">
+          <h3 style={{ 
+            fontSize: '16px', 
+            fontWeight: 'bold', 
+            color: '#333',
+            marginBottom: '12px'
+          }}>
+            Uploaded Documents
+          </h3>
+          {documents.map(doc => (
+            <div key={doc.id} className="doc-item-card">
+              <div className="doc-item-info">
+                <span className="doc-item-name">{doc.documentType}</span>
+                {getDocStatusBadge(doc.status)}
               </div>
-              <div className="form-group full-width">
-                <label>Choose File</label>
-                <input
-                  type="file"
-                  onChange={handleFileSelect}
-                  className="upload-input"
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  required
-                />
-                {selectedFile && (
-                  <span className="file-name">
-                    {selectedFile.name} 
-                    ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                  </span>
+              <div className="doc-item-actions">
+                {doc.fileUrl && (
+                  <button
+                    onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
+                    className="btn-view-doc"
+                    style={{
+                      padding: '4px 12px',
+                      background: '#4a6fa5',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      fontSize: '13px'
+                    }}
+                  >
+                    <VisibilityIcon style={{ fontSize: 16 }} />
+                    View
+                  </button>
                 )}
               </div>
             </div>
-
-            <div className="form-actions">
-              <button 
-                onClick={handleDocumentUpload} 
-                className="btn-save" 
-                disabled={uploading || !selectedFile || !selectedDocType}
-              >
-                {uploading ? 'Uploading...' : 'Upload File'}
-              </button>
-              <button 
-                type="button" 
-                className="btn-cancel" 
-                onClick={() => setShowUploadForm(false)}
-                disabled={uploading}
-              >
-                Cancel
-              </button>
-            </div>
-            {uploadStatus && <p className="upload-status">{uploadStatus}</p>}
-            {uploading && uploadProgress > 0 && (
-              <div className="progress-bar" style={{ marginTop: '10px' }}>
-                <div 
-                  className="progress-fill" 
-                  style={{ 
-                    width: `${uploadProgress}%`,
-                    height: '6px',
-                    background: '#4a6fa5',
-                    borderRadius: '3px',
-                    transition: 'width 0.3s ease'
-                  }}
-                />
-                <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
-                  {uploadProgress}% uploaded
-                </span>
-              </div>
-            )}
-          </div>
+          ))}
+          {documents.length === 0 && (
+            <p className="no-data">No documents found</p>
+          )}
         </div>
-      )}
-    </div>
-  );
-};
+
+        {/* PDF Viewer Modal */}
+        {showEditModal && formData && (
+          <div 
+            className="modal-overlay" 
+            onClick={() => setShowEditModal(false)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: '20px'
+            }}
+          >
+            <div 
+              onClick={(e) => e.stopPropagation()} 
+              style={{ 
+                maxWidth: '95vw', 
+                maxHeight: '95vh',
+                width: '95vw',
+                background: 'white',
+                borderRadius: '12px',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+              }}
+            >
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '16px 20px',
+                borderBottom: '1px solid #eef2f7',
+                flexShrink: 0
+              }}>
+                <h3 style={{ fontSize: '18px', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <PictureAsPdfIcon style={{ fontSize: 20 }} />
+                  {formData.name}
+                </h3>
+                <button 
+                  onClick={() => setShowEditModal(false)}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '20px',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#666',
+                    borderRadius: '4px'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f0f0f0'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div style={{ 
+                padding: '12px',
+                background: '#f5f7fa',
+                minHeight: isMobile ? '60vh' : '70vh',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}>
+                {formData.type === 'pdf' ? (
+                  <iframe
+                    src={formData.file}
+                    style={{
+                      width: '100%',
+                      height: isMobile ? '60vh' : '75vh',
+                      border: 'none',
+                      borderRadius: '8px',
+                      background: 'white'
+                    }}
+                    title={formData.name}
+                  />
+                ) : (
+                  <img 
+                    src={formData.file} 
+                    alt={formData.name}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: isMobile ? '60vh' : '75vh',
+                      objectFit: 'contain',
+                      borderRadius: '8px',
+                      background: 'white'
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Upload Form Modal */}
+        {showUploadForm && (
+          <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
+            <div className="modal-form" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-header">
+                <h3>Upload Document</h3>
+                <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
+              </div>
+              
+              <div className="form-grid">
+                <div className="form-group full-width">
+                  <label>Document Type</label>
+                  <select
+                    value={selectedDocType}
+                    onChange={(e) => setSelectedDocType(e.target.value)}
+                    className="upload-select"
+                    required
+                  >
+                    <option value="">Select Document Type</option>
+                    <option value="Certificates">Certificates</option>
+                    <option value="DTR">Daily Time Record (DTR)</option>
+                    <option value="IPCR">Performance Commitment and Review (IPCR)</option>
+                    <option value="Leave">Leave Form</option>
+                    <option value="Personal Data Sheet">Personal Data Sheet</option>
+                    <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+                  </select>
+                </div>
+                <div className="form-group full-width">
+                  <label>Choose File</label>
+                  <input
+                    type="file"
+                    onChange={handleFileSelect}
+                    className="upload-input"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    required
+                  />
+                  {selectedFile && (
+                    <span className="file-name">
+                      {selectedFile.name} 
+                      ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-actions">
+                <button 
+                  onClick={handleDocumentUpload} 
+                  className="btn-save" 
+                  disabled={uploading || !selectedFile || !selectedDocType}
+                >
+                  {uploading ? 'Uploading...' : 'Upload File'}
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-cancel" 
+                  onClick={() => setShowUploadForm(false)}
+                  disabled={uploading}
+                >
+                  Cancel
+                </button>
+              </div>
+              {uploadStatus && <p className="upload-status">{uploadStatus}</p>}
+              {uploading && uploadProgress > 0 && (
+                <div className="progress-bar" style={{ marginTop: '10px' }}>
+                  <div 
+                    className="progress-fill" 
+                    style={{ 
+                      width: `${uploadProgress}%`,
+                      height: '6px',
+                      background: '#4a6fa5',
+                      borderRadius: '3px',
+                      transition: 'width 0.3s ease'
+                    }}
+                  />
+                  <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
+                    {uploadProgress}% uploaded
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ====== RENDER DASHBOARD ======
   const renderDashboard = () => (
@@ -1980,6 +2191,27 @@ const renderCompliance = () => {
         <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="stats-badge">{new Date().toLocaleDateString()}</span>
+          <button 
+            onClick={downloadAttendancePDF}
+            disabled={attendanceRecords.length === 0}
+            style={{
+              padding: '8px 18px',
+              background: attendanceRecords.length === 0 ? '#ccc' : '#e74c3c',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: attendanceRecords.length === 0 ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              opacity: attendanceRecords.length === 0 ? 0.6 : 1
+            }}
+          >
+            <PictureAsPdfIcon style={{ fontSize: 18 }} />
+            Download PDF
+          </button>
         </div>
       </div>
 
