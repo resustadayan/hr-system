@@ -150,7 +150,7 @@ function EmployeePortal() {
     },
     {
       id: 'ipcr',
-      name: 'Performance Commitment and Review (IPCR) 2026',
+      name: 'Individual Performance Commitment and Review (IPCR) 2026',
       file: ipcr2026,
       type: 'pdf',
     },
@@ -203,6 +203,331 @@ function EmployeePortal() {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
+  };
+
+  // ====== PRINT PAYSLIP FUNCTION ======
+  const printPayslip = (payrollData) => {
+    if (!payrollData) return;
+    
+    const employeeName = employee?.fullName || 'Unknown';
+    const department = employee?.department || 'N/A';
+    const positionName = employee?.position || 'N/A';
+    
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Payslip - ${employeeName}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: 'Times New Roman', Times, serif; 
+              background: white; 
+              padding: 40px;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              min-height: 100vh;
+            }
+            .payslip-container {
+              max-width: 700px;
+              width: 100%;
+              background: white;
+              border: 2px solid #1a2a4a;
+              padding: 30px 35px;
+              box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            }
+            .payslip-header {
+              text-align: center;
+              border-bottom: 3px double #1a2a4a;
+              padding-bottom: 15px;
+              margin-bottom: 20px;
+            }
+            .payslip-header h1 {
+              font-size: 22px;
+              font-weight: 700;
+              color: #1a2a4a;
+              letter-spacing: 2px;
+              text-transform: uppercase;
+              margin: 0;
+            }
+            .payslip-header h2 {
+              font-size: 16px;
+              font-weight: 600;
+              color: #4a6fa5;
+              margin: 4px 0 0 0;
+              letter-spacing: 1px;
+            }
+            .payslip-header p {
+              font-size: 13px;
+              color: #666;
+              margin: 4px 0 0 0;
+            }
+            .employee-info {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 8px 20px;
+              margin-bottom: 18px;
+              padding: 12px 16px;
+              background: #f8fafd;
+              border-radius: 6px;
+              border: 1px solid #eef2f7;
+            }
+            .employee-info .info-item {
+              display: flex;
+              flex-direction: column;
+            }
+            .employee-info .info-label {
+              font-size: 10px;
+              text-transform: uppercase;
+              color: #8a9bb5;
+              font-weight: 600;
+              letter-spacing: 0.5px;
+            }
+            .employee-info .info-value {
+              font-size: 14px;
+              font-weight: 600;
+              color: #1a2a4a;
+              margin-top: 2px;
+            }
+            .earnings-deductions {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 20px;
+              margin: 15px 0 18px 0;
+            }
+            .section-title {
+              font-size: 13px;
+              font-weight: 700;
+              text-transform: uppercase;
+              color: #4a6fa5;
+              border-bottom: 2px solid #4a6fa5;
+              padding-bottom: 4px;
+              margin-bottom: 8px;
+              letter-spacing: 0.5px;
+            }
+            .earning-item, .deduction-item {
+              display: flex;
+              justify-content: space-between;
+              padding: 4px 0;
+              font-size: 13px;
+              border-bottom: 1px dashed #f0f2f7;
+            }
+            .earning-item:last-child, .deduction-item:last-child {
+              border-bottom: none;
+            }
+            .earning-item .label, .deduction-item .label {
+              color: #333;
+            }
+            .earning-item .amount, .deduction-item .amount {
+              font-weight: 600;
+            }
+            .deduction-item .amount.negative {
+              color: #e74c3c;
+            }
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              padding: 10px 0 6px 0;
+              font-size: 16px;
+              font-weight: 700;
+              border-top: 3px double #1a2a4a;
+              margin-top: 6px;
+            }
+            .total-row .label {
+              color: #1a2a4a;
+            }
+            .total-row .amount {
+              color: #27ae60;
+              font-size: 18px;
+            }
+            .total-row .amount.negative {
+              color: #e74c3c;
+            }
+            .payslip-footer {
+              margin-top: 20px;
+              padding-top: 15px;
+              border-top: 2px solid #1a2a4a;
+              display: flex;
+              justify-content: space-between;
+              font-size: 11px;
+              color: #888;
+            }
+            .payslip-footer .footer-left {
+              text-align: left;
+            }
+            .payslip-footer .footer-right {
+              text-align: right;
+            }
+            .payslip-footer p {
+              margin: 2px 0;
+            }
+            .status-badge-print {
+              display: inline-block;
+              padding: 2px 14px;
+              border-radius: 12px;
+              font-size: 11px;
+              font-weight: 600;
+              background: ${payrollData.status === 'Paid' ? '#d4edda' : '#fff3cd'};
+              color: ${payrollData.status === 'Paid' ? '#155724' : '#856404'};
+            }
+            .print-btn-container {
+              text-align: center;
+              margin-top: 20px;
+            }
+            .print-btn {
+              padding: 10px 30px;
+              background: #4a6fa5;
+              color: white;
+              border: none;
+              border-radius: 6px;
+              font-size: 14px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.3s ease;
+            }
+            .print-btn:hover {
+              background: #3559c7;
+              transform: translateY(-2px);
+              box-shadow: 0 4px 12px rgba(74,111,165,0.3);
+            }
+            @media print {
+              body { padding: 0; }
+              .print-btn-container { display: none; }
+              .payslip-container { 
+                border: none; 
+                box-shadow: none;
+                padding: 20px 25px;
+              }
+              .employee-info {
+                background: #f8fafd;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              .status-badge-print {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="payslip-container">
+            <div class="payslip-header">
+              <h1>Payslip</h1>
+              <h2>Municipality of Pagbilao</h2>
+              <p>Human Resource Management Office</p>
+              <p style="font-size: 12px; color: #999; margin-top: 2px;">
+                ${payrollData.periodMonth} ${payrollData.periodYear}
+              </p>
+            </div>
+
+            <div class="employee-info">
+              <div class="info-item">
+                <span class="info-label">Employee Name</span>
+                <span class="info-value">${employeeName}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Position</span>
+                <span class="info-value">${positionName}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Department</span>
+                <span class="info-value">${department}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Period</span>
+                <span class="info-value">${payrollData.periodStart} → ${payrollData.periodEnd}</span>
+              </div>
+              <div class="info-item" style="grid-column: span 2;">
+                <span class="info-label">Status</span>
+                <span class="info-value"><span class="status-badge-print">${payrollData.status || 'Pending'}</span></span>
+              </div>
+            </div>
+
+            <div class="earnings-deductions">
+              <div>
+                <div class="section-title">Earnings</div>
+                <div class="earning-item">
+                  <span class="label">Basic Salary</span>
+                  <span class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</span>
+                </div>
+                ${payrollData.allowances > 0 ? `
+                  <div class="earning-item">
+                    <span class="label">Allowances</span>
+                    <span class="amount">₱${(payrollData.allowances || 0).toLocaleString()}</span>
+                  </div>
+                ` : ''}
+                <div class="total-row" style="border-top: 2px solid #4a6fa5; margin-top: 4px;">
+                  <span class="label">Total Earnings</span>
+                  <span class="amount">₱${(payrollData.basicSalary || 0).toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div>
+                <div class="section-title">Deductions</div>
+                ${payrollData.lateDeduction > 0 ? `
+                  <div class="deduction-item">
+                    <span class="label">Late Deduction (${payrollData.lateDays || 0} days)</span>
+                    <span class="amount negative">-₱${(payrollData.lateDeduction || 0).toLocaleString()}</span>
+                  </div>
+                ` : ''}
+                ${payrollData.leaveCreditsUsed > 0 ? `
+                  <div class="deduction-item">
+                    <span class="label">Leave Credits Used</span>
+                    <span class="amount negative">-${(payrollData.leaveCreditsUsed || 0).toFixed(1)} days</span>
+                  </div>
+                ` : ''}
+                ${payrollData.totalDeductions === 0 ? `
+                  <div style="padding: 6px 0; font-size: 13px; color: #27ae60;">
+                    No deductions
+                  </div>
+                ` : ''}
+                <div class="total-row" style="border-top: 2px solid #e74c3c; margin-top: 4px;">
+                  <span class="label">Total Deductions</span>
+                  <span class="amount negative">-₱${(payrollData.totalDeductions || 0).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="background: #f0f4fe; padding: 12px 20px; border-radius: 8px; margin-top: 6px; border: 1px solid #d4e0f7;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 16px; font-weight: 700; color: #1a2a4a;">NET PAY</span>
+                <span style="font-size: 24px; font-weight: 700; color: #4a6fa5;">₱${(payrollData.netPay || 0).toLocaleString()}</span>
+              </div>
+              ${payrollData.lateDays > 0 ? `
+                <div style="font-size: 12px; color: #e67e22; margin-top: 4px;">
+                  ⚠️ ${payrollData.lateDays} late day(s) this period
+                </div>
+              ` : ''}
+            </div>
+
+            <div class="payslip-footer">
+              <div class="footer-left">
+                <p>Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</p>
+                <p>Document ID: HR-PAY-${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}</p>
+              </div>
+              <div class="footer-right">
+                <p>This is a system-generated payslip</p>
+                <p>© ${new Date().getFullYear()} HRM Pagbilao, Quezon</p>
+              </div>
+            </div>
+
+            <div class="print-btn-container">
+              <button class="print-btn" onclick="window.print()">
+                🖨️ Print Payslip
+              </button>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+    }
   };
 
   // ====== PDF GENERATION WITH JSPDF ======
@@ -1894,10 +2219,11 @@ function EmployeePortal() {
                     required
                   >
                     <option value="">Select Document Type</option>
+                    <option value="Accomplishment">Accomplishment Report</option>
                     <option value="Certificates">Certificates</option>
                     <option value="DTR">Daily Time Record (DTR)</option>
-                    <option value="IPCR">Performance Commitment and Review (IPCR)</option>
-                    <option value="Leave">Leave Form</option>
+                    <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
+                    <option value="Pass Slip">Pass Slip</option>
                     <option value="Personal Data Sheet">Personal Data Sheet</option>
                     <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
                   </select>
@@ -1975,7 +2301,9 @@ function EmployeePortal() {
           <div className="stat-icon green"><CheckCircleIcon /></div>
           <div className="stat-info">
             <h3>Leave Balance</h3>
-            <p>{leaveBalance.vacationLeave || 0} VL / {leaveBalance.sickLeave || 0} SL</p>
+            <p>{leaveBalance.vacationLeave || 0} VL / {leaveBalance.sickLeave || 0} SL / 
+              {leaveBalance.maternityLeave || 0} ML / {leaveBalance.paternityLeave ||0} PL
+            </p>
           </div>
         </div>
         <div className="stat-card">
@@ -2759,9 +3087,11 @@ function EmployeePortal() {
               {isRefreshingPayroll ? 'Refreshing...' : 'Refresh'}
             </button>
             {hasCurrentPayroll && (
-              <span className="stats-badge">
-                {employeePayroll.periodMonth} {employeePayroll.periodYear}
-              </span>
+              <>
+                <span className="stats-badge">
+                  {employeePayroll.periodMonth} {employeePayroll.periodYear}
+                </span>
+              </>
             )}
           </div>
         </div>
@@ -3027,6 +3357,14 @@ function EmployeePortal() {
 
     const payroll = selectedPayroll;
 
+    // Print function for modal
+    const printModalPayslip = () => {
+      setShowPayslipModal(false);
+      setTimeout(() => {
+        printPayslip(payroll);
+      }, 300);
+    };
+
     return (
       <div className="modal-overlay" onClick={() => setShowPayslipModal(false)}>
         <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
@@ -3111,6 +3449,27 @@ function EmployeePortal() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button 
+                onClick={printModalPayslip}
+                style={{
+                  background: '#2c3e50',
+                  color: 'white',
+                  padding: '10px 24px',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}
+                onMouseEnter={(e) => { e.target.style.background = '#1a2a4a'; }}
+                onMouseLeave={(e) => { e.target.style.background = '#2c3e50'; }}
+              >
+                <PrintIcon style={{ fontSize: 18 }} />
+                Print Payslip
+              </button>
               <button 
                 onClick={() => setShowPayslipModal(false)}
                 className="btn-cancel"

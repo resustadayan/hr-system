@@ -1,4 +1,4 @@
-// src/components/Payroll.js - Enhanced with Position-Based Deductions (No Duplicates)
+// src/components/Payroll.js - Fixed Table Display
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, doc, updateDoc, addDoc, onSnapshot } from 'firebase/firestore';
@@ -8,27 +8,25 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import PeopleIcon from '@mui/icons-material/People';
-import BusinessIcon from '@mui/icons-material/Business';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import PersonIcon from '@mui/icons-material/Person';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
 import InboxIcon from '@mui/icons-material/Inbox';
 import WarningIcon from '@mui/icons-material/Warning';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import PaidIcon from '@mui/icons-material/Paid';
 import PendingIcon from '@mui/icons-material/Pending';
 import ReceiptIcon from '@mui/icons-material/Receipt';
-import PrintIcon from '@mui/icons-material/Print';
 import CancelIcon from '@mui/icons-material/Cancel';
 import WorkIcon from '@mui/icons-material/Work';
+import StarsIcon from '@mui/icons-material/Stars';
 
-// ====== CONFIGURATION (Must match EmployeePortal.js) ======
+// ====== CONFIGURATION ======
 const MONETARY_DEDUCTION_RATE = 1.50;
 const LEAVE_DEDUCTION_RATE = 0.5;
 const LEAVE_CREDIT_POSITIONS = ['Casual', 'Regular', 'Permanent', 'Probationary'];
 const MONETARY_DEDUCTION_POSITIONS = ['Job Order', 'JO', 'Contractual'];
+const OFFICE_START_TIME = '07:00';
 
 function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const [payrollRecords, setPayrollRecords] = useState([]);
@@ -50,15 +48,74 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     paidCount: 0,
     pendingCount: 0,
     totalLeaveCreditsUsed: 0,
-    totalMonetaryDeductions: 0
+    totalMonetaryDeductions: 0,
+    fullyCompliantCount: 0
   });
   const [loading, setLoading] = useState(true);
   const [processingPayroll, setProcessingPayroll] = useState(false);
   const [processMessage, setProcessMessage] = useState('');
   const [processSuccess, setProcessSuccess] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [complianceData, setComplianceData] = useState({});
 
-  // Real-time listener for payroll changes
+  // ====== HELPER FUNCTIONS ======
+  const timeToMinutes = (timeStr) => {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(':');
+    return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  };
+
+  const isLate = (timeInStr) => {
+    if (!timeInStr) return false;
+    const timeInMinutes = timeToMinutes(timeInStr);
+    const thresholdMinutes = timeToMinutes(OFFICE_START_TIME);
+    return timeInMinutes > thresholdMinutes;
+  };
+
+  // ====== FETCH COMPLIANCE DATA ======
+  const fetchComplianceData = async () => {
+    try {
+      const docSnapshot = await getDocs(collection(db, 'documents'));
+      const allDocs = docSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const complianceMap = {};
+      allDocs.forEach(doc => {
+        if (!complianceMap[doc.employeeId]) {
+          complianceMap[doc.employeeId] = { total: 0, complete: 0, pending: 0 };
+        }
+        complianceMap[doc.employeeId].total++;
+        if (doc.status === 'Complete') {
+          complianceMap[doc.employeeId].complete++;
+        } else if (doc.status === 'Pending Review') {
+          complianceMap[doc.employeeId].pending++;
+        }
+      });
+      
+      Object.keys(complianceMap).forEach(empId => {
+        const data = complianceMap[empId];
+        data.percentage = data.total > 0 ? Math.round((data.complete / data.total) * 100) : 0;
+        data.isFullyCompliant = data.percentage === 100 && data.total > 0;
+      });
+      
+      setComplianceData(complianceMap);
+      
+      const fullyCompliant = Object.values(complianceMap).filter(d => d.isFullyCompliant).length;
+      setSummary(prev => ({ ...prev, fullyCompliantCount: fullyCompliant }));
+      
+      return complianceMap;
+    } catch (error) {
+      console.error('Error fetching compliance data:', error);
+      return {};
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, 'documents'), async () => {
+      await fetchComplianceData();
+    });
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'payroll'), () => {
       fetchData();
@@ -69,8 +126,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      console.log('Fetching payroll data...');
-      
       const empSnapshot = await getDocs(collection(db, 'employees'));
       const empList = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setEmployees(empList);
@@ -99,12 +154,11 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       
       const lateDaysMap = {};
       monthAttendance.forEach(record => {
-        if (record.status === 'Late' || record.status === 'late') {
+        if (isLate(record.timeIn)) {
           lateDaysMap[record.employeeId] = (lateDaysMap[record.employeeId] || 0) + 1;
         }
       });
 
-      // Get leave balances for employees
       const leaveBalancesSnapshot = await getDocs(collection(db, 'leaveBalances'));
       const leaveBalancesMap = {};
       leaveBalancesSnapshot.docs.forEach(doc => {
@@ -117,31 +171,32 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         }
       });
 
+      await fetchComplianceData();
+
       const updatedPayroll = payrollList.map(record => {
         const emp = empList.find(e => e.id === record.employeeId);
         const position = emp?.position || emp?.employmentType || 'Unknown';
         const lateDays = lateDaysMap[record.employeeId] || 0;
+        const compliance = complianceData[record.employeeId] || { isFullyCompliant: false, percentage: 0 };
         
         const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
         const usesMonetaryDeduction = MONETARY_DEDUCTION_POSITIONS.includes(position);
         
         let lateDeduction = 0;
         let leaveCreditsUsed = 0;
+        let monetaryDeduction = 0;
         let deductionType = 'none';
         
         if (usesLeaveCredits && lateDays > 0) {
           leaveCreditsUsed = lateDays * LEAVE_DEDUCTION_RATE;
           deductionType = 'leave';
-          
-          const balance = leaveBalancesMap[record.employeeId];
-          if (balance) {
-            let remainingDeduction = leaveCreditsUsed;
-            let vacationDeduction = Math.min(remainingDeduction, balance.vacationLeave || 0);
-            remainingDeduction -= vacationDeduction;
-            let sickDeduction = Math.min(remainingDeduction, balance.sickLeave || 0);
-          }
+          const monthlySalary = record.basicSalary || 0;
+          const dailyRate = monthlySalary / 30;
+          const monetaryEquivalent = leaveCreditsUsed * dailyRate;
+          lateDeduction = monetaryEquivalent;
         } else if (usesMonetaryDeduction && lateDays > 0) {
-          lateDeduction = lateDays * MONETARY_DEDUCTION_RATE;
+          monetaryDeduction = lateDays * MONETARY_DEDUCTION_RATE;
+          lateDeduction = monetaryDeduction;
           deductionType = 'monetary';
         }
         
@@ -160,8 +215,10 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           position: position,
           deductionType: deductionType,
           leaveCreditsUsed: leaveCreditsUsed,
-          monetaryDeduction: lateDeduction,
-          deductionRate: usesLeaveCredits ? LEAVE_DEDUCTION_RATE : MONETARY_DEDUCTION_RATE
+          monetaryDeduction: monetaryDeduction,
+          deductionRate: usesLeaveCredits ? LEAVE_DEDUCTION_RATE : MONETARY_DEDUCTION_RATE,
+          isFullyCompliant: compliance.isFullyCompliant || false,
+          compliancePercentage: compliance.percentage || 0
         };
       });
 
@@ -185,6 +242,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     const paidCount = records.filter(r => r.status === 'Paid').length;
     const pendingCount = records.filter(r => r.status === 'Pending' || !r.status).length;
     
+    const fullyCompliantCount = Object.values(complianceData).filter(d => d.isFullyCompliant).length;
+    
     const deptMap = {};
     records.forEach(record => {
       const emp = empList.find(e => e.id === record.employeeId);
@@ -202,12 +261,13 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       departmentBreakdown,
       totalDeductions,
       totalEmployees: empList.length,
-      totalLateDeductions: totalMonetaryDeductions + (totalLeaveCreditsUsed * LEAVE_DEDUCTION_RATE),
+      totalLateDeductions: totalMonetaryDeductions + (totalLeaveCreditsUsed * (records[0]?.basicSalary / 30 || 0)),
       totalLateDays,
       paidCount,
       pendingCount,
       totalLeaveCreditsUsed,
-      totalMonetaryDeductions
+      totalMonetaryDeductions,
+      fullyCompliantCount
     });
   };
 
@@ -308,15 +368,13 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
     }
   };
 
-  // ====== PROCESS PAYROLL FUNCTION (WITH NO DUPLICATES) ======
+  // ====== PROCESS PAYROLL FUNCTION ======
   const processPayrollWithLateDeductions = async () => {
     setProcessingPayroll(true);
     setProcessMessage('Processing payroll...');
     setProcessSuccess(false);
     
     try {
-      console.log('Starting payroll processing...');
-      
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       const monthName = new Date(currentYear, currentMonth).toLocaleString('default', { month: 'long' });
@@ -340,12 +398,11 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
 
       const lateDaysMap = {};
       monthAttendance.forEach(record => {
-        if (record.status === 'Late' || record.status === 'late') {
+        if (isLate(record.timeIn)) {
           lateDaysMap[record.employeeId] = (lateDaysMap[record.employeeId] || 0) + 1;
         }
       });
 
-      // Get leave balances
       const leaveBalancesSnapshot = await getDocs(collection(db, 'leaveBalances'));
       const leaveBalancesMap = {};
       leaveBalancesSnapshot.docs.forEach(doc => {
@@ -358,17 +415,21 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         }
       });
 
+      const complianceMap = await fetchComplianceData();
+
       let createdCount = 0;
       let updatedCount = 0;
-      let errorCount = 0;
       let totalLeaveCreditsUsed = 0;
       let totalMonetaryDeductions = 0;
+      let newlyCompliantEmployees = [];
 
       for (const emp of empList) {
         try {
           const lateDays = lateDaysMap[emp.id] || 0;
           const position = emp.position || emp.employmentType || 'Unknown';
           const basicSalary = parseFloat(emp.salary || emp.basicSalary || emp.baseSalary || 0) || 0;
+          const dailyRate = basicSalary / 30;
+          const compliance = complianceMap[emp.id] || { isFullyCompliant: false, percentage: 0 };
           
           let lateDeduction = 0;
           let leaveCreditsUsed = 0;
@@ -381,6 +442,8 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           if (usesLeaveCredits && lateDays > 0) {
             leaveCreditsUsed = lateDays * LEAVE_DEDUCTION_RATE;
             deductionType = 'leave';
+            const monetaryEquivalent = leaveCreditsUsed * dailyRate;
+            lateDeduction = monetaryEquivalent;
             
             const balance = leaveBalancesMap[emp.id];
             if (balance) {
@@ -430,7 +493,7 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             periodMonth: monthName,
             periodYear: currentYear,
             basicSalary: basicSalary,
-            deductions: totalDeductions,
+            deductions: lateDeduction,
             lateDays: lateDays,
             lateDeduction: lateDeduction,
             monetaryDeduction: monetaryDeduction,
@@ -442,10 +505,17 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             netPay: netPay,
             status: 'Pending',
             hasLate: lateDays > 0,
-            processedAt: new Date().toISOString()
+            processedAt: new Date().toISOString(),
+            dailyRate: dailyRate,
+            monthDays: 30,
+            isFullyCompliant: compliance.isFullyCompliant || false,
+            compliancePercentage: compliance.percentage || 0
           };
 
-          // ====== FIX: Check for existing record using multiple criteria ======
+          if (compliance.isFullyCompliant && !newlyCompliantEmployees.some(e => e.id === emp.id)) {
+            newlyCompliantEmployees.push(emp);
+          }
+
           const existingQuery = query(
             collection(db, 'payroll'),
             where('employeeId', '==', emp.id),
@@ -454,7 +524,6 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           );
           const existingSnapshot = await getDocs(existingQuery);
 
-          // Also check for any records with the same periodMonth and periodYear
           const fallbackQuery = query(
             collection(db, 'payroll'),
             where('employeeId', '==', emp.id),
@@ -463,51 +532,61 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           );
           const fallbackSnapshot = await getDocs(fallbackQuery);
 
-          // Use the more specific query first, then fallback
-          let existingDoc = null;
           let existingDocId = null;
           
           if (!existingSnapshot.empty) {
-            existingDoc = existingSnapshot.docs[0];
-            existingDocId = existingDoc.id;
+            existingDocId = existingSnapshot.docs[0].id;
           } else if (!fallbackSnapshot.empty) {
-            // Check if any fallback record exists for this month/year
-            const fallbackDocs = fallbackSnapshot.docs;
-            // Find one that matches the period dates or use the first one
-            existingDoc = fallbackDocs[0];
-            existingDocId = existingDoc.id;
-            console.log(`Found fallback record for ${employeeName} (${monthName} ${currentYear})`);
+            existingDocId = fallbackSnapshot.docs[0].id;
           }
 
           if (existingDocId) {
-            // Update existing record - prevents duplicates
             await updateDoc(doc(db, 'payroll', existingDocId), payrollData);
             updatedCount++;
-            console.log(`Updated payroll for ${employeeName}`);
           } else {
-            // Create new record
             await addDoc(collection(db, 'payroll'), payrollData);
             createdCount++;
-            console.log(`Created payroll for ${employeeName}`);
           }
         } catch (error) {
           console.error(`Error processing payroll for employee ${emp.id}:`, error);
-          errorCount++;
+        }
+      }
+
+      if (newlyCompliantEmployees.length > 0) {
+        for (const emp of newlyCompliantEmployees) {
+          await addDoc(collection(db, 'notifications'), {
+            type: 'payroll_compliance_alert',
+            employeeId: emp.id,
+            employeeName: emp.fullName,
+            department: emp.department || 'N/A',
+            message: `✅ ${emp.fullName} is 100% compliant! This is reflected in their payroll record.`,
+            read: false,
+            forAdmin: true,
+            forEmployee: false,
+            createdAt: new Date().toISOString(),
+            priority: 'high',
+            category: 'payroll_compliance'
+          });
         }
       }
 
       const totalLateDays = Object.values(lateDaysMap).reduce((sum, val) => sum + val, 0);
       
       const successMessage = 
-        `Payroll processed successfully!\n` +
-        `Created: ${createdCount}, Updated: ${updatedCount}\n` +
-        `Total late days: ${totalLateDays}\n` +
-        `Leave credits used: ${totalLeaveCreditsUsed.toFixed(1)} days\n` +
-        `Monetary deductions: ₱${totalMonetaryDeductions.toFixed(2)}\n` +
-        `Status set to: Pending (Ready for review)\n` +
-        `Deduction types:\n` +
-        `   • Casual/Regular: Leave Credits (${LEAVE_DEDUCTION_RATE} day per late)\n` +
-        `   • Job Order: Monetary (₱${MONETARY_DEDUCTION_RATE} per late)`;
+        `✅ Payroll processed successfully!\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📊 Created: ${createdCount}, Updated: ${updatedCount}\n` +
+        `📅 Total late days: ${totalLateDays}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📝 DEDUCTION BREAKDOWN:\n` +
+        `   • Casual/Regular/Probationary: Leave Credits (${LEAVE_DEDUCTION_RATE} day per late)\n` +
+        `   • Job Order/Contractual: Monetary (₱${MONETARY_DEDUCTION_RATE} per late)\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `💰 Total leave credits used: ${totalLeaveCreditsUsed.toFixed(1)} days\n` +
+        `💰 Total monetary deductions: ₱${totalMonetaryDeductions.toFixed(2)}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📌 Status set to: Pending (Ready for review)\n` +
+        `${newlyCompliantEmployees.length > 0 ? `🎉 ${newlyCompliantEmployees.length} employee(s) are now 100% compliant!` : ''}`;
       
       setProcessMessage(successMessage);
       setProcessSuccess(true);
@@ -578,6 +657,52 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
       <span className="status-badge warning">
         <HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
         Pending
+      </span>
+    );
+  };
+
+  const getComplianceBadge = (record) => {
+    if (record.isFullyCompliant) {
+      return (
+        <span style={{
+          background: '#d4edda',
+          color: '#155724',
+          padding: '2px 10px',
+          borderRadius: '12px',
+          fontSize: '11px',
+          fontWeight: '600',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px'
+        }}>
+          <StarsIcon style={{ fontSize: 14 }} />
+          100% Compliant
+        </span>
+      );
+    }
+    if (record.compliancePercentage > 0) {
+      return (
+        <span style={{
+          background: '#fff3cd',
+          color: '#856404',
+          padding: '2px 10px',
+          borderRadius: '12px',
+          fontSize: '11px',
+          fontWeight: '600'
+        }}>
+          {record.compliancePercentage}% Complete
+        </span>
+      );
+    }
+    return (
+      <span style={{
+        background: '#f8f9fa',
+        color: '#6c757d',
+        padding: '2px 10px',
+        borderRadius: '12px',
+        fontSize: '11px'
+      }}>
+        No Docs
       </span>
     );
   };
@@ -666,12 +791,9 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
           padding: '14px 20px',
           borderRadius: '8px',
           marginBottom: '20px',
-          background: processSuccess ? '#e4f5e9' : 
-                     processMessage.includes('⚠️') ? '#fef0e0' : '#fde8e8',
-          color: processSuccess ? '#27ae60' : 
-                 processMessage.includes('⚠️') ? '#e67e22' : '#e74c3c',
-          border: `1px solid ${processSuccess ? '#b8e6c9' : 
-                   processMessage.includes('⚠️') ? '#fce8b3' : '#fcc'}`,
+          background: processSuccess ? '#e4f5e9' : '#fde8e8',
+          color: processSuccess ? '#27ae60' : '#e74c3c',
+          border: `1px solid ${processSuccess ? '#b8e6c9' : '#fcc'}`,
           fontWeight: '500',
           whiteSpace: 'pre-line'
         }}>
@@ -719,23 +841,26 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <small>Casual & Regular</small>
           </div>
         </div>
+        <div className="stat-card red">
+          <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 30 }} /></div>
+          <div className="stat-info">
+            <h3>Late Deductions</h3>
+            <p>₱{summary.totalMonetaryDeductions?.toFixed(2) || 0}</p>
+            <small>Monetary</small>
+          </div>
+        </div>
+        <div className="stat-card gold">
+          <div className="stat-icon"><StarsIcon style={{ fontSize: 30, color: '#ffd700' }} /></div>
+          <div className="stat-info">
+            <h3>Fully Compliant</h3>
+            <p>{summary.fullyCompliantCount || 0}</p>
+            <small>Employees</small>
+          </div>
+        </div>
       </div>
 
       {/* Filter Bar */}
       <div className="search-filter-bar">
-        <div className="filter-group">
-          {/* <BusinessIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
-          <select
-            value={filterDepartment}
-            onChange={(e) => setFilterDepartment(e.target.value)}
-            className="filter-select"
-          >
-            <option value="all">All Departments</option>
-            {departments.map(dept => (
-              <option key={dept} value={dept}>{dept}</option>
-            ))}
-          </select> */}
-        </div>
         <div className="filter-group">
           <WorkIcon style={{ fontSize: 18, marginRight: 8, verticalAlign: 'middle', color: '#8a9bb5' }} />
           <select
@@ -768,50 +893,28 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
         </div>
       </div>
 
-      {/* Department Breakdown */}
-      {summary.departmentBreakdown.length > 0 && (
-        <div className="chart-section-modern">
-          <h3><BarChartIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} /> Payroll</h3>
-          <div className="dept-breakdown-modern">
-            {summary.departmentBreakdown.map((dept, index) => {
-              const percentage = summary.totalPayroll > 0 ? (dept.amount / summary.totalPayroll) * 100 : 0;
-              const colors = ['#4a6fa5', '#27ae60', '#e67e22', '#7c3aed', '#e74c3c', '#1abc9c', '#f39c12', '#3498db'];
-              const color = colors[index % colors.length];
-              
-              return (
-                <div key={dept.dept} className="dept-row-modern">
-                  <div className="dept-header">
-                    <span className="dept-name">{dept.dept}</span>
-                    <span className="dept-percentage">{percentage.toFixed(1)}%</span>
-                  </div>
-                  <div className="dept-bar-modern">
-                    <div className="dept-fill-modern" style={{ width: `${Math.max(percentage, 2)}%`, background: color }}>
-                      <span>₱{dept.amount.toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Payroll Records Table */}
-      <div className="table-container">
-        <table className="payroll-table-modern">
+      {/* Payroll Records Table - IMPROVED LAYOUT */}
+      <div className="table-container" style={{ overflowX: 'auto' }}>
+        <table className="payroll-table-modern" style={{ 
+          width: '100%', 
+          minWidth: '1200px',
+          borderCollapse: 'collapse',
+          fontSize: '13px'
+        }}>
           <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Position</th>
-              <th>Department</th>
-              <th>Period</th>
-              <th>Basic Salary</th>
-              <th>Late Days</th>
-              <th>Deduction Details</th>
-              <th>Total Deductions</th>
-              <th>Net Pay</th>
-              <th>Status</th>
-              <th>Actions</th>
+            <tr style={{ background: '#4a6fa5', color: 'white' }}>
+              <th style={{ padding: '12px 14px', textAlign: 'left', whiteSpace: 'nowrap', minWidth: '160px' }}>Employee</th>
+              <th style={{ padding: '12px 14px', textAlign: 'left', whiteSpace: 'nowrap', minWidth: '100px' }}>Position</th>
+              <th style={{ padding: '12px 14px', textAlign: 'left', whiteSpace: 'nowrap', minWidth: '100px' }}>Department</th>
+              <th style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap', minWidth: '100px' }}>Compliance</th>
+              <th style={{ padding: '12px 14px', textAlign: 'left', whiteSpace: 'nowrap', minWidth: '120px' }}>Period</th>
+              <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', minWidth: '100px' }}>Basic Salary</th>
+              <th style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap', minWidth: '70px' }}>Late Days</th>
+              <th style={{ padding: '12px 14px', textAlign: 'left', whiteSpace: 'nowrap', minWidth: '140px' }}>Deduction Details</th>
+              <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', minWidth: '100px' }}>Total Deductions</th>
+              <th style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap', minWidth: '110px' }}>Net Pay</th>
+              <th style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap', minWidth: '90px' }}>Status</th>
+              <th style={{ padding: '12px 14px', textAlign: 'center', whiteSpace: 'nowrap', minWidth: '110px' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -821,106 +924,177 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
                 const usesLeaveCredits = LEAVE_CREDIT_POSITIONS.includes(position);
                 const isLeave = record.deductionType === 'leave';
                 const isMonetary = record.deductionType === 'monetary';
+                const dailyRate = record.basicSalary / 30;
+                const monetaryEquivalent = isLeave ? record.leaveCreditsUsed * dailyRate : 0;
+                const isCompliant = record.isFullyCompliant || false;
+                const employeeName = getEmployeeName(record.employeeId);
+                const department = getEmployeeDepartment(record.employeeId);
                 
                 return (
-                  <tr key={record.id} className={record.hasLate ? 'has-late' : ''}>
-                    <td>
-                      <div className="employee-info">
-                        <div className="employee-avatar small">
-                          {getEmployeeName(record.employeeId).charAt(0)}
+                  <tr key={record.id} style={{ 
+                    borderBottom: '1px solid #f0f2f7',
+                    background: isCompliant ? '#f0faf4' : 'white',
+                    transition: 'background 0.2s ease'
+                  }}>
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #4a6fa5, #3559c7)',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: '700',
+                          fontSize: '14px',
+                          flexShrink: 0
+                        }}>
+                          {employeeName.charAt(0)}
                         </div>
-                        <span className="employee-name">{getEmployeeName(record.employeeId)}</span>
+                        <span style={{ fontWeight: '600', color: '#1a2a4a' }}>{employeeName}</span>
+                        {isCompliant && (
+                          <span style={{
+                            background: '#27ae60',
+                            color: 'white',
+                            fontSize: '9px',
+                            padding: '1px 8px',
+                            borderRadius: '10px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '2px'
+                          }}>
+                            <StarsIcon style={{ fontSize: 10 }} />
+                            100%
+                          </span>
+                        )}
                       </div>
                     </td>
-                    <td>
-                      <span className="position-tag" style={{
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                      <span style={{
                         background: usesLeaveCredits ? '#d4edda' : '#fff3cd',
                         color: usesLeaveCredits ? '#155724' : '#856404',
                         padding: '2px 10px',
                         borderRadius: '12px',
                         fontSize: '12px',
-                        fontWeight: '600'
+                        fontWeight: '600',
+                        display: 'inline-block'
                       }}>
                         {position}
                       </span>
                     </td>
-                    <td><span className="dept-tag">{getEmployeeDepartment(record.employeeId)}</span></td>
-                    <td>
-                      <div className="period-cell">
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                      <span style={{
+                        background: '#eef2f7',
+                        color: '#2c3e50',
+                        padding: '2px 10px',
+                        borderRadius: '12px',
+                        fontSize: '12px'
+                      }}>
+                        {department}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      {getComplianceBadge(record)}
+                    </td>
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', fontSize: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <span>{record.periodStart}</span>
-                        <span className="arrow">→</span>
+                        <span style={{ color: '#b0c4de' }}>→</span>
                         <span>{record.periodEnd}</span>
                       </div>
                     </td>
-                    <td className="amount-cell">₱{record.basicSalary?.toLocaleString() || '0'}</td>
-                    <td className="amount-cell">
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '500' }}>
+                      ₱{record.basicSalary?.toLocaleString() || '0'}
+                    </td>
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
                       {record.lateDays > 0 ? (
-                        <span style={{ color: '#e67e22', fontWeight: '600' }}>{record.lateDays} days</span>
+                        <span style={{ color: '#e67e22', fontWeight: '600' }}>{record.lateDays}</span>
                       ) : (
                         <span style={{ color: '#27ae60' }}>0</span>
                       )}
                     </td>
-                    <td className="deduction-cell">
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', fontSize: '12px' }}>
                       {isLeave && record.lateDays > 0 ? (
-                        <span style={{ fontSize: '12px', color: '#27ae60' }}>
-                          Leave Credits: {record.leaveCreditsUsed?.toFixed(1) || 0} days used
-                          <br />
-                          <span style={{ fontSize: '11px', color: '#6c757d' }}>Rate: {LEAVE_DEDUCTION_RATE} day/late</span>
-                        </span>
+                        <div style={{ color: '#27ae60' }}>
+                          <div>Leave: {record.leaveCreditsUsed?.toFixed(1) || 0} days</div>
+                          <div style={{ fontSize: '11px', color: '#6c757d' }}>
+                            Rate: {LEAVE_DEDUCTION_RATE} day/late
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#6c757d' }}>
+                            ₱{monetaryEquivalent.toFixed(2)}
+                          </div>
+                        </div>
                       ) : isMonetary && record.lateDays > 0 ? (
-                        <span style={{ fontSize: '12px', color: '#e74c3c' }}>
-                          Monetary: ₱{record.monetaryDeduction?.toFixed(2) || '0'}
-                          <br />
-                          <span style={{ fontSize: '11px', color: '#6c757d' }}>Rate: ₱{MONETARY_DEDUCTION_RATE}/late</span>
-                        </span>
+                        <div style={{ color: '#e74c3c' }}>
+                          <div>Monetary: ₱{record.monetaryDeduction?.toFixed(2) || '0'}</div>
+                          <div style={{ fontSize: '11px', color: '#6c757d' }}>
+                            Rate: ₱{MONETARY_DEDUCTION_RATE}/late
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#6c757d' }}>
+                            {record.lateDays} × ₱{MONETARY_DEDUCTION_RATE}
+                          </div>
+                        </div>
                       ) : (
                         <span style={{ color: '#27ae60' }}>No deduction</span>
                       )}
                     </td>
-                    <td className="deduction-cell">
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'right' }}>
                       {record.totalDeductions > 0 ? (
-                        <span style={{ color: '#e74c3c', fontWeight: '600' }}>
+                        <div style={{ color: '#e74c3c', fontWeight: '600' }}>
                           ₱{record.totalDeductions?.toLocaleString() || '0'}
                           {isLeave && record.leaveCreditsUsed > 0 && (
-                            <span style={{ fontSize: '11px', display: 'block', color: '#27ae60' }}>
-                              (Leave: {record.leaveCreditsUsed.toFixed(1)} days)
-                            </span>
+                            <div style={{ fontSize: '11px', color: '#27ae60', fontWeight: '400' }}>
+                              ({record.leaveCreditsUsed.toFixed(1)} days)
+                            </div>
                           )}
-                          {isMonetary && record.monetaryDeduction > 0 && (
-                            <span style={{ fontSize: '11px', display: 'block', color: '#e74c3c' }}>
-                              (Monetary: ₱{record.monetaryDeduction.toFixed(2)})
-                            </span>
-                          )}
-                        </span>
+                        </div>
                       ) : (
                         '₱0'
                       )}
                     </td>
-                    <td className="net-pay-cell">
-                      {record.hasLate ? (
-                        <span style={{ color: '#e67e22', fontWeight: '700' }}>₱{record.netPay?.toLocaleString() || '0'}</span>
-                      ) : (
-                        <span style={{ color: '#27ae60', fontWeight: '700' }}>₱{record.netPay?.toLocaleString() || '0'}</span>
-                      )}
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'right' }}>
+                      <span style={{ 
+                        fontWeight: '700',
+                        color: record.hasLate ? '#e67e22' : '#27ae60',
+                        fontSize: '15px'
+                      }}>
+                        ₱{record.netPay?.toLocaleString() || '0'}
+                      </span>
                     </td>
-                    <td>{getStatusBadge(record)}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      {getStatusBadge(record)}
+                    </td>
+                    <td style={{ padding: '10px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
+                      <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', flexWrap: 'wrap' }}>
                         {(record.status === 'Pending' || !record.status) && (
                           <button
                             onClick={() => updatePayrollStatus(record.id, 'Paid')}
                             disabled={updatingStatus}
                             style={{
-                              padding: '4px 10px',
+                              padding: '4px 12px',
                               background: '#27ae60',
                               color: 'white',
                               border: 'none',
-                              borderRadius: '4px',
+                              borderRadius: '6px',
                               fontSize: '11px',
+                              fontWeight: '600',
                               cursor: updatingStatus ? 'not-allowed' : 'pointer',
-                              display: 'flex',
+                              display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '4px',
+                              transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!updatingStatus) {
+                                e.target.style.background = '#1e9e55';
+                                e.target.style.transform = 'translateY(-1px)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.background = '#27ae60';
+                              e.target.style.transform = 'translateY(0)';
                             }}
                           >
                             <PaidIcon style={{ fontSize: 14 }} />
@@ -932,16 +1106,26 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
                             onClick={() => updatePayrollStatus(record.id, 'Pending')}
                             disabled={updatingStatus}
                             style={{
-                              padding: '4px 10px',
+                              padding: '4px 12px',
                               background: '#e67e22',
                               color: 'white',
                               border: 'none',
-                              borderRadius: '4px',
+                              borderRadius: '6px',
                               fontSize: '11px',
+                              fontWeight: '600',
                               cursor: updatingStatus ? 'not-allowed' : 'pointer',
-                              display: 'flex',
+                              display: 'inline-flex',
                               alignItems: 'center',
-                              gap: '4px'
+                              gap: '4px',
+                              transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              if (!updatingStatus) {
+                                e.target.style.background = '#d35400';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.style.background = '#e67e22';
                             }}
                           >
                             <PendingIcon style={{ fontSize: 14 }} />
@@ -955,16 +1139,42 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
               })
             ) : (
               <tr>
-                <td colSpan="11" className="empty-state">
-                  <InboxIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 10px' }} />
-                  <p>No payroll records found</p>
-                  <span>Click "Process Payroll" to generate records with position-based deductions</span>
+                <td colSpan="12" style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <div style={{ color: '#b0c4de' }}>
+                    <InboxIcon style={{ fontSize: 48, display: 'block', margin: '0 auto 10px' }} />
+                    <p style={{ fontSize: '18px', fontWeight: '600', color: '#1a2a4a', margin: 0 }}>No payroll records found</p>
+                    <span style={{ fontSize: '14px', color: '#8a9bb5' }}>Click "Process Payroll" to generate records</span>
+                  </div>
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <style>{`
+        .stat-card.gold {
+          background: linear-gradient(135deg, #ffd700, #f39c12);
+        }
+        .stat-card.gold .stat-info h3 {
+          color: #fff;
+        }
+        .stat-card.gold .stat-info p {
+          color: #fff;
+        }
+        .stat-card.gold .stat-info small {
+          color: rgba(255,255,255,0.8);
+        }
+        .stat-card.gold .stat-icon svg {
+          color: #fff;
+        }
+        .payroll-table-modern tbody tr:hover {
+          background: #f8fafd !important;
+        }
+        .payroll-table-modern tbody tr.compliant-row:hover {
+          background: #e8f5ed !important;
+        }
+      `}</style>
     </div>
   );
 }

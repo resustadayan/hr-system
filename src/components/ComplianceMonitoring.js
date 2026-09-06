@@ -1,4 +1,4 @@
-// src/components/ComplianceMonitoring.js
+// src/components/ComplianceMonitoring.js - Enhanced with Completion Notifications
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, updateDoc, doc, query, where, onSnapshot, addDoc } from 'firebase/firestore';
@@ -24,6 +24,8 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import PrintIcon from '@mui/icons-material/Print';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DoneAllIcon from '@mui/icons-material/DoneAll';
+import StarsIcon from '@mui/icons-material/Stars';
 
 function ComplianceMonitoring() {
   const location = useLocation();
@@ -34,13 +36,19 @@ function ComplianceMonitoring() {
   const [loading, setLoading] = useState(false);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [toastType, setToastType] = useState('info'); // 'info', 'success', 'warning'
   const [pendingCount, setPendingCount] = useState(0);
   const [previewFile, setPreviewFile] = useState(false);
   const [previewFileUrl, setPreviewFileUrl] = useState('');
   const [previewFileName, setPreviewFileName] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [completionAlerts, setCompletionAlerts] = useState([]);
   const notificationRef = useRef(null);
   const complianceRef = useRef(null);
+
+  // ====== COMPLETION TRACKING ======
+  // Track which employees were recently completed
+  const recentlyCompleted = useRef(new Set());
 
   // ====== SMART FILE VIEWER ======
   const openFileViewer = (fileUrl, fileName) => {
@@ -48,7 +56,6 @@ function ComplianceMonitoring() {
     
     const extension = fileName ? fileName.split('.').pop().toLowerCase() : '';
     
-    // For images - fetch and display as blob URL (prevents download)
     const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'];
     if (imageExtensions.includes(extension)) {
       fetch(fileUrl)
@@ -94,14 +101,12 @@ function ComplianceMonitoring() {
       return;
     }
     
-    // PDF files - use Google Docs Viewer
     if (extension === 'pdf') {
       const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
       window.open(viewerUrl, '_blank');
       return;
     }
     
-    // Office files - use Google Docs Viewer
     const officeExtensions = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
     if (officeExtensions.includes(extension)) {
       const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
@@ -109,14 +114,12 @@ function ComplianceMonitoring() {
       return;
     }
     
-    // Text files - open directly
     const textExtensions = ['txt', 'csv', 'json', 'xml', 'log'];
     if (textExtensions.includes(extension)) {
       window.open(fileUrl, '_blank');
       return;
     }
     
-    // Default - try Google Docs Viewer
     const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
     window.open(viewerUrl, '_blank');
   };
@@ -127,6 +130,7 @@ function ComplianceMonitoring() {
       const { notification, employeeId, timestamp } = location.state;
       if (notification && employeeId) {
         setToastMessage(notification);
+        setToastType('info');
         setHighlightedEmployeeId(employeeId);
         setFilter('all');
         
@@ -145,41 +149,134 @@ function ComplianceMonitoring() {
     setupRealtimeListeners();
   }, []);
 
-  // ====== REAL-TIME LISTENER FOR NEW UPLOADS ======
+  // ====== REAL-TIME LISTENER FOR NEW UPLOADS AND COMPLETIONS ======
   const setupRealtimeListeners = () => {
     const unsubscribe = onSnapshot(collection(db, 'documents'), (snapshot) => {
       const docList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Check for new documents and completion status changes
+      const previousDocs = documents;
+      const newDocs = docList.filter(d => 
+        !previousDocs.some(p => p.id === d.id)
+      );
+      
+      // Check for status changes to "Complete"
+      const completedNow = docList.filter(d => {
+        const prev = previousDocs.find(p => p.id === d.id);
+        return prev && prev.status !== 'Complete' && d.status === 'Complete';
+      });
+      
       setDocuments(docList);
       
       const pending = docList.filter(d => d.status === 'Pending Review').length;
       setPendingCount(pending);
       
-      const newPending = docList.filter(d => d.status === 'Pending Review');
+      // Handle new pending documents
+      const newPending = newDocs.filter(d => d.status === 'Pending Review');
       if (newPending.length > 0 && !toastMessage) {
-        const recentUpload = newPending.some(d => {
-          const uploadTime = new Date(d.uploadedAt).getTime();
-          const now = Date.now();
-          return (now - uploadTime) < 10000;
+        const latestDoc = newPending.sort((a, b) => 
+          new Date(b.uploadedAt) - new Date(a.uploadedAt)
+        )[0];
+        
+        if (latestDoc) {
+          setToastMessage(`${latestDoc.employeeName} uploaded ${latestDoc.documentType}`);
+          setToastType('info');
+          setHighlightedEmployeeId(latestDoc.employeeId);
+          
+          setTimeout(() => {
+            setToastMessage(null);
+          }, 8000);
+        }
+      }
+      
+      // ====== HANDLE COMPLETION NOTIFICATIONS ======
+      if (completedNow.length > 0) {
+        // Group by employee
+        const completionByEmployee = {};
+        completedNow.forEach(doc => {
+          if (!completionByEmployee[doc.employeeId]) {
+            completionByEmployee[doc.employeeId] = [];
+          }
+          completionByEmployee[doc.employeeId].push(doc);
         });
         
-        if (recentUpload) {
-          const latestDoc = newPending.sort((a, b) => 
-            new Date(b.uploadedAt) - new Date(a.uploadedAt)
-          )[0];
+        // Check if any employee is now fully compliant
+        Object.entries(completionByEmployee).forEach(([employeeId, completedDocs]) => {
+          const employee = employees.find(e => e.id === employeeId);
+          if (!employee) return;
           
-          if (latestDoc) {
-            setToastMessage(`${latestDoc.employeeName} uploaded ${latestDoc.documentType}`);
-            setHighlightedEmployeeId(latestDoc.employeeId);
+          // Recalculate compliance status
+          const employeeDocs = docList.filter(d => d.employeeId === employeeId);
+          const totalDocs = employeeDocs.length;
+          const completeDocs = employeeDocs.filter(d => d.status === 'Complete').length;
+          
+          // Check if this completion made them 100% compliant
+          const oldStatus = getComplianceStatusFromDocs(employeeId, previousDocs);
+          const newStatus = getComplianceStatusFromDocs(employeeId, docList);
+          
+          // If they weren't 100% before but are now
+          if (oldStatus.percentage < 100 && newStatus.percentage === 100) {
+            // Send notification to admin
+            addDoc(collection(db, 'notifications'), {
+              type: 'compliance_completed',
+              employeeId: employeeId,
+              employeeName: employee.fullName,
+              department: employee.department || 'N/A',
+              message: `${employee.fullName} from ${employee.department || 'N/A'} is now 100% compliant! All documents are complete.`,
+              read: false,
+              forAdmin: true,
+              forEmployee: false,
+              createdAt: new Date().toISOString(),
+              priority: 'high',
+              category: 'compliance_completion'
+            });
             
+            // Send notification to employee
+            addDoc(collection(db, 'notifications'), {
+              type: 'compliance_completed',
+              employeeId: employeeId,
+              employeeName: employee.fullName,
+              message: `🎉 Congratulations! You are now 100% compliant. All your documents have been reviewed and marked as complete.`,
+              read: false,
+              forEmployee: true,
+              forAdmin: false,
+              createdAt: new Date().toISOString(),
+              priority: 'high',
+              category: 'compliance_completion'
+            });
+            
+            // Show toast notification
+            setToastMessage(`🎉 ${employee.fullName} is now 100% COMPLIANT!`);
+            setToastType('success');
+            setHighlightedEmployeeId(employeeId);
+            
+            // Track completion
+            recentlyCompleted.current.add(employeeId);
+            
+            // Clear toast after longer delay for success
             setTimeout(() => {
               setToastMessage(null);
-            }, 8000);
+            }, 10000);
           }
-        }
+        });
       }
     });
 
     return unsubscribe;
+  };
+
+  // Helper to get compliance status from a specific document list
+  const getComplianceStatusFromDocs = (employeeId, docList) => {
+    const employeeDocs = docList.filter(doc => doc.employeeId === employeeId);
+    const total = employeeDocs.length;
+    const complete = employeeDocs.filter(doc => doc.status === 'Complete').length;
+    const pending = employeeDocs.filter(doc => doc.status === 'Pending Review').length;
+    return { 
+      total, 
+      complete,
+      pending,
+      percentage: total === 0 ? 0 : Math.round((complete / total) * 100) 
+    };
   };
 
   const fetchEmployees = async () => {
@@ -203,11 +300,14 @@ function ComplianceMonitoring() {
     setRefreshing(false);
   };
 
-  // ====== UPDATE DOCUMENT STATUS WITH NOTIFICATION ======
+  // ====== UPDATE DOCUMENT STATUS WITH COMPLETION CHECK ======
   const updateDocumentStatus = async (docId, newStatus) => {
     setLoading(true);
     try {
       const docData = documents.find(d => d.id === docId);
+      
+      // Get old status before update
+      const oldStatus = docData?.status;
       
       await updateDoc(doc(db, 'documents', docId), { 
         status: newStatus,
@@ -215,6 +315,7 @@ function ComplianceMonitoring() {
       });
       
       if (docData) {
+        // Notify employee about status change
         await addDoc(collection(db, 'notifications'), {
           employeeId: docData.employeeId,
           employeeName: docData.employeeName,
@@ -227,7 +328,64 @@ function ComplianceMonitoring() {
         });
       }
       
+      // Refresh documents to get updated list
       await fetchDocuments();
+      
+      // ====== CHECK IF EMPLOYEE IS NOW FULLY COMPLIANT ======
+      if (docData && newStatus === 'Complete' && oldStatus !== 'Complete') {
+        // Re-fetch documents to get latest state
+        const freshDocs = await getDocs(collection(db, 'documents'));
+        const freshDocList = freshDocs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        const employeeDocs = freshDocList.filter(d => d.employeeId === docData.employeeId);
+        const totalDocs = employeeDocs.length;
+        const completeDocs = employeeDocs.filter(d => d.status === 'Complete').length;
+        
+        // If all documents are complete
+        if (totalDocs > 0 && completeDocs === totalDocs) {
+          const employee = employees.find(e => e.id === docData.employeeId);
+          if (employee) {
+            // Send admin notification
+            await addDoc(collection(db, 'notifications'), {
+              type: 'compliance_completed',
+              employeeId: docData.employeeId,
+              employeeName: employee.fullName,
+              department: employee.department || 'N/A',
+              message: `🎉 ${employee.fullName} from ${employee.department || 'N/A'} is now 100% compliant! All documents are complete.`,
+              read: false,
+              forAdmin: true,
+              forEmployee: false,
+              createdAt: new Date().toISOString(),
+              priority: 'high',
+              category: 'compliance_completion'
+            });
+            
+            // Send employee notification
+            await addDoc(collection(db, 'notifications'), {
+              type: 'compliance_completed',
+              employeeId: docData.employeeId,
+              employeeName: employee.fullName,
+              message: `🎉 Congratulations! You are now 100% compliant. All your documents have been reviewed and marked as complete.`,
+              read: false,
+              forEmployee: true,
+              forAdmin: false,
+              createdAt: new Date().toISOString(),
+              priority: 'high',
+              category: 'compliance_completion'
+            });
+            
+            // Show success toast
+            setToastMessage(`🎉 ${employee.fullName} is now 100% COMPLIANT!`);
+            setToastType('success');
+            setHighlightedEmployeeId(docData.employeeId);
+            
+            setTimeout(() => {
+              setToastMessage(null);
+            }, 10000);
+          }
+        }
+      }
+      
       alert('✅ Document status updated successfully');
     } catch (error) {
       console.error('Error updating document:', error);
@@ -242,10 +400,12 @@ function ComplianceMonitoring() {
     const total = employeeDocs.length;
     const complete = employeeDocs.filter(doc => doc.status === 'Complete').length;
     const pending = employeeDocs.filter(doc => doc.status === 'Pending Review').length;
+    const missing = employeeDocs.filter(doc => doc.status === 'Missing' || doc.status === 'Expired').length;
     return { 
       total, 
       complete,
       pending,
+      missing,
       percentage: total === 0 ? 0 : Math.round((complete / total) * 100) 
     };
   };
@@ -275,77 +435,6 @@ function ComplianceMonitoring() {
   const missingDocs = employees.filter(emp => getComplianceStatus(emp.id).pending > 0).length;
 
   // ===== EXPORT FUNCTIONS =====
-
-  // Export to Excel
-  // const exportToExcel = () => {
-  //   try {
-  //     const summaryData = {
-  //       'Metric': 'Compliance Summary',
-  //       'Total Employees': totalEmployees,
-  //       'Fully Compliant': fullyCompliant,
-  //       'Pending Review': pendingCount,
-  //       'Need Attention': missingDocs
-  //     };
-
-  //     const excelData = [summaryData, {}];
-
-  //     // Add employee compliance data
-  //     employees.forEach((emp, index) => {
-  //       const status = getComplianceStatus(emp.id);
-  //       const pendingDocs = getPendingDocuments(emp.id);
-  //       const pendingDocNames = pendingDocs.map(d => d.documentType).join(', ') || 'None';
-        
-  //       excelData.push({
-  //         '#': index + 1,
-  //         'Employee': emp.fullName || 'Unknown',
-  //         'Department': emp.department || 'N/A',
-  //         'Total Documents': status.total,
-  //         'Complete': status.complete,
-  //         'Pending': status.pending,
-  //         'Compliance Rate': `${status.percentage}%`,
-  //         'Pending Documents': pendingDocNames,
-  //         'Status': status.percentage === 100 ? 'Compliant' : 'In Progress'
-  //       });
-  //     });
-
-  //     if (employees.length === 0) {
-  //       excelData.push({
-  //         '#': '—',
-  //         'Employee': 'No employees found',
-  //         'Department': '—',
-  //         'Total Documents': '—',
-  //         'Complete': '—',
-  //         'Pending': '—',
-  //         'Compliance Rate': '—',
-  //         'Pending Documents': '—',
-  //         'Status': '—'
-  //       });
-  //     }
-
-  //     const wb = XLSX.utils.book_new();
-  //     const ws = XLSX.utils.json_to_sheet(excelData);
-      
-  //     ws['!cols'] = [
-  //       { wch: 6 },
-  //       { wch: 25 },
-  //       { wch: 18 },
-  //       { wch: 15 },
-  //       { wch: 12 },
-  //       { wch: 12 },
-  //       { wch: 16 },
-  //       { wch: 30 },
-  //       { wch: 16 }
-  //     ];
-      
-  //     XLSX.utils.book_append_sheet(wb, ws, 'Compliance');
-      
-  //     const filename = `Compliance_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
-  //     XLSX.writeFile(wb, filename);
-  //   } catch (error) {
-  //     console.error('Error exporting to Excel:', error);
-  //     alert('Failed to export Excel file. Please try again.');
-  //   }
-  // };
 
   // Export to PDF
   const exportToPDF = () => {
@@ -549,7 +638,7 @@ function ComplianceMonitoring() {
                                        border-radius: 4px; 
                                        font-size: 12px;
                                        font-weight: 600;">
-                            ${status.percentage === 100 ? 'Compliant' : 'In Progress'}
+                            ${status.percentage === 100 ? '✅ Compliant' : '⏳ In Progress'}
                           </span>
                         </td>
                       </tr>
@@ -614,7 +703,8 @@ function ComplianceMonitoring() {
           position: 'fixed',
           top: '20px',
           right: '20px',
-          background: '#4a6fa5',
+          background: toastType === 'success' ? '#27ae60' : 
+                     toastType === 'warning' ? '#e67e22' : '#4a6fa5',
           color: 'white',
           padding: '16px 24px',
           borderRadius: '12px',
@@ -624,11 +714,17 @@ function ComplianceMonitoring() {
           alignItems: 'center',
           gap: '12px',
           animation: 'slideIn 0.5s ease-out',
-          maxWidth: '400px'
+          maxWidth: '450px'
         }}>
-          <NotificationImportantIcon style={{ fontSize: 28 }} />
+          {toastType === 'success' ? (
+            <StarsIcon style={{ fontSize: 32, color: '#ffd700' }} />
+          ) : (
+            <NotificationImportantIcon style={{ fontSize: 28 }} />
+          )}
           <div>
-            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>New Compliance Submission</div>
+            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>
+              {toastType === 'success' ? '🎉 COMPLIANCE COMPLETE!' : 'New Submission'}
+            </div>
             <div style={{ fontSize: '14px', opacity: 0.9 }}>{toastMessage}</div>
           </div>
           <button 
@@ -657,26 +753,6 @@ function ComplianceMonitoring() {
           <p className="header-subtitle">Track and manage employee document compliance</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* <button onClick={refreshData} className="btn-add-modern" style={{ background: '#4a6fa5' }} disabled={refreshing}>
-            <RefreshIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button> */}
-          {/* <button onClick={exportToExcel} className="btn-export excel" style={{
-            background: '#217346',
-            color: 'white',
-            border: 'none',
-            padding: '8px 16px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            fontSize: '14px',
-            fontWeight: '500'
-          }}>
-            <FileDownloadIcon style={{ fontSize: 18 }} />
-            Excel
-          </button> */}
           <button onClick={exportToPDF} className="btn-export pdf" style={{
             background: '#dc3545',
             color: 'white',
@@ -730,6 +806,20 @@ function ComplianceMonitoring() {
               </>
             )}
           </div>
+          {fullyCompliant > 0 && (
+            <div className="stats-badge" style={{
+              background: '#27ae60',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              color: 'white',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <DoneAllIcon style={{ fontSize: 18 }} />
+              {fullyCompliant} Fully Compliant
+            </div>
+          )}
         </div>
       </div>
 
@@ -767,8 +857,8 @@ function ComplianceMonitoring() {
           <WarningIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
           Missing Documents ({missingDocs})
         </button>
-        <button onClick={() => setFilter('complete')} className={`filter-btn ${filter === 'complete' ? 'active' : ''}`}>
-          <CheckCircleIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
+        <button onClick={() => setFilter('complete')} className={`filter-btn ${filter === 'complete' ? 'active' : ''}`} style={filter === 'complete' ? { background: '#27ae60', color: 'white' } : {}}>
+          <DoneAllIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
           Fully Compliant ({fullyCompliant})
         </button>
       </div>
@@ -792,18 +882,57 @@ function ComplianceMonitoring() {
               const pendingDocs = getPendingDocuments(emp.id);
               const isCompliant = status.percentage === 100;
               const isHighlighted = emp.id === highlightedEmployeeId;
+              const justCompleted = recentlyCompleted.current.has(emp.id);
               
               return (
                 <tr 
                   key={emp.id} 
-                  className={`${isCompliant ? 'compliant-row' : 'non-compliant-row'} ${isHighlighted ? 'highlighted-row' : ''}`}
-                  style={isHighlighted ? { background: '#e8f4fd', borderLeft: '4px solid #4a6fa5', animation: 'highlightFade 2s ease-out' } : {}}
+                  className={`${isCompliant ? 'compliant-row' : 'non-compliant-row'} ${isHighlighted ? 'highlighted-row' : ''} ${justCompleted ? 'just-completed' : ''}`}
+                  style={isHighlighted ? { 
+                    background: isCompliant ? '#d4edda' : '#e8f4fd', 
+                    borderLeft: `4px solid ${isCompliant ? '#27ae60' : '#4a6fa5'}`,
+                    animation: 'highlightFade 2s ease-out' 
+                  } : isCompliant ? { background: '#f0faf4' } : {}}
                 >
                   <td>
                     <div className="employee-info">
                       <div className="employee-avatar small">{emp.fullName?.charAt(0) || '?'}</div>
                       <span className="employee-name">{emp.fullName}</span>
-                      {isHighlighted && <span style={{ background: '#4a6fa5', color: 'white', fontSize: '10px', padding: '2px 8px', borderRadius: '10px', marginLeft: '8px' }}>NEW</span>}
+                      {isHighlighted && (
+                        <span style={{ 
+                          background: isCompliant ? '#27ae60' : '#4a6fa5', 
+                          color: 'white', 
+                          fontSize: '10px', 
+                          padding: '2px 10px', 
+                          borderRadius: '12px', 
+                          marginLeft: '8px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          {isCompliant ? (
+                            <>🎉 COMPLIANT</>
+                          ) : (
+                            <>NEW</>
+                          )}
+                        </span>
+                      )}
+                      {isCompliant && !isHighlighted && (
+                        <span style={{ 
+                          background: '#27ae60', 
+                          color: 'white', 
+                          fontSize: '10px', 
+                          padding: '2px 10px', 
+                          borderRadius: '12px', 
+                          marginLeft: '8px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}>
+                          <StarsIcon style={{ fontSize: 12 }} />
+                          Complete
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td><span className="dept-tag">{emp.department || 'N/A'}</span></td>
@@ -830,7 +959,10 @@ function ComplianceMonitoring() {
                         ))}
                       </div>
                     ) : (
-                      <span className="no-missing">✓ All complete</span>
+                      <span className="no-missing" style={{ color: '#27ae60', fontWeight: '600' }}>
+                        <DoneAllIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
+                        All complete
+                      </span>
                     )}
                   </td>
                   <td>
@@ -983,7 +1115,22 @@ function ComplianceMonitoring() {
           50% { background: #e8f4fd; }
           100% { background: #e8f4fd; transform: scale(1); }
         }
-        .highlighted-row { animation: highlightFade 2s ease-out; border-left: 4px solid #4a6fa5; }
+        @keyframes completionPulse {
+          0% { background: #d4edda; box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.4); }
+          50% { background: #b8e6c9; box-shadow: 0 0 20px rgba(39, 174, 96, 0.2); }
+          100% { background: #d4edda; box-shadow: 0 0 0 0 rgba(39, 174, 96, 0); }
+        }
+        .highlighted-row { 
+          animation: highlightFade 2s ease-out; 
+          border-left: 4px solid #4a6fa5; 
+        }
+        .just-completed {
+          animation: completionPulse 2s ease 3;
+          border-left: 4px solid #27ae60 !important;
+        }
+        .compliant-row {
+          background: #f0faf4;
+        }
         .toast-notification { animation: slideIn 0.5s ease-out; }
       `}</style>
     </div>
