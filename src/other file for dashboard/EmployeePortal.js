@@ -1,5 +1,5 @@
 // src/other file for dashboard/EmployeePortal.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, query, where, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
@@ -46,6 +46,7 @@ import WarningIcon from '@mui/icons-material/Warning';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import GetAppIcon from '@mui/icons-material/GetApp';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import Rotate90DegreesCcwIcon from '@mui/icons-material/Rotate90DegreesCcw';
 import logo from '../assets/hrmo logo.jpg';
 
 // Import documents
@@ -140,6 +141,25 @@ function EmployeePortal() {
   const [selectedForm, setSelectedForm] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
+  // ====== DOCUMENT SCANNER STATES ======
+  const [showScanner, setShowScanner] = useState(false);
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [originalImage, setOriginalImage] = useState(null);
+  const [isProcessingScan, setIsProcessingScan] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
+  const [showScanPreview, setShowScanPreview] = useState(false);
+  const [scannedFile, setScannedFile] = useState(null);
+  const [scannerDocType, setScannerDocType] = useState('');
+  const [scanningQuality, setScanningQuality] = useState('high');
+  const [filterMode, setFilterMode] = useState('original');
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchDocuments, setBatchDocuments] = useState([]);
+  const [showBatchUpload, setShowBatchUpload] = useState(false);
+  const [rotationAngle, setRotationAngle] = useState(0);
+  const [scannerUploadStatus, setScannerUploadStatus] = useState('');
+
+  const fileInputRef = useRef(null);
+
   // ====== COMPLIANCE FILES CONFIGURATION ======
   const [complianceFiles] = useState([
     {
@@ -203,6 +223,460 @@ function EmployeePortal() {
     const hours = String(date.getHours()).padStart(2, '0');
     const minutes = String(date.getMinutes()).padStart(2, '0');
     return `${hours}:${minutes}`;
+  };
+
+  // ====== SCANNER FUNCTIONS ======
+  
+  const openScanner = () => {
+    setShowScanner(true);
+    setCapturedImage(null);
+    setOriginalImage(null);
+    setBatchDocuments([]);
+    setBatchMode(false);
+    setShowBatchUpload(false);
+    setFilterMode('original');
+    setShowScanPreview(false);
+    setScannedFile(null);
+    setScannerDocType('');
+    setRotationAngle(0);
+    setScannerUploadStatus('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file (JPG, PNG, etc.)');
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      alert('File is too large. Maximum size is 20MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const imageData = event.target.result;
+      setOriginalImage(imageData);
+      setCapturedImage(imageData);
+      setShowScanPreview(false);
+      setScannedFile(null);
+      setScannerUploadStatus('');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleFileDrop = (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imageData = event.target.result;
+        setOriginalImage(imageData);
+        setCapturedImage(imageData);
+        setShowScanPreview(false);
+        setScannedFile(null);
+        setScannerUploadStatus('');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const applyFilterToImage = (imageData, filter, rotation = 0) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        
+        if (rotation === 90 || rotation === 270) {
+          width = img.height;
+          height = img.width;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        
+        ctx.save();
+        ctx.clearRect(0, 0, width, height);
+        
+        if (rotation === 90) {
+          ctx.translate(width / 2, height / 2);
+          ctx.rotate(Math.PI / 2);
+          ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        } else if (rotation === 180) {
+          ctx.translate(width / 2, height / 2);
+          ctx.rotate(Math.PI);
+          ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        } else if (rotation === 270) {
+          ctx.translate(width / 2, height / 2);
+          ctx.rotate(-Math.PI / 2);
+          ctx.drawImage(img, -img.width / 2, -img.height / 2);
+        } else {
+          ctx.drawImage(img, 0, 0);
+        }
+        ctx.restore();
+        
+        const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageDataObj.data;
+        
+        for (let i = 0; i < data.length; i += 4) {
+          let r = data[i];
+          let g = data[i + 1];
+          let b = data[i + 2];
+          
+          switch(filter) {
+            case 'grayscale':
+              const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+              r = g = b = gray;
+              break;
+            case 'blackwhite':
+              const grayBW = 0.299 * r + 0.587 * g + 0.114 * b;
+              const threshold = 140;
+              const value = grayBW > threshold ? 255 : 0;
+              r = g = b = value;
+              break;
+            case 'enhanced':
+              const enhanced = ((r / 255 - 0.5) * 1.5 + 0.5) * 255;
+              r = Math.min(255, Math.max(0, enhanced));
+              const enhancedG = ((g / 255 - 0.5) * 1.5 + 0.5) * 255;
+              g = Math.min(255, Math.max(0, enhancedG));
+              const enhancedB = ((b / 255 - 0.5) * 1.5 + 0.5) * 255;
+              b = Math.min(255, Math.max(0, enhancedB));
+              break;
+            case 'magic':
+              const magic = ((r / 255 - 0.5) * 1.6 + 0.5) * 255;
+              r = Math.min(255, Math.max(0, magic));
+              const magicG = ((g / 255 - 0.5) * 1.6 + 0.5) * 255;
+              g = Math.min(255, Math.max(0, magicG));
+              const magicB = ((b / 255 - 0.5) * 1.6 + 0.5) * 255;
+              b = Math.min(255, Math.max(0, magicB));
+              break;
+            case 'document':
+              const docGray = 0.299 * r + 0.587 * g + 0.114 * b;
+              const docValue = ((docGray / 255 - 0.5) * 1.8 + 0.5) * 255;
+              const finalValue = Math.min(255, Math.max(0, docValue));
+              r = g = b = finalValue;
+              break;
+            default:
+              break;
+          }
+          
+          data[i] = Math.min(255, Math.max(0, r));
+          data[i + 1] = Math.min(255, Math.max(0, g));
+          data[i + 2] = Math.min(255, Math.max(0, b));
+        }
+        
+        ctx.putImageData(imageDataObj, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', 0.95));
+      };
+      
+      img.src = imageData;
+    });
+  };
+
+  const processScannedImage = async () => {
+    if (!capturedImage && !originalImage) {
+      alert('Please upload an image first.');
+      return;
+    }
+
+    setIsProcessingScan(true);
+    setScanProgress(10);
+
+    try {
+      const imageToProcess = capturedImage || originalImage;
+      setScanProgress(30);
+      
+      let processedImage = await applyFilterToImage(imageToProcess, filterMode, rotationAngle);
+      
+      setScanProgress(60);
+      
+      const response = await fetch(processedImage);
+      const blob = await response.blob();
+      const fileName = `scanned_document_${Date.now()}.jpg`;
+      const file = new File([blob], fileName, { type: 'image/jpeg' });
+      
+      setScanProgress(80);
+      
+      setScannedFile(file);
+      setCapturedImage(processedImage);
+      
+      if (batchMode) {
+        const newDoc = {
+          id: Date.now(),
+          file: file,
+          preview: processedImage,
+          fileName: fileName,
+          timestamp: new Date().toISOString()
+        };
+        setBatchDocuments(prev => [...prev, newDoc]);
+        setCapturedImage(null);
+        setOriginalImage(null);
+        setFilterMode('original');
+        setRotationAngle(0);
+        setScannerUploadStatus(`✅ Document ${batchDocuments.length + 1} added to batch!`);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+        // Reset after adding to batch
+        setShowScanPreview(false);
+        setScannedFile(null);
+      } else {
+        setShowScanPreview(true);
+      }
+      
+      setScanProgress(100);
+    } catch (error) {
+      console.error('Error processing image:', error);
+      alert('Error processing image. Please try again.');
+    } finally {
+      setIsProcessingScan(false);
+      setScanProgress(0);
+    }
+  };
+
+  const rotateImage = () => {
+    const newAngle = (rotationAngle + 90) % 360;
+    setRotationAngle(newAngle);
+    if (originalImage) {
+      applyFilterToImage(originalImage, filterMode, newAngle).then(result => {
+        setCapturedImage(result);
+      });
+    }
+  };
+
+  const resetImage = () => {
+    setRotationAngle(0);
+    setFilterMode('original');
+    if (originalImage) {
+      setCapturedImage(originalImage);
+    }
+  };
+
+  const clearCurrentImage = () => {
+    setCapturedImage(null);
+    setOriginalImage(null);
+    setShowScanPreview(false);
+    setScannedFile(null);
+    setFilterMode('original');
+    setRotationAngle(0);
+    setScannerUploadStatus('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeBatchDocument = (docId) => {
+    setBatchDocuments(prev => prev.filter(d => d.id !== docId));
+  };
+
+  const uploadScannedDocument = async () => {
+    if (!scannedFile || !scannerDocType) {
+      alert('Please select a document type and ensure a document is scanned.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setScannerUploadStatus('Uploading scanned document...');
+
+    try {
+      if (!authUser || !employee || !employee.id) {
+        alert('You must be logged in to upload');
+        setUploading(false);
+        return;
+      }
+
+      const uploadResult = await uploadToVercelBlob(
+        scannedFile,
+        employee.id,
+        scannerDocType
+      );
+
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
+
+      setUploadProgress(50);
+      setScannerUploadStatus('Saving to database...');
+
+      await addDoc(collection(db, 'documents'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: scannerDocType,
+        status: 'Pending Review',
+        fileUrl: uploadResult.url,
+        downloadUrl: uploadResult.downloadUrl,
+        fileName: scannedFile.name,
+        fileSize: scannedFile.size,
+        storagePath: uploadResult.path,
+        storageProvider: 'vercel-blob',
+        scanned: true,
+        scannedAt: new Date().toISOString(),
+        uploadedAt: new Date().toISOString()
+      });
+
+      setUploadProgress(75);
+      setScannerUploadStatus('Creating notifications...');
+
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload',
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: scannerDocType,
+        message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded scanned ${scannerDocType} for compliance review`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload_confirmation',
+        employeeId: employee.id,
+        message: `Your scanned ${scannerDocType} has been uploaded and is pending review by HR`,
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setUploadProgress(100);
+      setScannerUploadStatus('✅ Scanned document uploaded successfully!');
+      
+      setTimeout(() => {
+        setShowScanPreview(false);
+        setShowScanner(false);
+        setCapturedImage(null);
+        setOriginalImage(null);
+        setScannedFile(null);
+        setScannerDocType('');
+        setFilterMode('original');
+        setRotationAngle(0);
+        setBatchDocuments([]);
+        setBatchMode(false);
+        setScannerUploadStatus('');
+        fetchEmployeeData();
+      }, 1500);
+      
+      setUploading(false);
+      
+    } catch (error) {
+      console.error('Error uploading scanned document:', error);
+      setScannerUploadStatus(`❌ Upload failed: ${error.message}`);
+      setUploading(false);
+    }
+  };
+
+  const uploadBatchDocuments = async () => {
+    if (batchDocuments.length === 0) {
+      alert('No documents to upload.');
+      return;
+    }
+
+    if (!scannerDocType) {
+      alert('Please select a document type.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+    setScannerUploadStatus(`Uploading ${batchDocuments.length} documents...`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      for (let i = 0; i < batchDocuments.length; i++) {
+        const doc = batchDocuments[i];
+        setUploadProgress(Math.round((i / batchDocuments.length) * 80));
+        setScannerUploadStatus(`Uploading document ${i + 1} of ${batchDocuments.length}...`);
+
+        try {
+          const uploadResult = await uploadToVercelBlob(
+            doc.file,
+            employee.id,
+            scannerDocType
+          );
+
+          if (uploadResult.success) {
+            await addDoc(collection(db, 'documents'), {
+              employeeId: employee.id,
+              employeeName: employee.fullName,
+              department: employee.department || 'N/A',
+              documentType: scannerDocType,
+              status: 'Pending Review',
+              fileUrl: uploadResult.url,
+              downloadUrl: uploadResult.downloadUrl,
+              fileName: doc.fileName,
+              fileSize: doc.file.size,
+              storagePath: uploadResult.path,
+              storageProvider: 'vercel-blob',
+              scanned: true,
+              scannedAt: new Date().toISOString(),
+              uploadedAt: new Date().toISOString()
+            });
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } catch (err) {
+          console.error('Error uploading batch document:', err);
+          failCount++;
+        }
+      }
+
+      await addDoc(collection(db, 'notifications'), {
+        type: 'compliance_upload',
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department || 'N/A',
+        documentType: scannerDocType,
+        message: `${employee.fullName} uploaded ${successCount} scanned ${scannerDocType} documents for compliance review`,
+        read: false,
+        forAdmin: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      setUploadProgress(100);
+      setScannerUploadStatus(`✅ Upload complete! ${successCount} uploaded, ${failCount} failed.`);
+      
+      setTimeout(() => {
+        setShowScanner(false);
+        setBatchDocuments([]);
+        setBatchMode(false);
+        setShowBatchUpload(false);
+        setScannerDocType('');
+        setScannerUploadStatus('');
+        fetchEmployeeData();
+      }, 2000);
+      
+      setUploading(false);
+      
+    } catch (error) {
+      console.error('Error in batch upload:', error);
+      setScannerUploadStatus(`❌ Batch upload failed: ${error.message}`);
+      setUploading(false);
+    }
+  };
+
+  const triggerFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
   };
 
   // ====== PRINT PAYSLIP FUNCTION ======
@@ -547,7 +1021,6 @@ function EmployeePortal() {
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
 
-      // Header
       doc.setFontSize(18);
       doc.setTextColor(26, 42, 74);
       doc.text('ATTENDANCE RECORD', pageWidth / 2, 20, { align: 'center' });
@@ -562,7 +1035,6 @@ function EmployeePortal() {
       const generatedDate = `Generated: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
       doc.text(generatedDate, pageWidth / 2, 34, { align: 'center' });
 
-      // Summary Section
       const summaryData = [
         ['Total Days', attendanceSummary.totalDays || 0],
         ['Present', attendanceSummary.presentDays || 0],
@@ -592,10 +1064,8 @@ function EmployeePortal() {
         xPos += colWidth;
       });
 
-      // Table
       yPos += 34;
       
-      // Group records by date
       const recordsByDate = {};
       attendanceRecords.forEach(record => {
         if (!recordsByDate[record.date]) {
@@ -606,7 +1076,6 @@ function EmployeePortal() {
 
       const sortedDates = Object.keys(recordsByDate).sort((a, b) => b.localeCompare(a));
       
-      // Prepare table data
       const tableData = sortedDates.slice(0, 100).map((date, index) => {
         const dayRecords = recordsByDate[date].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
         
@@ -703,7 +1172,6 @@ function EmployeePortal() {
           9: { cellWidth: 35 }
         },
         didDrawCell: function(data) {
-          // Color status cells
           if (data.section === 'body') {
             const status = data.cell.raw;
             const colIndex = data.column.index;
@@ -723,14 +1191,12 @@ function EmployeePortal() {
         }
       });
 
-      // Footer
       const finalY = doc.lastAutoTable.finalY + 10;
       doc.setFontSize(8);
       doc.setTextColor(136, 136, 136);
       doc.text('This is a system-generated attendance record.', pageWidth / 2, finalY, { align: 'center' });
       doc.text('Entry #1 = AM, Entry #2 = PM | Daily status is determined by PM (if exists), otherwise AM', pageWidth / 2, finalY + 5, { align: 'center' });
 
-      // Save PDF
       doc.save(`Attendance_Record_${employee?.fullName || 'Employee'}_${new Date().toISOString().split('T')[0]}.pdf`);
 
     } catch (error) {
@@ -1068,7 +1534,6 @@ function EmployeePortal() {
       if (empData) {
         setEmployee(empData);
 
-        // Fetch leave balance
         const balanceQuery = query(collection(db, 'leaveBalances'), where('employeeId', '==', empId));
         const balanceSnapshot = await getDocs(balanceQuery);
         if (!balanceSnapshot.empty) {
@@ -1095,12 +1560,10 @@ function EmployeePortal() {
           setLeaveBalance({ sickLeave: 5, vacationLeave: 5, maternityLeave: 105, paternityLeave: 7 });
         }
 
-        // Fetch leave requests
         const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', empId));
         const leaveSnapshot = await getDocs(leaveQuery);
         setLeaveRequests(leaveSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // Fetch documents
         const docQuery = query(collection(db, 'documents'), where('employeeId', '==', empId));
         const docSnapshot = await getDocs(docQuery);
         setDocuments(docSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -1108,7 +1571,6 @@ function EmployeePortal() {
         await fetchAttendanceData(empId);
         await fetchEmployeePayroll();
 
-        // Fetch notifications
         const notifQuery = query(
           collection(db, 'notifications'), 
           where('employeeId', '==', empId)
@@ -1858,7 +2320,6 @@ function EmployeePortal() {
   const unreadNotifications = notifications.filter(n => !n.read).length;
 
   // ====== EFFECTS ======
-  // Handle mobile responsiveness
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
@@ -1873,7 +2334,6 @@ function EmployeePortal() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Request notification permission on mount
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
@@ -1883,7 +2343,6 @@ function EmployeePortal() {
     setNotificationSound(audio);
   }, []);
 
-  // Fetch employee data when auth user changes
   useEffect(() => {
     if (authUser) {
       fetchEmployeeData();
@@ -1892,7 +2351,6 @@ function EmployeePortal() {
     }
   }, [authUser, authLoading]);
 
-  // ====== REAL-TIME EMPLOYEE DATA LISTENER ======
   useEffect(() => {
     if (employee && employee.id) {
       const employeeDocRef = doc(db, 'employees', employee.id);
@@ -1921,6 +2379,802 @@ function EmployeePortal() {
     setShowEditModal(true);
   };
 
+  // ====== RENDER SCANNER MODAL ======
+  const renderScannerModal = () => {
+    if (!showScanner) return null;
+
+    return (
+      <div className="modal-overlay" onClick={() => !isProcessingScan && !uploading && setShowScanner(false)}>
+        <div className="modal-form scanner-modal" onClick={(e) => e.stopPropagation()} style={{ 
+          maxWidth: '750px', 
+          maxHeight: '95vh',
+          width: '95%',
+          padding: '0',
+          overflow: 'hidden',
+          borderRadius: '16px'
+        }}>
+          <div className="modal-header" style={{ 
+            padding: '16px 20px',
+            borderBottom: '1px solid #eef2f7',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '10px',
+            background: '#f8fafd'
+          }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px' }}>
+              <span style={{ fontSize: '24px' }}>📄</span>
+              Document Scanner
+              <span style={{ 
+                fontSize: '11px', 
+                background: '#27ae60', 
+                color: 'white', 
+                padding: '2px 12px', 
+                borderRadius: '12px',
+                fontWeight: '400'
+              }}>
+                Upload Image
+              </span>
+            </h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {!capturedImage && !showScanPreview && !isProcessingScan && (
+                <button
+                  onClick={() => setBatchMode(!batchMode)}
+                  style={{
+                    padding: '4px 12px',
+                    background: batchMode ? '#27ae60' : '#e8f0fe',
+                    border: batchMode ? '1px solid #27ae60' : '1px solid #4a6fa5',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    color: batchMode ? 'white' : '#4a6fa5'
+                  }}
+                >
+                  {batchMode ? '📚 Batch ON' : '📚 Batch'}
+                </button>
+              )}
+              {batchMode && batchDocuments.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (scannerDocType || batchDocuments.length === 0) {
+                      setShowBatchUpload(true);
+                    } else {
+                      alert('Please select a document type first.');
+                    }
+                  }}
+                  style={{
+                    padding: '4px 12px',
+                    background: '#27ae60',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    color: 'white'
+                  }}
+                >
+                  📤 Upload ({batchDocuments.length})
+                </button>
+              )}
+              <button 
+                className="modal-close" 
+                onClick={() => {
+                  setShowScanner(false);
+                  setBatchMode(false);
+                  setBatchDocuments([]);
+                  setScannerUploadStatus('');
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  color: '#666',
+                  padding: '4px 8px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <div style={{ padding: '16px 20px 20px', maxHeight: '80vh', overflowY: 'auto' }}>
+            {/* Upload Area */}
+            {!capturedImage && !showScanPreview && (
+              <div 
+                onDrop={handleFileDrop}
+                onDragOver={(e) => e.preventDefault()}
+                onClick={triggerFileInput}
+                style={{
+                  border: '2px dashed #dde1e8',
+                  borderRadius: '12px',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  background: '#fafbfc',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  minHeight: '200px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderColor: '#dde1e8'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#4a6fa5';
+                  e.currentTarget.style.background = '#f0f4fe';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#dde1e8';
+                  e.currentTarget.style.background = '#fafbfc';
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  style={{ display: 'none' }}
+                />
+                <span style={{ fontSize: '48px', display: 'block', marginBottom: '12px' }}>🖼️</span>
+                <h4 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Upload Document Image</h4>
+                <p style={{ margin: '8px 0 4px', color: '#888', fontSize: '14px' }}>
+                  Click or drag and drop an image of your document
+                </p>
+                <p style={{ margin: 0, color: '#aaa', fontSize: '12px' }}>
+                  Supports JPG, PNG, GIF, WebP (Max 20MB)
+                </p>
+                {batchMode && (
+                  <div style={{
+                    marginTop: '12px',
+                    padding: '8px 16px',
+                    background: '#d4edda',
+                    borderRadius: '6px',
+                    color: '#155724',
+                    fontSize: '13px'
+                  }}>
+                    Batch Mode: {batchDocuments.length} document{batchDocuments.length !== 1 ? 's' : ''} scanned
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Batch Documents Preview */}
+            {batchMode && batchDocuments.length > 0 && !capturedImage && !showScanPreview && (
+              <div style={{
+                marginTop: '12px',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+                gap: '8px'
+              }}>
+                {batchDocuments.map((doc, index) => (
+                  <div key={doc.id} style={{
+                    position: 'relative',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    border: '1px solid #eef2f7',
+                    background: 'white'
+                  }}>
+                    <img 
+                      src={doc.preview} 
+                      alt={`Doc ${index + 1}`}
+                      style={{
+                        width: '100%',
+                        height: '80px',
+                        objectFit: 'cover'
+                      }}
+                    />
+                    <button
+                      onClick={() => removeBatchDocument(doc.id)}
+                      style={{
+                        position: 'absolute',
+                        top: '2px',
+                        right: '2px',
+                        background: 'rgba(231,76,60,0.9)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '50%',
+                        width: '20px',
+                        height: '20px',
+                        cursor: 'pointer',
+                        fontSize: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      ✕
+                    </button>
+                    <div style={{
+                      fontSize: '8px',
+                      padding: '2px 4px',
+                      background: 'rgba(0,0,0,0.7)',
+                      color: 'white',
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      textAlign: 'center'
+                    }}>
+                      #{index + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Image Preview with Filters */}
+            {capturedImage && !showScanPreview && (
+              <div>
+                <div style={{
+                  position: 'relative',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  background: '#f5f5f5',
+                  marginBottom: '16px',
+                  maxHeight: '450px',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center'
+                }}>
+                  <img 
+                    src={capturedImage} 
+                    alt="Document to scan"
+                    style={{ 
+                      width: '100%', 
+                      height: 'auto', 
+                      maxHeight: '450px',
+                      objectFit: 'contain'
+                    }}
+                  />
+                  {/* Document corner overlay */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '8px',
+                    left: '8px',
+                    right: '8px',
+                    bottom: '8px',
+                    border: '2px solid rgba(74,111,165,0.3)',
+                    borderRadius: '8px',
+                    pointerEvents: 'none'
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      left: '-6px',
+                      width: '20px',
+                      height: '20px',
+                      borderTop: '3px solid #4a6fa5',
+                      borderLeft: '3px solid #4a6fa5',
+                      borderRadius: '4px 0 0 0'
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: '-6px',
+                      right: '-6px',
+                      width: '20px',
+                      height: '20px',
+                      borderTop: '3px solid #4a6fa5',
+                      borderRight: '3px solid #4a6fa5',
+                      borderRadius: '0 4px 0 0'
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '-6px',
+                      left: '-6px',
+                      width: '20px',
+                      height: '20px',
+                      borderBottom: '3px solid #4a6fa5',
+                      borderLeft: '3px solid #4a6fa5',
+                      borderRadius: '0 0 0 4px'
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      bottom: '-6px',
+                      right: '-6px',
+                      width: '20px',
+                      height: '20px',
+                      borderBottom: '3px solid #4a6fa5',
+                      borderRight: '3px solid #4a6fa5',
+                      borderRadius: '0 0 4px 0'
+                    }} />
+                  </div>
+                </div>
+
+                {/* Filter Controls */}
+                <div style={{
+                  display: 'flex',
+                  gap: '6px',
+                  flexWrap: 'wrap',
+                  marginBottom: '12px',
+                  alignItems: 'center'
+                }}>
+                  <span style={{ fontSize: '12px', fontWeight: '500', color: '#666' }}>Filter:</span>
+                  {['original', 'grayscale', 'blackwhite', 'enhanced', 'magic', 'document'].map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => {
+                        setFilterMode(filter);
+                        if (originalImage) {
+                          applyFilterToImage(originalImage, filter, rotationAngle).then(result => {
+                            setCapturedImage(result);
+                          });
+                        }
+                      }}
+                      style={{
+                        padding: '3px 10px',
+                        background: filterMode === filter ? '#4a6fa5' : '#f0f2f7',
+                        color: filterMode === filter ? 'white' : '#333',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        textTransform: 'capitalize'
+                      }}
+                    >
+                      {filter === 'blackwhite' ? 'B&W' : filter}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={rotateImage}
+                    style={{
+                      padding: '3px 10px',
+                      background: '#f0f2f7',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                  >
+                    <Rotate90DegreesCcwIcon style={{ fontSize: 14 }} />
+                    Rotate
+                  </button>
+
+                  <button
+                    onClick={resetImage}
+                    style={{
+                      padding: '3px 10px',
+                      background: '#f0f2f7',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#e74c3c'
+                    }}
+                  >
+                    <RefreshIcon style={{ fontSize: 14 }} />
+                    Reset
+                  </button>
+
+                  {isProcessingScan && (
+                    <span style={{ 
+                      marginLeft: 'auto',
+                      fontSize: '12px',
+                      color: '#4a6fa5'
+                    }}>
+                      Processing... {scanProgress}%
+                    </span>
+                  )}
+                </div>
+
+                {/* Progress Bar */}
+                {isProcessingScan && (
+                  <div style={{
+                    width: '100%',
+                    height: '4px',
+                    background: '#eef2f7',
+                    borderRadius: '2px',
+                    marginBottom: '16px',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      width: `${scanProgress}%`,
+                      height: '100%',
+                      background: '#4a6fa5',
+                      borderRadius: '2px',
+                      transition: 'width 0.3s ease'
+                    }} />
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  justifyContent: 'center'
+                }}>
+                  <button
+                    onClick={clearCurrentImage}
+                    style={{
+                      padding: '10px 24px',
+                      background: '#e74c3c',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    <CloseIcon style={{ fontSize: 18 }} />
+                    Cancel
+                  </button>
+                  <button
+                    onClick={processScannedImage}
+                    disabled={isProcessingScan}
+                    style={{
+                      padding: '10px 32px',
+                      background: isProcessingScan ? '#ccc' : '#27ae60',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: isProcessingScan ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {isProcessingScan ? 'Processing...' : '✅ Scan Document'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Scan Preview / Upload */}
+            {showScanPreview && capturedImage && (
+              <div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px',
+                  background: '#d4edda',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  color: '#155724'
+                }}>
+                  <span style={{ fontSize: '20px' }}>✅</span>
+                  <span>Document scanned successfully! Select document type and upload.</span>
+                </div>
+
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '16px',
+                  marginBottom: '16px'
+                }}>
+                  <div>
+                    <label style={{ 
+                      display: 'block',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#333',
+                      marginBottom: '4px'
+                    }}>
+                      Document Type *
+                    </label>
+                    <select
+                      value={scannerDocType}
+                      onChange={(e) => setScannerDocType(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: '1px solid #dde1e8',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white'
+                      }}
+                      required
+                    >
+                      <option value="">Select Document Type</option>
+                      <option value="Accomplishment">Accomplishment Report</option>
+                      <option value="Certificates">Certificates</option>
+                      <option value="DTR">Daily Time Record (DTR)</option>
+                      <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
+                      <option value="Pass Slip">Pass Slip</option>
+                      <option value="Personal Data Sheet">Personal Data Sheet</option>
+                      <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+                      <option value="Other">Other Document</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ 
+                      display: 'block',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#333',
+                      marginBottom: '4px'
+                    }}>
+                      Quality
+                    </label>
+                    <select
+                      value={scanningQuality}
+                      onChange={(e) => setScanningQuality(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 14px',
+                        border: '1px solid #dde1e8',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        background: 'white'
+                      }}
+                    >
+                      <option value="high">High Quality</option>
+                      <option value="medium">Medium Quality</option>
+                      <option value="low">Low Quality (Smaller File)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  justifyContent: 'flex-end'
+                }}>
+                  <button
+                    onClick={() => {
+                      setShowScanPreview(false);
+                      setCapturedImage(originalImage || null);
+                      setFilterMode('original');
+                      setRotationAngle(0);
+                      setScannedFile(null);
+                      setScannerUploadStatus('');
+                    }}
+                    style={{
+                      padding: '10px 20px',
+                      background: '#f0f2f7',
+                      color: '#333',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Rescan
+                  </button>
+                  <button
+                    onClick={uploadScannedDocument}
+                    disabled={!scannerDocType || uploading}
+                    style={{
+                      padding: '10px 32px',
+                      background: (!scannerDocType || uploading) ? '#ccc' : '#4a6fa5',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: (!scannerDocType || uploading) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {uploading ? 'Uploading...' : 'Upload Document'}
+                  </button>
+                </div>
+
+                {scannerUploadStatus && (
+                  <p style={{
+                    marginTop: '12px',
+                    fontSize: '13px',
+                    color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
+                           scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
+                    textAlign: 'center',
+                    padding: '8px',
+                    background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
+                               scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
+                    borderRadius: '6px'
+                  }}>
+                    {scannerUploadStatus}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ====== RENDER BATCH UPLOAD MODAL ======
+const renderBatchUploadModal = () => {
+  if (!showBatchUpload) return null;
+
+  return (
+    <div className="modal-overlay" onClick={() => setShowBatchUpload(false)}>
+      <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', borderRadius: '12px' }}>
+        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
+          <h3 style={{ margin: 0 }}> Batch Upload - {batchDocuments.length} Documents</h3>
+          <button className="modal-close" onClick={() => setShowBatchUpload(false)} style={{
+            background: 'transparent',
+            border: 'none',
+            fontSize: '20px',
+            cursor: 'pointer',
+            color: '#666'
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: '16px 20px', maxHeight: '400px', overflowY: 'auto' }}>
+          <div style={{ marginBottom: '16px' }}>
+            <label style={{ 
+              display: 'block',
+              fontSize: '13px',
+              fontWeight: '500',
+              color: '#333',
+              marginBottom: '4px'
+            }}>
+              Document Type *
+            </label>
+            <select
+              value={scannerDocType}
+              onChange={(e) => setScannerDocType(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                border: '1px solid #dde1e8',
+                borderRadius: '8px',
+                fontSize: '14px'
+              }}
+              required
+            >
+              <option value="">Select Document Type</option>
+              <option value="Accomplishment">Accomplishment Report</option>
+              <option value="Certificates">Certificates</option>
+              <option value="DTR">Daily Time Record (DTR)</option>
+              <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
+              <option value="Pass Slip">Pass Slip</option>
+              <option value="Personal Data Sheet">Personal Data Sheet</option>
+              <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+            </select>
+          </div>
+
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+            gap: '12px',
+            marginBottom: '16px'
+          }}>
+            {batchDocuments.map((doc) => (
+              <div key={doc.id} style={{
+                position: 'relative',
+                background: '#f8fafd',
+                borderRadius: '8px',
+                overflow: 'hidden',
+                border: '1px solid #eef2f7'
+              }}>
+                <img 
+                  src={doc.preview} 
+                  alt={doc.fileName}
+                  style={{
+                    width: '100%',
+                    height: '120px',
+                    objectFit: 'cover'
+                  }}
+                />
+                <button
+                  onClick={() => removeBatchDocument(doc.id)}
+                  style={{
+                    position: 'absolute',
+                    top: '4px',
+                    right: '4px',
+                    background: 'rgba(231, 76, 60, 0.9)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '24px',
+                    height: '24px',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  ✕
+                </button>
+                <div style={{
+                  padding: '6px 8px',
+                  fontSize: '10px',
+                  color: '#666',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {doc.fileName}
+                </div>
+              </div>
+            ))}
+            {batchDocuments.length === 0 && (
+              <div style={{ 
+                gridColumn: '1 / -1',
+                textAlign: 'center',
+                padding: '30px',
+                color: '#999'
+              }}>
+                No documents scanned yet. Add documents using the scanner.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          justifyContent: 'flex-end',
+          borderTop: '1px solid #eef2f7',
+          padding: '16px 20px'
+        }}>
+          <button
+            onClick={() => {
+              setShowBatchUpload(false);
+              setCapturedImage(null);
+            }}
+            style={{
+              padding: '10px 20px',
+              background: '#f0f2f7',
+              color: '#333',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={uploadBatchDocuments}
+            disabled={!scannerDocType || uploading || batchDocuments.length === 0}
+            style={{
+              padding: '10px 32px',
+              background: (!scannerDocType || uploading || batchDocuments.length === 0) ? '#ccc' : '#27ae60',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: (!scannerDocType || uploading || batchDocuments.length === 0) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            {uploading ? 'Uploading...' : `📤 Upload All (${batchDocuments.length})`}
+          </button>
+        </div>
+
+        {scannerUploadStatus && (
+          <p style={{
+            margin: '0 20px 16px 20px',
+            fontSize: '13px',
+            color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
+                   scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
+            textAlign: 'center',
+            padding: '8px',
+            background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
+                       scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
+            borderRadius: '6px'
+          }}>
+            {scannerUploadStatus}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+};
+
   // ====== RENDER COMPLIANCE TAB ======
   const renderCompliance = () => {
     const formData = selectedForm ? complianceFiles.find(f => f.id === selectedForm) : null;
@@ -1936,26 +3190,47 @@ function EmployeePortal() {
           gap: '12px'
         }}>
           <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a2a4a' }}>My Compliance</h2>
-          <button 
-            onClick={() => setShowUploadForm(true)} 
-            className="btn-add-modern"
-            style={{
-              padding: '6px 14px',
-              background: '#4a6fa5',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '500',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            <UploadIcon style={{ fontSize: 16 }} />
-            Upload Document
-          </button>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              onClick={openScanner}
+              className="btn-add-modern"
+              style={{
+                padding: '8px 16px',
+                background: '#27ae60',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              Scan Document
+            </button>
+            <button 
+              onClick={() => setShowUploadForm(true)} 
+              className="btn-add-modern"
+              style={{
+                padding: '8px 16px',
+                background: '#4a6fa5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <UploadIcon style={{ fontSize: 16 }} />
+              Upload File
+            </button>
+          </div>
         </div>
 
         {/* Progress Card */}
@@ -2064,9 +3339,19 @@ function EmployeePortal() {
             Uploaded Documents
           </h3>
           {documents.map(doc => (
-            <div key={doc.id} className="doc-item-card">
-              <div className="doc-item-info">
-                <span className="doc-item-name">{doc.documentType}</span>
+            <div key={doc.id} className="doc-item-card" style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '12px 16px',
+              background: 'white',
+              borderRadius: '8px',
+              border: '1px solid #eef2f7',
+              marginBottom: '8px'
+            }}>
+              <div className="doc-item-info" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span className="doc-item-name" style={{ fontWeight: '500' }}>{doc.documentType}</span>
+                {doc.scanned && <span style={{ fontSize: '11px', color: '#27ae60' }}>📄 Scanned</span>}
                 {getDocStatusBadge(doc.status)}
               </div>
               <div className="doc-item-actions">
@@ -2075,11 +3360,11 @@ function EmployeePortal() {
                     onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
                     className="btn-view-doc"
                     style={{
-                      padding: '4px 12px',
+                      padding: '6px 14px',
                       background: '#4a6fa5',
                       color: 'white',
                       border: 'none',
-                      borderRadius: '4px',
+                      borderRadius: '6px',
                       cursor: 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -2095,7 +3380,7 @@ function EmployeePortal() {
             </div>
           ))}
           {documents.length === 0 && (
-            <p className="no-data">No documents found</p>
+            <p className="no-data" style={{ textAlign: 'center', color: '#999', padding: '20px' }}>No documents found</p>
           )}
         </div>
 
@@ -2203,19 +3488,32 @@ function EmployeePortal() {
         {/* Upload Form Modal */}
         {showUploadForm && (
           <div className="modal-overlay" onClick={() => setShowUploadForm(false)}>
-            <div className="modal-form" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-header">
-                <h3>Upload Document</h3>
-                <button className="modal-close" onClick={() => setShowUploadForm(false)}>✕</button>
+            <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '550px', borderRadius: '12px' }}>
+              <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
+                <h3 style={{ margin: 0 }}>Upload Document</h3>
+                <button className="modal-close" onClick={() => setShowUploadForm(false)} style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  color: '#666'
+                }}>✕</button>
               </div>
               
-              <div className="form-grid">
-                <div className="form-group full-width">
-                  <label>Document Type</label>
+              <div style={{ padding: '20px' }}>
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Document Type</label>
                   <select
                     value={selectedDocType}
                     onChange={(e) => setSelectedDocType(e.target.value)}
                     className="upload-select"
+                    style={{
+                      width: '100%',
+                      padding: '10px 14px',
+                      border: '1px solid #dde1e8',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
                     required
                   >
                     <option value="">Select Document Type</option>
@@ -2228,59 +3526,85 @@ function EmployeePortal() {
                     <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
                   </select>
                 </div>
-                <div className="form-group full-width">
-                  <label>Choose File</label>
+                <div className="form-group" style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Choose File</label>
                   <input
                     type="file"
                     onChange={handleFileSelect}
                     className="upload-input"
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      border: '1px solid #dde1e8',
+                      borderRadius: '8px',
+                      fontSize: '14px'
+                    }}
                     required
                   />
                   {selectedFile && (
-                    <span className="file-name">
+                    <span className="file-name" style={{ fontSize: '13px', color: '#666', marginTop: '4px', display: 'block' }}>
                       {selectedFile.name} 
                       ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                     </span>
                   )}
                 </div>
-              </div>
 
-              <div className="form-actions">
-                <button 
-                  onClick={handleDocumentUpload} 
-                  className="btn-save" 
-                  disabled={uploading || !selectedFile || !selectedDocType}
-                >
-                  {uploading ? 'Uploading...' : 'Upload File'}
-                </button>
-                <button 
-                  type="button" 
-                  className="btn-cancel" 
-                  onClick={() => setShowUploadForm(false)}
-                  disabled={uploading}
-                >
-                  Cancel
-                </button>
-              </div>
-              {uploadStatus && <p className="upload-status">{uploadStatus}</p>}
-              {uploading && uploadProgress > 0 && (
-                <div className="progress-bar" style={{ marginTop: '10px' }}>
-                  <div 
-                    className="progress-fill" 
-                    style={{ 
-                      width: `${uploadProgress}%`,
-                      height: '6px',
-                      background: '#4a6fa5',
-                      borderRadius: '3px',
-                      transition: 'width 0.3s ease'
+                <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                  <button 
+                    onClick={handleDocumentUpload} 
+                    className="btn-save" 
+                    disabled={uploading || !selectedFile || !selectedDocType}
+                    style={{
+                      padding: '10px 32px',
+                      background: (!uploading && selectedFile && selectedDocType) ? '#4a6fa5' : '#ccc',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: '600',
+                      cursor: (!uploading && selectedFile && selectedDocType) ? 'pointer' : 'not-allowed'
                     }}
-                  />
-                  <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
-                    {uploadProgress}% uploaded
-                  </span>
+                  >
+                    {uploading ? 'Uploading...' : 'Upload File'}
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn-cancel" 
+                    onClick={() => setShowUploadForm(false)}
+                    disabled={uploading}
+                    style={{
+                      padding: '10px 24px',
+                      background: '#f0f2f7',
+                      color: '#333',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Cancel
+                  </button>
                 </div>
-              )}
+                {uploadStatus && <p className="upload-status" style={{ marginTop: '12px', fontSize: '13px', color: uploadStatus.includes('success') ? '#27ae60' : '#e74c3c', textAlign: 'center' }}>{uploadStatus}</p>}
+                {uploading && uploadProgress > 0 && (
+                  <div className="progress-bar" style={{ marginTop: '10px' }}>
+                    <div 
+                      className="progress-fill" 
+                      style={{ 
+                        width: `${uploadProgress}%`,
+                        height: '6px',
+                        background: '#4a6fa5',
+                        borderRadius: '3px',
+                        transition: 'width 0.3s ease'
+                      }}
+                    />
+                    <span style={{ fontSize: '12px', color: '#666', marginTop: '4px', display: 'block' }}>
+                      {uploadProgress}% uploaded
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -2296,35 +3620,33 @@ function EmployeePortal() {
         <p>Here's your HR overview</p>
       </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-icon green"><CheckCircleIcon /></div>
+      <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="stat-icon green" style={{ background: '#d4edda', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
           <div className="stat-info">
-            <h3>Leave Balance</h3>
-            <p>{leaveBalance.vacationLeave || 0} VL / {leaveBalance.sickLeave || 0} SL / 
-              {leaveBalance.maternityLeave || 0} ML / {leaveBalance.paternityLeave ||0} PL
-            </p>
+            <h3 style={{ margin: 0, fontSize: '14px', color: '#666' }}>Leave Balance</h3>
+            <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{leaveBalance.vacationLeave || 0} VL / {leaveBalance.sickLeave || 0} SL</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon orange"><HourglassEmptyIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="stat-icon orange" style={{ background: '#fff3cd', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><HourglassEmptyIcon style={{ color: '#f39c12' }} /></div>
           <div className="stat-info">
-            <h3>Pending Leaves</h3>
-            <p>{pendingLeaves}</p>
+            <h3 style={{ margin: 0, fontSize: '14px', color: '#666' }}>Pending Leaves</h3>
+            <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{pendingLeaves}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon purple"><FolderIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="stat-icon purple" style={{ background: '#e8d5f5', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><FolderIcon style={{ color: '#8e44ad' }} /></div>
           <div className="stat-info">
-            <h3>Compliance Rate</h3>
-            <p>{complianceRate}%</p>
+            <h3 style={{ margin: 0, fontSize: '14px', color: '#666' }}>Compliance Rate</h3>
+            <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{complianceRate}%</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon blue"><NotificationsIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="stat-icon blue" style={{ background: '#d4e0f7', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><NotificationsIcon style={{ color: '#4a6fa5' }} /></div>
           <div className="stat-info">
-            <h3>Notifications</h3>
-            <p>{unreadNotifications}</p>
+            <h3 style={{ margin: 0, fontSize: '14px', color: '#666' }}>Notifications</h3>
+            <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{unreadNotifications}</p>
           </div>
         </div>
       </div>
@@ -2437,12 +3759,12 @@ function EmployeePortal() {
               </p>
               {employeeLateDays > 0 && (
                 <p style={{ margin: '2px 0', fontSize: '13px', color: '#e67e22' }}>
-                  ⚠️ Late Days: {employeeLateDays} (Deduction: {formatCurrency(employeeLateDeduction)})
+                  Late Days: {employeeLateDays} (Deduction: {formatCurrency(employeeLateDeduction)})
                 </p>
               )}
               {employeeLateDays === 0 && employeePayroll && (
                 <p style={{ margin: '2px 0', fontSize: '13px', color: '#27ae60' }}>
-                  ✅ No late deductions this month
+                  No late deductions this month
                 </p>
               )}
             </div>
@@ -2472,40 +3794,40 @@ function EmployeePortal() {
         </div>
       )}
 
-      <div className="dashboard-grid">
-        <div className="dashboard-box">
-          <h2>Quick Actions</h2>
-          <div className="actions-grid">
-            <button onClick={() => { setActiveTab('attendance'); }} className="action-btn blue">
-              <AccessTimeIcon style={{ fontSize: 18, marginRight: 8 }} />
+      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+        <div className="dashboard-box" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px' }}>Quick Actions</h2>
+          <div className="actions-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <button onClick={() => { setActiveTab('attendance'); }} className="action-btn blue" style={{ padding: '12px', background: '#719de7', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px' }}>
+              <AccessTimeIcon style={{ fontSize: 18 }} />
               Time In/Out
             </button>
-            <button onClick={() => { setActiveTab('leave'); setShowLeaveForm(true); }} className="action-btn green">
-              <CalendarTodayIcon style={{ fontSize: 18, marginRight: 8 }} />
+            <button onClick={() => { setActiveTab('leave'); setShowLeaveForm(true); }} className="action-btn green" style={{ padding: '12px', background: '#5fd079', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px' }}>
+              <CalendarTodayIcon style={{ fontSize: 18 }} />
               File Leave
             </button>
-            <button onClick={() => { setActiveTab('compliance'); setShowUploadForm(true); }} className="action-btn purple">
-              <UploadIcon style={{ fontSize: 18, marginRight: 8 }} />
+            <button onClick={() => { setActiveTab('compliance'); setShowUploadForm(true); }} className="action-btn purple" style={{ padding: '12px', background: '#b082cf', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px' }}>
+              <UploadIcon style={{ fontSize: 18 }} />
               Upload Document
             </button>
-            <button onClick={() => setActiveTab('notifications')} className="action-btn orange">
-              <NotificationsIcon style={{ fontSize: 18, marginRight: 8 }} />
-              View Notifications
+            <button onClick={() => setActiveTab('notifications')} className="action-btn orange" style={{ padding: '12px', background: '#dabc5a', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px' }}>
+              <NotificationsIcon style={{ fontSize: 18 }} />
+              Notifications
             </button>
           </div>
         </div>
 
-        <div className="dashboard-box">
-          <h2>Recent Leave Requests</h2>
+        <div className="dashboard-box" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <h2 style={{ fontSize: '18px', marginTop: 0, marginBottom: '16px' }}>Recent Leave Requests</h2>
           {leaveRequests.slice(0, 3).map(req => (
-            <div key={req.id} className="recent-item">
-              <span className="recent-type">{req.type}</span>
-              <span className="recent-dates">{req.startDate} → {req.endDate}</span>
+            <div key={req.id} className="recent-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f0f2f7' }}>
+              <span className="recent-type" style={{ fontWeight: '500' }}>{req.type}</span>
+              <span className="recent-dates" style={{ fontSize: '13px', color: '#666' }}>{req.startDate} → {req.endDate}</span>
               {getStatusBadge(req.status)}
             </div>
           ))}
           {leaveRequests.length === 0 && (
-            <p className="no-data">No leave requests yet</p>
+            <p className="no-data" style={{ textAlign: 'center', color: '#999', padding: '20px' }}>No leave requests yet</p>
           )}
         </div>
       </div>
@@ -2515,10 +3837,10 @@ function EmployeePortal() {
   // ====== RENDER ATTENDANCE ======
   const renderAttendance = () => (
     <div className="employee-attendance-content">
-      <div className="section-header">
-        <h2><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <h2 style={{ margin: 0 }}><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="stats-badge">{new Date().toLocaleDateString()}</span>
+          <span className="stats-badge" style={{ padding: '6px 14px', background: '#678ed2', borderRadius: '6px', fontSize: '13px' }}>{new Date().toLocaleDateString()}</span>
           <button 
             onClick={downloadAttendancePDF}
             disabled={attendanceRecords.length === 0}
@@ -2543,53 +3865,53 @@ function EmployeePortal() {
         </div>
       </div>
 
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-icon blue"><EventNoteIcon /></div>
+      <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon blue" style={{ fontSize: '24px' }}><EventNoteIcon /></div>
           <div className="stat-info">
-            <h3>Total Days</h3>
-            <p>{attendanceSummary.totalDays}</p>
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Days</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.totalDays}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon green"><CheckCircleIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon green" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
           <div className="stat-info">
-            <h3>Present</h3>
-            <p>{attendanceSummary.presentDays}</p>
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Present</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.presentDays}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon orange"><WarningIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon orange" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#f39c12' }} /></div>
           <div className="stat-info">
-            <h3>Late</h3>
-            <p>{attendanceSummary.lateDays}</p>
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Late</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.lateDays}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon purple"><WarningIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon purple" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#8e44ad' }} /></div>
           <div className="stat-info">
-            <h3>Under Time</h3>
-            <p>{attendanceSummary.underTimeDays || 0}</p>
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Under Time</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.underTimeDays || 0}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon success"><CheckCircleIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon success" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
           <div className="stat-info">
-            <h3>Over Time</h3>
-            <p>{attendanceSummary.overTimeDays || 0}</p>
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Over Time</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.overTimeDays || 0}</p>
           </div>
         </div>
-        <div className="stat-card">
-          <div className="stat-icon red"><CancelIcon /></div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon red" style={{ fontSize: '24px' }}><CancelIcon style={{ color: '#e74c3c' }} /></div>
           <div className="stat-info">
-            <h3>Absent</h3>
-            <p>{attendanceSummary.absentDays || 0}</p>
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Absent</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.absentDays || 0}</p>
           </div>
         </div>
       </div>
 
-      <div className="form-card-modern">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
           <AccessTimeIcon />
           Today's Attendance
         </h3>
@@ -2669,20 +3991,20 @@ function EmployeePortal() {
         )}
       </div>
 
-      <div className="form-card-modern">
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
           <TimelineIcon />
           Attendance History
         </h3>
-        <div className="table-container">
-          <table className="attendance-table-modern">
+        <div className="table-container" style={{ overflowX: 'auto' }}>
+          <table className="attendance-table-modern" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
             <thead>
-              <tr>
-                <th>Date</th>
-                <th>Time In</th>
-                <th>Time Out</th>
-                <th>Status</th>
-                <th>Remarks</th>
+              <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Date</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Time In</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Time Out</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Status</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -2693,7 +4015,7 @@ function EmployeePortal() {
                   .map(record => {
                     let remarks = '';
                     if (record.status === 'Under Time' && record.undertimeMinutes) {
-                      remarks = `⏱️ Undertime: ${record.undertimeMinutes} mins`;
+                      remarks = ` Undertime: ${record.undertimeMinutes} mins`;
                     } else if (record.status === 'Over Time' && record.overtimeMinutes) {
                       remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
                     } else if (record.status === 'Late') {
@@ -2705,21 +4027,21 @@ function EmployeePortal() {
                       remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
                     }
                     return (
-                      <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''}>
-                        <td>{record.date}</td>
-                        <td className="time-cell">{record.timeIn || '—'}</td>
-                        <td className="time-cell">{record.timeOut || '—'}</td>
-                        <td>
+                      <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''} style={{ borderBottom: '1px solid #f0f2f7' }}>
+                        <td style={{ padding: '10px 14px' }}>{record.date}</td>
+                        <td className="time-cell" style={{ padding: '10px 14px' }}>{record.timeIn || '—'}</td>
+                        <td className="time-cell" style={{ padding: '10px 14px' }}>{record.timeOut || '—'}</td>
+                        <td style={{ padding: '10px 14px' }}>
                           {getAttendanceStatusBadge(record.status || 'Present')}
                         </td>
-                        <td style={{ fontSize: '12px', color: '#666' }}>{remarks}</td>
+                        <td style={{ padding: '10px 14px', fontSize: '12px', color: '#666' }}>{remarks}</td>
                       </tr>
                     );
                   })
               ) : (
                 <tr>
-                  <td colSpan="5" className="empty-state">
-                    <p>No attendance records found</p>
+                  <td colSpan="5" className="empty-state" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>
+                    No attendance records found
                   </td>
                 </tr>
               )}
@@ -2733,94 +4055,119 @@ function EmployeePortal() {
   // ====== RENDER LEAVE ======
   const renderLeave = () => (
     <div className="employee-leave-content">
-      <div className="section-header">
-        <h2>Application for Leave</h2>
-        <button onClick={() => setShowLeaveForm(true)} className="btn-add-modern">
-          <CalendarTodayIcon style={{ fontSize: 18, marginRight: 8 }} />
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <h2 style={{ margin: 0 }}>Application for Leave</h2>
+        <button onClick={() => setShowLeaveForm(true)} className="btn-add-modern" style={{ padding: '8px 16px', background: '#4a6fa5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', fontWeight: '500' }}>
+          <CalendarTodayIcon style={{ fontSize: 18 }} />
           File Leave
         </button>
       </div>
 
-      <div className="leave-balance-card">
-        <h3>Your Leave Balance</h3>
-        <div className="balance-grid">
-          <div className="balance-item">
-            <span className="balance-label">Vacation Leave</span>
-            <span className="balance-value">{leaveBalance.vacationLeave || 0} days</span>
+      <div className="leave-balance-card" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Your Leave Balance</h3>
+        <div className="balance-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+          <div className="balance-item" style={{ background: '#f8fafd', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+            <span className="balance-label" style={{ fontSize: '13px', color: '#666' }}>Vacation Leave</span>
+            <span className="balance-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#333', display: 'block' }}>{leaveBalance.vacationLeave || 0} days</span>
           </div>
-          <div className="balance-item">
-            <span className="balance-label">Sick Leave</span>
-            <span className="balance-value">{leaveBalance.sickLeave || 0} days</span>
+          <div className="balance-item" style={{ background: '#f8fafd', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+            <span className="balance-label" style={{ fontSize: '13px', color: '#666' }}>Sick Leave</span>
+            <span className="balance-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#333', display: 'block' }}>{leaveBalance.sickLeave || 0} days</span>
           </div>
-          <div className="balance-item">
-            <span className="balance-label">Maternity Leave</span>
-            <span className="balance-value">{leaveBalance.maternityLeave || 0} days</span>
+          <div className="balance-item" style={{ background: '#f8fafd', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+            <span className="balance-label" style={{ fontSize: '13px', color: '#666' }}>Maternity Leave</span>
+            <span className="balance-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#333', display: 'block' }}>{leaveBalance.maternityLeave || 0} days</span>
           </div>
-          <div className="balance-item">
-            <span className="balance-label">Paternity Leave</span>
-            <span className="balance-value">{leaveBalance.paternityLeave || 0} days</span>
+          <div className="balance-item" style={{ background: '#f8fafd', padding: '12px', borderRadius: '8px', textAlign: 'center' }}>
+            <span className="balance-label" style={{ fontSize: '13px', color: '#666' }}>Paternity Leave</span>
+            <span className="balance-value" style={{ fontSize: '20px', fontWeight: 'bold', color: '#333', display: 'block' }}>{leaveBalance.paternityLeave || 0} days</span>
           </div>
         </div>
       </div>
 
-      <div className="table-container">
-        <table className="leave-table">
+      <div className="table-container" style={{ overflowX: 'auto' }}>
+        <table className="leave-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px', background: 'white', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <thead>
-            <tr>
-              <th>Type</th>
-              <th>Dates</th>
-              <th>Days</th>
-              <th>Reason</th>
-              <th>Status</th>
-              <th>Action</th>
+            <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>Type</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>Dates</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>Days</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>Reason</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>Status</th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>Action</th>
             </tr>
           </thead>
           <tbody>
             {leaveRequests.map(req => (
-              <tr key={req.id}>
-                <td>{req.type}</td>
-                <td>{req.startDate} → {req.endDate}</td>
-                <td>{req.days}</td>
-                <td>{req.reason || '—'}</td>
-                <td>{getStatusBadge(req.status)}</td>
-                <td>
+              <tr key={req.id} style={{ borderBottom: '1px solid #f0f2f7' }}>
+                <td style={{ padding: '12px 16px' }}>{req.type}</td>
+                <td style={{ padding: '12px 16px' }}>{req.startDate} → {req.endDate}</td>
+                <td style={{ padding: '12px 16px' }}>{req.days}</td>
+                <td style={{ padding: '12px 16px' }}>{req.reason || '—'}</td>
+                <td style={{ padding: '12px 16px' }}>{getStatusBadge(req.status)}</td>
+                <td style={{ padding: '12px 16px' }}>
                   {req.status === 'Pending' && (
                     <button 
                       onClick={() => handleCancelLeave(req.id, req)}
                       className="btn-cancel-leave"
                       title="Cancel Leave Request"
+                      style={{
+                        padding: '4px 12px',
+                        background: '#e74c3c',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '12px'
+                      }}
                     >
                       <DeleteIcon style={{ fontSize: 16 }} />
                       Cancel
                     </button>
                   )}
                   {req.status !== 'Pending' && (
-                    <span className="no-action">—</span>
+                    <span className="no-action" style={{ color: '#999' }}>—</span>
                   )}
                 </td>
               </tr>
             ))}
             {leaveRequests.length === 0 && (
-              <tr><td colSpan="6" className="empty-state">No leave requests found</td></tr>
+              <tr><td colSpan="6" className="empty-state" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>No leave requests found</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       {showLeaveForm && (
-        <div className="modal-overlay" onClick={() => setShowLeaveForm(false)}>
-          <div className="modal-form" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>File Leave Request</h3>
-              <button className="modal-close" onClick={() => setShowLeaveForm(false)}>✕</button>
+        <div className="modal-overlay" onClick={() => setShowLeaveForm(false)} style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: '12px', maxWidth: '500px', width: '100%', padding: '0', maxHeight: '90vh', overflow: 'auto' }}>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>File Leave Request</h3>
+              <button className="modal-close" onClick={() => setShowLeaveForm(false)} style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>✕</button>
             </div>
-            <form onSubmit={handleLeaveSubmit}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Leave Type *</label>
+            <form onSubmit={handleLeaveSubmit} style={{ padding: '20px' }}>
+              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Leave Type *</label>
                   <select 
                     value={leaveFormData.type} 
                     onChange={(e) => setLeaveFormData({...leaveFormData, type: e.target.value})}
+                    style={{ width: '100%', padding: '10px 14px', border: '1px solid #dde1e8', borderRadius: '8px', fontSize: '14px' }}
                     required
                   >
                     <option value="Vacation">Vacation Leave</option>
@@ -2830,38 +4177,41 @@ function EmployeePortal() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Start Date *</label>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Start Date *</label>
                   <input 
                     type="date" 
                     value={leaveFormData.startDate} 
                     onChange={(e) => setLeaveFormData({...leaveFormData, startDate: e.target.value})}
+                    style={{ width: '100%', padding: '10px 14px', border: '1px solid #dde1e8', borderRadius: '8px', fontSize: '14px' }}
                     required
                   />
                 </div>
                 <div className="form-group">
-                  <label>End Date *</label>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>End Date *</label>
                   <input 
                     type="date" 
                     value={leaveFormData.endDate} 
                     onChange={(e) => setLeaveFormData({...leaveFormData, endDate: e.target.value})}
+                    style={{ width: '100%', padding: '10px 14px', border: '1px solid #dde1e8', borderRadius: '8px', fontSize: '14px' }}
                     required
                   />
                 </div>
-                <div className="form-group full-width">
-                  <label>Reason</label>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Reason</label>
                   <textarea 
                     placeholder="Enter reason for leave"
                     value={leaveFormData.reason} 
                     onChange={(e) => setLeaveFormData({...leaveFormData, reason: e.target.value})}
                     rows="3"
+                    style={{ width: '100%', padding: '10px 14px', border: '1px solid #dde1e8', borderRadius: '8px', fontSize: '14px', fontFamily: 'inherit' }}
                   />
                 </div>
               </div>
-              <div className="form-actions">
-                <button type="submit" className="btn-save" disabled={submitting}>
+              <div className="form-actions" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '20px' }}>
+                <button type="submit" className="btn-save" disabled={submitting} style={{ padding: '10px 32px', background: '#4a6fa5', color: 'white', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: '600', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
                   {submitting ? 'Submitting...' : 'Submit Request'}
                 </button>
-                <button type="button" className="btn-cancel" onClick={() => setShowLeaveForm(false)}>
+                <button type="button" className="btn-cancel" onClick={() => setShowLeaveForm(false)} style={{ padding: '10px 24px', background: '#f0f2f7', color: '#333', border: 'none', borderRadius: '8px', fontSize: '14px', cursor: 'pointer' }}>
                   Cancel
                 </button>
               </div>
@@ -2880,8 +4230,8 @@ function EmployeePortal() {
 
     return (
       <div className="employee-notifications-content">
-        <div className="section-header">
-          <h2>Notifications</h2>
+        <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+          <h2 style={{ margin: 0 }}>Notifications</h2>
           <div className="header-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             {unreadNotifications > 0 && (
               <button 
@@ -2925,13 +4275,13 @@ function EmployeePortal() {
                 Mark All Unread
               </button>
             )}
-            <span className="badge-count-large">{unreadNotifications} unread</span>
+            <span className="badge-count-large" style={{ padding: '6px 14px', background: '#f61e1b', borderRadius: '6px', fontSize: '13px' }}>{unreadNotifications} unread</span>
           </div>
         </div>
 
         <div className="notifications-list">
           {sortedNotifications.length === 0 && (
-            <div className="no-notifications">
+            <div className="no-notifications" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
               <NotificationsIcon style={{ fontSize: 48, color: '#b0c4de' }} />
               <p>No notifications yet</p>
             </div>
@@ -3007,7 +4357,7 @@ function EmployeePortal() {
                       title="Mark as Unread"
                       style={{
                         padding: '4px 10px',
-                        background: '#e67e22',
+                        background: '#e8dacd',
                         color: 'white',
                         border: 'none',
                         borderRadius: '4px',
@@ -3063,8 +4413,8 @@ function EmployeePortal() {
 
     return (
       <div className="employee-payroll-content">
-        <div className="section-header">
-          <h2><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
+        <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+          <h2 style={{ margin: 0 }}><AttachMoneyIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Payroll</h2>
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <button 
               onClick={refreshPayrollData}
@@ -3088,7 +4438,7 @@ function EmployeePortal() {
             </button>
             {hasCurrentPayroll && (
               <>
-                <span className="stats-badge">
+                <span className="stats-badge" style={{ padding: '6px 14px', background: '#e8f0fe', borderRadius: '6px', fontSize: '13px' }}>
                   {employeePayroll.periodMonth} {employeePayroll.periodYear}
                 </span>
               </>
@@ -3124,42 +4474,41 @@ function EmployeePortal() {
         </div>
 
         {payrollSummary.totalPayrolls > 0 && (
-          <div className="stats-row">
-            <div className="stat-card blue">
-              <div className="stat-icon"><AttachMoneyIcon style={{ fontSize: 30 }} /></div>
+          <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+            <div className="stat-card blue" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+              <div className="stat-icon"><AttachMoneyIcon style={{ fontSize: 24, color: '#4a6fa5' }} /></div>
               <div className="stat-info">
-                <h3>Total Earned</h3>
-                <p>{formatCurrency(payrollSummary.totalEarned)}</p>
+                <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Earned</h3>
+                <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{formatCurrency(payrollSummary.totalEarned)}</p>
               </div>
             </div>
-            <div className="stat-card red">
-              <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 30 }} /></div>
+            <div className="stat-card red" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+              <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 24, color: '#e74c3c' }} /></div>
               <div className="stat-info">
-                <h3>Total Deductions</h3>
-                <p>{formatCurrency(payrollSummary.totalDeductions)}</p>
+                <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Deductions</h3>
+                <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{formatCurrency(payrollSummary.totalDeductions)}</p>
               </div>
             </div>
-            <div className="stat-card green">
-              <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 30 }} /></div>
+            <div className="stat-card green" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+              <div className="stat-icon"><CheckCircleIcon style={{ fontSize: 24, color: '#27ae60' }} /></div>
               <div className="stat-info">
-                <h3>Total Net Pay</h3>
-                <p>{formatCurrency(payrollSummary.totalNetPay)}</p>
+                <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Net Pay</h3>
+                <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{formatCurrency(payrollSummary.totalNetPay)}</p>
               </div>
             </div>
-            <div className="stat-card orange">
-              <div className="stat-icon"><WarningIcon style={{ fontSize: 30 }} /></div>
+            <div className="stat-card orange" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+              <div className="stat-icon"><WarningIcon style={{ fontSize: 24, color: '#f39c12' }} /></div>
               <div className="stat-info">
-                <h3>Total Late Days</h3>
-                <p>{payrollSummary.totalLateDays} days</p>
+                <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Late Days</h3>
+                <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{payrollSummary.totalLateDays} days</p>
               </div>
             </div>
             {payrollSummary.totalLeaveCreditsUsed > 0 && (
-              <div className="stat-card teal">
-                <div className="stat-icon"><PeopleIcon style={{ fontSize: 30 }} /></div>
+              <div className="stat-card teal" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+                <div className="stat-icon"><PeopleIcon style={{ fontSize: 24, color: '#1abc9c' }} /></div>
                 <div className="stat-info">
-                  <h3>Leave Credits Used</h3>
-                  <p>{payrollSummary.totalLeaveCreditsUsed.toFixed(1)} days</p>
-                  <small>Total</small>
+                  <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Leave Credits Used</h3>
+                  <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{payrollSummary.totalLeaveCreditsUsed.toFixed(1)} days</p>
                 </div>
               </div>
             )}
@@ -3167,8 +4516,8 @@ function EmployeePortal() {
         )}
 
         {hasCurrentPayroll && (
-          <div className="form-card-modern">
-            <h3>
+          <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '10px' }}>
               Current Month Payroll
               <span style={{ fontSize: '13px', fontWeight: 'normal', marginLeft: '12px', color: '#666' }}>
                 ({employeePayroll.periodMonth} {employeePayroll.periodYear})
@@ -3176,27 +4525,27 @@ function EmployeePortal() {
             </h3>
             <div style={{ 
               display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '20px',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '12px',
               padding: '10px 0'
             }}>
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Period:</strong></p>
-                <p>{employeePayroll.periodStart} to {employeePayroll.periodEnd}</p>
+                <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Period:</strong></p>
+                <p style={{ margin: '5px 0' }}>{employeePayroll.periodStart} to {employeePayroll.periodEnd}</p>
               </div>
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Basic Salary:</strong></p>
-                <p>{formatCurrency(employeePayroll.basicSalary)}</p>
+                <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Basic Salary:</strong></p>
+                <p style={{ margin: '5px 0', fontWeight: '500' }}>{formatCurrency(employeePayroll.basicSalary)}</p>
               </div>
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Late Days:</strong></p>
-                <p style={{ color: employeeLateDays > 0 ? '#e67e22' : '#27ae60' }}>
+                <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Late Days:</strong></p>
+                <p style={{ margin: '5px 0', color: employeeLateDays > 0 ? '#e67e22' : '#27ae60', fontWeight: '500' }}>
                   {employeeLateDays > 0 ? `${employeeLateDays} days` : 'None ✅'}
                 </p>
               </div>
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Deduction Type:</strong></p>
-                <p style={{ 
+                <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Deduction Type:</strong></p>
+                <p style={{ margin: '5px 0', 
                   color: deductionType === 'leave' ? '#27ae60' : 
                          deductionType === 'monetary' ? '#e74c3c' : '#6c757d',
                   fontWeight: '600'
@@ -3208,28 +4557,28 @@ function EmployeePortal() {
               </div>
               {deductionType === 'leave' && employeePayroll.leaveCreditsUsed > 0 && (
                 <div>
-                  <p style={{ margin: '5px 0', color: '#666' }}><strong>Leave Credits Used:</strong></p>
-                  <p style={{ color: '#27ae60', fontWeight: '600' }}>
+                  <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Leave Credits Used:</strong></p>
+                  <p style={{ margin: '5px 0', color: '#27ae60', fontWeight: '600' }}>
                     {employeePayroll.leaveCreditsUsed.toFixed(1)} days
                   </p>
                 </div>
               )}
               {deductionType === 'monetary' && employeePayroll.monetaryDeduction > 0 && (
                 <div>
-                  <p style={{ margin: '5px 0', color: '#666' }}><strong>Monetary Deduction:</strong></p>
-                  <p style={{ color: '#e74c3c', fontWeight: '600' }}>
+                  <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Monetary Deduction:</strong></p>
+                  <p style={{ margin: '5px 0', color: '#e74c3c', fontWeight: '600' }}>
                     {formatCurrency(employeePayroll.monetaryDeduction)}
                   </p>
                 </div>
               )}
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Net Pay:</strong></p>
-                <p style={{ fontSize: '18px', fontWeight: 'bold', color: '#4a6fa5' }}>
+                <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Net Pay:</strong></p>
+                <p style={{ margin: '5px 0', fontSize: '20px', fontWeight: 'bold', color: '#4a6fa5' }}>
                   {formatCurrency(employeePayroll.netPay)}
                 </p>
               </div>
               <div>
-                <p style={{ margin: '5px 0', color: '#666' }}><strong>Status:</strong></p>
+                <p style={{ margin: '5px 0', color: '#666', fontSize: '13px' }}><strong>Status:</strong></p>
                 <span className={`status-badge ${employeePayroll.status === 'Paid' ? 'success' : 'warning'}`}>
                   {employeePayroll.status === 'Paid' ? 'Paid' : 'Pending'}
                 </span>
@@ -3239,17 +4588,17 @@ function EmployeePortal() {
         )}
 
         {hasHistory && (
-          <div className="form-card-modern" style={{ marginTop: '20px' }}>
-            <h3>
+          <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+            <h3 style={{ marginTop: 0, marginBottom: '10px' }}>
               Payroll History
               <span style={{ fontSize: '13px', fontWeight: 'normal', marginLeft: '12px', color: '#666' }}>
                 {allPayrollHistory.length} record{allPayrollHistory.length > 1 ? 's' : ''}
               </span>
             </h3>
-            <div className="table-container">
+            <div className="table-container" style={{ overflowX: 'auto' }}>
               <table className="payroll-history-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                 <thead>
-                  <tr style={{ background: '#f8fafd' }}>
+                  <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
                     <th style={{ padding: '10px 14px', textAlign: 'left' }}>Period</th>
                     <th style={{ padding: '10px 14px', textAlign: 'right' }}>Basic Salary</th>
                     <th style={{ padding: '10px 14px', textAlign: 'right' }}>Late Days</th>
@@ -3310,9 +4659,9 @@ function EmployeePortal() {
         )}
 
         {!hasCurrentPayroll && !hasHistory && (
-          <div className="form-card-modern" style={{ textAlign: 'center', padding: '40px' }}>
+          <div className="form-card-modern" style={{ textAlign: 'center', padding: '40px', background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
             <AttachMoneyIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 16px' }} />
-            <h3>No Payroll Records Found</h3>
+            <h3 style={{ marginTop: 0 }}>No Payroll Records Found</h3>
             <p style={{ color: '#666', marginTop: '8px' }}>
               Your payroll will appear here after payroll processing.
             </p>
@@ -3328,22 +4677,22 @@ function EmployeePortal() {
   // ====== RENDER PROFILE ======
   const renderProfile = () => (
     <div className="employee-profile-content">
-      <div className="section-header">
-        <h2>My Profile</h2>
+      <div className="section-header" style={{ marginBottom: '20px' }}>
+        <h2 style={{ margin: 0 }}>My Profile</h2>
       </div>
 
-      <div className="profile-card">
-        <div className="profile-avatar">
+      <div className="profile-card" style={{ background: 'white', borderRadius: '12px', padding: '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', gap: '24px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="profile-avatar" style={{ width: '80px', height: '80px', borderRadius: '50%', background: '#4a6fa5', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px', fontWeight: 'bold', flexShrink: 0 }}>
           <span>{employee?.fullName?.charAt(0) || '?'}</span>
         </div>
-        <div className="profile-details">
-          <h3>{employee?.fullName}</h3>
-          <p><BusinessIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee?.department}</p>
-          <p><WorkIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee?.position}</p>
-          <p><EmailIcon style={{ fontSize: 16, marginRight: 8 }} /> {employee?.email}</p>
-          <p><CalendarTodayIcon style={{ fontSize: 16, marginRight: 8 }} /> Hired: {employee?.dateHired || 'N/A'}</p>
-          <p><AttachMoneyIcon style={{ fontSize: 16, marginRight: 8 }} /> Salary: {formatCurrency(employee?.salary)}</p>
-          <p><PersonIcon style={{ fontSize: 16, marginRight: 8 }} /> Status: <span className={`status-dot ${employee?.status === 'Inactive' ? 'inactive' : 'active'}`}>
+        <div className="profile-details" style={{ flex: 1, minWidth: '250px' }}>
+          <h3 style={{ marginTop: 0, marginBottom: '8px' }}>{employee?.fullName}</h3>
+          <p style={{ margin: '6px 0', color: '#666' }}><BusinessIcon style={{ fontSize: 16, marginRight: 8, verticalAlign: 'middle' }} /> {employee?.department}</p>
+          <p style={{ margin: '6px 0', color: '#666' }}><WorkIcon style={{ fontSize: 16, marginRight: 8, verticalAlign: 'middle' }} /> {employee?.position}</p>
+          <p style={{ margin: '6px 0', color: '#666' }}><EmailIcon style={{ fontSize: 16, marginRight: 8, verticalAlign: 'middle' }} /> {employee?.email}</p>
+          <p style={{ margin: '6px 0', color: '#666' }}><CalendarTodayIcon style={{ fontSize: 16, marginRight: 8, verticalAlign: 'middle' }} /> Hired: {employee?.dateHired || 'N/A'}</p>
+          <p style={{ margin: '6px 0', color: '#666' }}><AttachMoneyIcon style={{ fontSize: 16, marginRight: 8, verticalAlign: 'middle' }} /> Salary: {formatCurrency(employee?.salary)}</p>
+          <p style={{ margin: '6px 0', color: '#666' }}><PersonIcon style={{ fontSize: 16, marginRight: 8, verticalAlign: 'middle' }} /> Status: <span className={`status-dot ${employee?.status === 'Inactive' ? 'inactive' : 'active'}`} style={{ padding: '2px 12px', borderRadius: '12px', background: employee?.status === 'Inactive' ? '#f8d7da' : '#d4edda', color: employee?.status === 'Inactive' ? '#721c24' : '#155724', fontSize: '13px' }}>
             {employee?.status || 'Active'}
           </span></p>
         </div>
@@ -3357,7 +4706,6 @@ function EmployeePortal() {
 
     const payroll = selectedPayroll;
 
-    // Print function for modal
     const printModalPayslip = () => {
       setShowPayslipModal(false);
       setTimeout(() => {
@@ -3366,16 +4714,28 @@ function EmployeePortal() {
     };
 
     return (
-      <div className="modal-overlay" onClick={() => setShowPayslipModal(false)}>
-        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px', maxHeight: '90vh' }}>
-          <div className="modal-header">
-            <h3>
+      <div className="modal-overlay" onClick={() => setShowPayslipModal(false)} style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px'
+      }}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: '12px', maxWidth: '700px', width: '100%', padding: '0', maxHeight: '90vh', overflow: 'auto' }}>
+          <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>
               <PictureAsPdfIcon style={{ fontSize: 20, marginRight: 8, verticalAlign: 'middle' }} />
               Payslip Details
             </h3>
-            <button className="modal-close" onClick={() => setShowPayslipModal(false)}>✕</button>
+            <button className="modal-close" onClick={() => setShowPayslipModal(false)} style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>✕</button>
           </div>
-          <div style={{ padding: '10px 0' }}>
+          <div style={{ padding: '20px' }}>
             <div style={{ 
               display: 'grid', 
               gridTemplateColumns: '1fr 1fr', 
@@ -3495,79 +4855,96 @@ function EmployeePortal() {
 
   // ====== SIDEBAR ======
   const Sidebar = () => (
-    <div className={`employee-sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
-      <div className="sidebar-top">
-        <img src={logo} alt="LGU Logo" className="sidebar-logo" />
-        <h3>HR System</h3>
-        <p>Pagbilao LGU</p>
-        <div className="user-badge">
-          <span className="user-name">{employee?.fullName}</span>
-          <span className="user-role">{employee?.position}</span>
-          <span className="user-dept">{employee?.department}</span>
+    <div className={`employee-sidebar ${sidebarOpen ? 'open' : 'closed'}`} style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      bottom: 0,
+      width: '250px',
+      background: '#1a2a4a',
+      color: 'white',
+      transition: 'transform 0.3s ease',
+      transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+      zIndex: 100,
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      <div className="sidebar-top" style={{ padding: '20px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <img src={logo} alt="LGU Logo" className="sidebar-logo" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', marginBottom: '8px' }} />
+        <h3 style={{ margin: 0, fontSize: '18px' }}>HR System</h3>
+        <p style={{ margin: '4px 0 0', fontSize: '12px', opacity: 0.7 }}>Pagbilao LGU</p>
+        <div className="user-badge" style={{ marginTop: '12px', padding: '8px 12px', background: 'rgba(255,255,255,0.1)', borderRadius: '8px' }}>
+          <span className="user-name" style={{ display: 'block', fontWeight: 'bold', fontSize: '14px' }}>{employee?.fullName}</span>
+          <span className="user-role" style={{ display: 'block', fontSize: '12px', opacity: 0.8 }}>{employee?.position}</span>
+          <span className="user-dept" style={{ display: 'block', fontSize: '11px', opacity: 0.6 }}>{employee?.department}</span>
         </div>
       </div>
 
-      <div className="sidebar-menu">
-        <button 
-          onClick={() => { setActiveTab('dashboard'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'dashboard' ? 'active' : ''}`}
-        >
-          <DashboardIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Dashboard
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('attendance'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'attendance' ? 'active' : ''}`}
-        >
-          <AccessTimeIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Attendance
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('leave'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'leave' ? 'active' : ''}`}
-        >
-          <CalendarTodayIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Leave Management
-          {pendingLeaves > 0 && <span className="badge-count">{pendingLeaves}</span>}
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('compliance'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'compliance' ? 'active' : ''}`}
-        >
-          <FolderIcon style={{ fontSize: 20, marginRight: 12 }} />
-          My Compliance
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('notifications'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'notifications' ? 'active' : ''}`}
-        >
-          <NotificationsIcon style={{ fontSize: 20, marginRight: 12 }} />
-          Notifications
-          {unreadNotifications > 0 && <span className="badge-count">{unreadNotifications}</span>}
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('payroll'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'payroll' ? 'active' : ''}`}
-        >
-          <AttachMoneyIcon style={{ fontSize: 20, marginRight: 12 }} />
-          My Payroll
-        </button>
-        
-        <button 
-          onClick={() => { setActiveTab('profile'); if(isMobile) setSidebarOpen(false); }}
-          className={`sidebar-link ${activeTab === 'profile' ? 'active' : ''}`}
-        >
-          <PersonIcon style={{ fontSize: 20, marginRight: 12 }} />
-          My Profile
-        </button>
+      <div className="sidebar-menu" style={{ flex: 1, padding: '12px 0', overflowY: 'auto' }}>
+        {[
+          { id: 'dashboard', icon: <DashboardIcon />, label: 'Dashboard' },
+          { id: 'attendance', icon: <AccessTimeIcon />, label: 'Attendance' },
+          { id: 'leave', icon: <CalendarTodayIcon />, label: 'Leave Management', badge: pendingLeaves },
+          { id: 'compliance', icon: <FolderIcon />, label: 'My Compliance' },
+          { id: 'notifications', icon: <NotificationsIcon />, label: 'Notifications', badge: unreadNotifications },
+          { id: 'payroll', icon: <AttachMoneyIcon />, label: 'My Payroll' },
+          { id: 'profile', icon: <PersonIcon />, label: 'My Profile' },
+        ].map(item => (
+          <button 
+            key={item.id}
+            onClick={() => { setActiveTab(item.id); if(isMobile) setSidebarOpen(false); }}
+            className={`sidebar-link ${activeTab === item.id ? 'active' : ''}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              width: '100%',
+              padding: '12px 20px',
+              background: activeTab === item.id ? 'rgba(74,111,165,0.3)' : 'transparent',
+              border: 'none',
+              color: 'white',
+              fontSize: '14px',
+              cursor: 'pointer',
+              transition: 'background 0.2s ease',
+              gap: '12px',
+              position: 'relative'
+            }}
+            onMouseEnter={(e) => { if (activeTab !== item.id) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+            onMouseLeave={(e) => { if (activeTab !== item.id) e.currentTarget.style.background = 'transparent'; }}
+          >
+            <span style={{ fontSize: '20px', display: 'flex', alignItems: 'center' }}>{item.icon}</span>
+            <span>{item.label}</span>
+            {item.badge > 0 && (
+              <span style={{
+                position: 'absolute',
+                right: '16px',
+                background: '#e74c3c',
+                color: 'white',
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontWeight: 'bold'
+              }}>{item.badge}</span>
+            )}
+          </button>
+        ))}
 
-        <button onClick={handleLogout} className="logout-btn">
-          <LogoutIcon style={{ fontSize: 20, marginRight: 12 }} />
+        <button onClick={handleLogout} className="logout-btn" style={{
+          display: 'flex',
+          alignItems: 'center',
+          width: '100%',
+          padding: '12px 20px',
+          background: 'transparent',
+          border: 'none',
+          color: '#e74c3c',
+          fontSize: '14px',
+          cursor: 'pointer',
+          gap: '12px',
+          marginTop: '20px',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          paddingTop: '20px'
+        }}>
+          <LogoutIcon style={{ fontSize: 20 }} />
           Logout
         </button>
       </div>
@@ -3579,13 +4956,25 @@ function EmployeePortal() {
     if (!previewFile) return null;
     
     return (
-      <div className="modal-overlay" onClick={() => setPreviewFile(false)}>
-        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90%', maxHeight: '90%', padding: '20px' }}>
-          <div className="modal-header">
-            <h3>{previewFileName || 'Document Preview'}</h3>
-            <button className="modal-close" onClick={() => setPreviewFile(false)}>✕</button>
+      <div className="modal-overlay" onClick={() => setPreviewFile(false)} style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '20px'
+      }}>
+        <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ background: 'white', borderRadius: '12px', maxWidth: '90%', maxHeight: '90%', width: '100%', padding: '0', overflow: 'hidden' }}>
+          <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0 }}>{previewFileName || 'Document Preview'}</h3>
+            <button className="modal-close" onClick={() => setPreviewFile(false)} style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>✕</button>
           </div>
-          <div style={{ width: '100%', height: '80vh', minHeight: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
+          <div style={{ padding: '20px', height: '80vh', minHeight: '400px', display: 'flex', justifyContent: 'center', alignItems: 'center', background: '#f5f5f5' }}>
             {previewFileUrl && previewFileUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) ? (
               <img 
                 src={previewFileUrl} 
@@ -3618,46 +5007,87 @@ function EmployeePortal() {
 
   // ====== MAIN RETURN ======
   if (loading || authLoading) {
-    return <div className="loading">Loading your portal...</div>;
+    return <div className="loading" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: '18px' }}>Loading your portal...</div>;
   }
 
   if (!employee) {
-    return <div className="error">No employee profile found. Please contact HR.</div>;
+    return <div className="error" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: '18px', color: '#e74c3c' }}>No employee profile found. Please contact HR.</div>;
   }
 
   return (
-    <div className="employee-portal">
+    <div className="employee-portal" style={{ display: 'flex', minHeight: '100vh', background: '#f0f4fe' }}>
       {renderPreviewModal()}
+      {renderScannerModal()}
+      {renderBatchUploadModal()}
 
       {showNotificationAlert && latestNotification && (
-        <div className={`notification-alert ${latestNotification.status === 'Approved' ? 'approved' : 'rejected'}`}>
-          <div className="alert-content">
-            <span className="alert-icon">
+        <div className={`notification-alert ${latestNotification.status === 'Approved' ? 'approved' : 'rejected'}`} style={{
+          position: 'fixed',
+          top: '20px',
+          right: '20px',
+          padding: '16px 24px',
+          borderRadius: '12px',
+          background: latestNotification.status === 'Approved' ? '#d4edda' : '#f8d7da',
+          border: `2px solid ${latestNotification.status === 'Approved' ? '#27ae60' : '#e74c3c'}`,
+          zIndex: 2000,
+          maxWidth: '400px',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          animation: 'slideIn 0.3s ease'
+        }}>
+          <div className="alert-content" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span className="alert-icon" style={{ fontSize: '24px' }}>
               {latestNotification.status === 'Approved' ? '✅' : '❌'}
             </span>
-            <span className="alert-message">{latestNotification.message}</span>
-            <button onClick={dismissAlert} className="alert-close">×</button>
+            <span className="alert-message" style={{ flex: 1, fontSize: '14px' }}>{latestNotification.message}</span>
+            <button onClick={dismissAlert} className="alert-close" style={{ background: 'transparent', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>×</button>
           </div>
         </div>
       )}
 
       {isMobile && (
-        <div className="mobile-header">
-          <button onClick={toggleSidebar} className="menu-btn">
+        <div className="mobile-header" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          padding: '12px 16px',
+          background: '#1a2a4a',
+          color: 'white',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          zIndex: 99
+        }}>
+          <button onClick={toggleSidebar} className="menu-btn" style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer' }}>
             <MenuIcon />
           </button>
-          <span className="mobile-title">HR System</span>
-          <span className="mobile-user">{employee?.fullName?.charAt(0) || '?'}</span>
+          <span className="mobile-title" style={{ fontSize: '16px', fontWeight: 'bold' }}>HR System</span>
+          <span className="mobile-user" style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#4a6fa5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{employee?.fullName?.charAt(0) || '?'}</span>
         </div>
       )}
 
       {isMobile && sidebarOpen && (
-        <div className="sidebar-overlay" onClick={toggleSidebar}></div>
+        <div className="sidebar-overlay" onClick={toggleSidebar} style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          zIndex: 99
+        }}></div>
       )}
 
       <Sidebar />
 
-      <div className={`employee-main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+      <div className={`employee-main-content ${sidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`} style={{
+        flex: 1,
+        padding: isMobile ? '70px 16px 16px' : '24px',
+        marginLeft: isMobile ? 0 : (sidebarOpen ? '250px' : '0'),
+        transition: 'margin-left 0.3s ease',
+        maxWidth: '100%',
+        overflowX: 'hidden'
+      }}>
         {activeTab === 'dashboard' && renderDashboard()}
         {activeTab === 'attendance' && renderAttendance()}
         {activeTab === 'leave' && renderLeave()}
