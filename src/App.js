@@ -18,6 +18,8 @@ import Navbar from './components/Navbar';
 import PrivateRoute from './components/PrivateRoute';
 import { AuthProvider } from './components/contexts/AuthContext';
 
+import PendingApprovals from './components/PendingApprovals';
+
 import MGDHDashboard from './other file for dashboard/MGDHPDashboard';
 import EmployeePortal from './other file for dashboard/EmployeePortal';
 
@@ -74,6 +76,7 @@ function AppContent() {
         <Routes>
           {/* Public Routes - No Navbar */}
           <Route path="/login" element={<Login />} />
+          <Route path="/pending-approvals" element={<PendingApprovals/>} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 

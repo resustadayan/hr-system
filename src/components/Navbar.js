@@ -1,7 +1,8 @@
 // src/components/Navbar.js
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { logout } from '../firebase';
+import { logout, db } from '../firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -11,6 +12,7 @@ import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import PeopleIcon from '@mui/icons-material/People';
+import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';   // 👈 NEW
 import LogoutIcon from '@mui/icons-material/Logout';
 import logo from '../assets/hrmo logo.jpg';
 
@@ -19,7 +21,9 @@ function Navbar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [pendingCount, setPendingCount] = useState(0);   // 👈 NEW
 
+  // ---- Responsive resize ----
   useEffect(() => {
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -31,11 +35,33 @@ function Navbar() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // ---- Live count of pending approvals ----
+  useEffect(() => {
+    const q = query(
+      collection(db, 'users'),
+      where('status', '==', 'Pending Approval')
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => setPendingCount(snapshot.size),
+      (error) => {
+        console.error('Pending approvals listener error:', error);
+        setPendingCount(0);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
   const handleLogout = async () => {
     try {
       await logout();
       localStorage.removeItem('isAuthenticated');
       localStorage.removeItem('userRole');
+      localStorage.removeItem('userName');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('userId');
       navigate('/login');
     } catch (error) {
       console.error('Logout error:', error);
@@ -49,7 +75,14 @@ function Navbar() {
     { path: '/compliance', label: 'Compliance', icon: AssignmentTurnedInIcon },
     { path: '/analytics', label: 'Analytics', icon: BarChartIcon },
     { path: '/payroll', label: 'Payroll', icon: AttachMoneyIcon },
-    { path: '/users', label: 'Users', icon: PeopleIcon }
+    // 👇 NEW: Pending Approvals with live badge
+    {
+      path: '/pending-approvals',
+      label: 'Pending Approvals',
+      icon: HourglassEmptyIcon,
+      badge: pendingCount,
+    },
+    { path: '/users', label: 'Users', icon: PeopleIcon },
   ];
 
   return (
@@ -71,28 +104,73 @@ function Navbar() {
                 key={item.path}
                 to={item.path}
                 className={`sidebar-link ${isActive ? 'active' : ''}`}
-                style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  position: 'relative',
+                }}
               >
                 <Icon style={{ fontSize: 20 }} />
                 <span>{item.label}</span>
+
+                {/* 👇 Live badge for pending approvals */}
+                {item.badge > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      background: '#e74c3c',
+                      color: 'white',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      minWidth: '20px',
+                      textAlign: 'center',
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             );
           })}
-          <button onClick={handleLogout} className="logout-btn" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+
+          <button
+            onClick={handleLogout}
+            className="logout-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+          >
             <LogoutIcon style={{ fontSize: 20 }} />
             <span>Logout</span>
           </button>
         </div>
       </div>
 
-      {/* Mobile Navbar - Only visible on mobile */}
+      {/* Mobile Navbar */}
       {isMobile && (
         <div className="mobile-navbar">
           <div className="mobile-navbar-left">
             <img src={logo} alt="LGU Logo" className="mobile-logo" />
             <span className="mobile-title">HR System</span>
+            {/* 👇 Mobile badge on the hamburger button */}
+            {pendingCount > 0 && (
+              <span
+                style={{
+                  marginLeft: 8,
+                  background: '#e74c3c',
+                  color: 'white',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                }}
+              >
+                {pendingCount}
+              </span>
+            )}
           </div>
-          <button 
+          <button
             className="mobile-menu-btn"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
@@ -113,17 +191,43 @@ function Navbar() {
                 to={item.path}
                 onClick={() => setIsMobileMenuOpen(false)}
                 className={isActive ? 'active' : ''}
-                style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
               >
                 <Icon style={{ fontSize: 20 }} />
                 <span>{item.label}</span>
+
+                {/* 👇 Badge on mobile menu */}
+                {item.badge > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 'auto',
+                      background: '#e74c3c',
+                      color: 'white',
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                    }}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             );
           })}
-          <button onClick={() => {
-            setIsMobileMenuOpen(false);
-            handleLogout();
-          }} className="mobile-logout-btn" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+
+          <button
+            onClick={() => {
+              setIsMobileMenuOpen(false);
+              handleLogout();
+            }}
+            className="mobile-logout-btn"
+            style={{ display: 'flex', alignItems: 'center', gap: '12px' }}
+          >
             <LogoutIcon style={{ fontSize: 20 }} />
             <span>Logout</span>
           </button>

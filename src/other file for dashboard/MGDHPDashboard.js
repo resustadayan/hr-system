@@ -41,6 +41,7 @@ import BeachAccessIcon from '@mui/icons-material/BeachAccess';
 import SickIcon from '@mui/icons-material/Sick';
 import ChildCareIcon from '@mui/icons-material/ChildCare';
 import ManIcon from '@mui/icons-material/Man';
+import RestoreIcon from '@mui/icons-material/Restore';
 import logo from '../assets/hrmo logo.jpg';
 
 // Late deduction rate (matches EmployeePortal.js)
@@ -79,6 +80,12 @@ function MGDHDashboard() {
   const [leaveBalances, setLeaveBalances] = useState({});
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [selectedEmployeeBalance, setSelectedEmployeeBalance] = useState(null);
+  
+  // ====== REJECT REASON STATES ======
+  const [showRejectReason, setShowRejectReason] = useState(false);
+  const [selectedLeaveId, setSelectedLeaveId] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [processingRestore, setProcessingRestore] = useState({});
   
   // ====== ATTENDANCE STATES ======
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -171,6 +178,107 @@ function MGDHDashboard() {
     if (balance > 5) return '#27ae60';
     if (balance > 0) return '#e67e22';
     return '#e74c3c';
+  };
+
+  // ====== RESTORE LEAVE CREDITS ON REJECTION ======
+  const restoreLeaveCreditsOnRejection = async (leaveId, leaveData) => {
+    // Prevent duplicate restoration
+    if (processingRestore[leaveId]) {
+      console.log(`⏳ Restoration already in progress for ${leaveId}`);
+      return;
+    }
+
+    try {
+      // Only restore if status is 'Rejected' and not already restored
+      if (leaveData.status !== 'Rejected') {
+        console.log(`⚠️ Status is ${leaveData.status}, not Rejected. Skipping.`);
+        return;
+      }
+      
+      if (leaveData.creditsRestored === true) {
+        console.log(`✅ Credits already restored for ${leaveId}`);
+        return;
+      }
+
+      // Set processing flag
+      setProcessingRestore(prev => ({ ...prev, [leaveId]: true }));
+
+      console.log(`🔄 [MGDH] Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
+
+      // Get the current balance for this employee
+      const balance = leaveBalances[leaveData.employeeId];
+      if (!balance || !balance.id) {
+        console.warn('No leave balance found for employee:', leaveData.employeeId);
+        setProcessingRestore(prev => ({ ...prev, [leaveId]: false }));
+        return;
+      }
+
+      const currentBalance = leaveData.type === 'Vacation' 
+        ? (balance.vacationLeave || 0)
+        : leaveData.type === 'Maternity'
+        ? (balance.maternityLeave || 0)
+        : leaveData.type === 'Paternity'
+        ? (balance.paternityLeave || 0)
+        : (balance.sickLeave || 0);
+      
+      const updatedBalance = { ...balance };
+      if (leaveData.type === 'Vacation') {
+        updatedBalance.vacationLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Maternity') {
+        updatedBalance.maternityLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Paternity') {
+        updatedBalance.paternityLeave = currentBalance + leaveData.days;
+      } else {
+        updatedBalance.sickLeave = currentBalance + leaveData.days;
+      }
+
+      // Update the leave balance in Firestore
+      await updateDoc(doc(db, 'leaveBalances', balance.id), {
+        vacationLeave: updatedBalance.vacationLeave || 0,
+        sickLeave: updatedBalance.sickLeave || 0,
+        maternityLeave: updatedBalance.maternityLeave || 0,
+        paternityLeave: updatedBalance.paternityLeave || 0,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Mark the leave request as credits restored
+      await updateDoc(doc(db, 'leaveRequests', leaveId), {
+        creditsRestored: true,
+        creditsRestoredAt: new Date().toISOString()
+      });
+
+      // Update local state
+      const newBalances = { ...leaveBalances };
+      newBalances[leaveData.employeeId] = {
+        ...newBalances[leaveData.employeeId],
+        ...updatedBalance,
+        updatedAt: new Date().toISOString()
+      };
+      setLeaveBalances(newBalances);
+
+      // Notify employee
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: leaveData.employeeId,
+        employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+        department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+        leaveId: leaveId,
+        leaveType: leaveData.type,
+        leaveDays: leaveData.days,
+        message: `Your ${leaveData.type} leave request was rejected by ${userName}. ${leaveData.days} days have been restored to your balance.`,
+        type: 'leave_rejected_restored',
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      console.log(`✅ [MGDH] Successfully restored ${leaveData.days} ${leaveData.type} days for ${leaveData.employeeName || getEmployeeName(leaveData.employeeId)}`);
+
+    } catch (error) {
+      console.error('Error restoring leave credits on rejection:', error);
+    } finally {
+      setProcessingRestore(prev => ({ ...prev, [leaveId]: false }));
+    }
   };
 
   // ====== GROUP ATTENDANCE BY DATE FOR AM/PM ======
@@ -1015,7 +1123,7 @@ function MGDHDashboard() {
       // Enhance team members with leave balance data
       const teamWithBalances = teamList.map(member => ({
         ...member,
-        leaveBalance: getEmployeeLeaveBalance(member.id, balances)
+        leaveBalance: getEmployeeLeaveBalance(member.id)
       }));
       
       setTeamMembers(teamWithBalances);
@@ -1266,135 +1374,7 @@ function MGDHDashboard() {
     }
   };
 
-  const handleLeaveAction = async (leaveId, action) => {
-    if (processingAction) return;
-    setProcessingAction(true);
-
-    try {
-      const leaveDoc = await getDoc(doc(db, 'leaveRequests', leaveId));
-      const leaveData = leaveDoc.data();
-      
-      if (!leaveData) {
-        alert('Leave request not found');
-        setProcessingAction(false);
-        return;
-      }
-
-      // Check if employee has enough leave balance before approving
-      if (action === 'approve') {
-        const balance = getEmployeeLeaveBalance(leaveData.employeeId);
-        let availableBalance = 0;
-        switch(leaveData.type) {
-          case 'Vacation': availableBalance = balance.vacationLeave; break;
-          case 'Sick': availableBalance = balance.sickLeave; break;
-          case 'Maternity': availableBalance = balance.maternityLeave; break;
-          case 'Paternity': availableBalance = balance.paternityLeave; break;
-          default: availableBalance = 0;
-        }
-        
-        if (leaveData.days > availableBalance) {
-          alert(`❌ Insufficient leave credits!\n${leaveData.employeeName || 'Employee'} has only ${availableBalance} ${leaveData.type} leave days available.\nRequested: ${leaveData.days} days.\nPlease reject this request or ask the employee to adjust.`);
-          setProcessingAction(false);
-          return;
-        }
-      }
-
-      const newStatus = action === 'approve' ? 'Approved' : 'Rejected';
-      
-      await updateDoc(doc(db, 'leaveRequests', leaveId), { 
-        status: newStatus,
-        reviewedBy: userName,
-        reviewedAt: new Date().toISOString()
-      });
-
-      // If approved, deduct leave balance
-      if (action === 'approve') {
-        const balance = leaveBalances[leaveData.employeeId];
-        if (balance && balance.id) {
-          const updates = {};
-          switch(leaveData.type) {
-            case 'Vacation': updates.vacationLeave = (balance.vacationLeave || 0) - leaveData.days; break;
-            case 'Sick': updates.sickLeave = (balance.sickLeave || 0) - leaveData.days; break;
-            case 'Maternity': updates.maternityLeave = (balance.maternityLeave || 0) - leaveData.days; break;
-            case 'Paternity': updates.paternityLeave = (balance.paternityLeave || 0) - leaveData.days; break;
-            default: break;
-          }
-          await updateDoc(doc(db, 'leaveBalances', balance.id), {
-            ...updates,
-            updatedAt: new Date().toISOString()
-          });
-          
-          // Update local state
-          const updatedBalances = { ...leaveBalances };
-          if (updatedBalances[leaveData.employeeId]) {
-            updatedBalances[leaveData.employeeId] = {
-              ...updatedBalances[leaveData.employeeId],
-              ...updates,
-              updatedAt: new Date().toISOString()
-            };
-            setLeaveBalances(updatedBalances);
-          }
-        }
-      }
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: leaveData.employeeId,
-        employeeName: leaveData.employeeName || 'Employee',
-        department: department || leaveData.department || '',
-        leaveId: leaveId,
-        leaveType: leaveData.type,
-        leaveDays: leaveData.days,
-        status: newStatus,
-        reviewedBy: userName,
-        message: `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been ${newStatus.toLowerCase()} by ${userName}.${action === 'approve' ? ` ${leaveData.days} ${leaveData.type} days deducted.` : ''}`,
-        type: 'leave_action',
-        read: false,
-        forEmployee: true,
-        forMGDH: false,
-        createdAt: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        employeeId: leaveData.employeeId,
-        employeeName: leaveData.employeeName || 'Employee',
-        department: department || leaveData.department || '',
-        leaveId: leaveId,
-        leaveType: leaveData.type,
-        leaveDays: leaveData.days,
-        status: newStatus,
-        reviewedBy: userName,
-        message: `✅ ${leaveData.employeeName || 'Employee'}'s ${leaveData.type} leave request was ${newStatus.toLowerCase()} by ${userName}.${action === 'approve' ? ` ${leaveData.days} ${leaveData.type} days deducted.` : ''}`,
-        type: 'leave_action_confirmation',
-        read: false,
-        forEmployee: false,
-        forMGDH: true,
-        createdAt: new Date().toISOString()
-      });
-
-      alert(`Leave request ${newStatus.toLowerCase()} successfully!\n${action === 'approve' ? `✅ ${leaveData.days} ${leaveData.type} days deducted.` : ''}\nEmployee has been notified.`);
-      
-      await fetchMGDHData();
-    } catch (error) {
-      console.error('Error updating leave:', error);
-      alert('Failed to update leave request: ' + error.message);
-    } finally {
-      setProcessingAction(false);
-    }
-  };
-
-  const getStatusBadge = (status) => {
-    switch(status) {
-      case 'Approved':
-        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Approved</span>;
-      case 'Pending':
-        return <span className="status-badge warning"><HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4 }} /> Pending</span>;
-      case 'Rejected':
-        return <span className="status-badge danger"><CancelIcon style={{ fontSize: 14, marginRight: 4 }} /> Rejected</span>;
-      default:
-        return <span className="status-badge secondary">{status}</span>;
-    }
-  };
-
+  // ====== GET EMPLOYEE NAME ======
   const getEmployeeName = (employeeId) => {
     const emp = teamMembers.find(e => e.id === employeeId);
     if (emp) return emp.fullName || emp.name || 'Unknown';
@@ -1430,6 +1410,206 @@ function MGDHDashboard() {
     if (rate >= 75) return 'Mostly Compliant';
     if (rate > 0) return 'Partial';
     return 'Needs Attention';
+  };
+
+  // ====== HANDLE LEAVE ACTION WITH CREDIT RESTORATION ======
+  const handleLeaveAction = async (leaveId, action) => {
+    if (processingAction) return;
+    setProcessingAction(true);
+
+    try {
+      const leaveDoc = await getDoc(doc(db, 'leaveRequests', leaveId));
+      const leaveData = leaveDoc.data();
+      
+      if (!leaveData) {
+        alert('Leave request not found');
+        setProcessingAction(false);
+        return;
+      }
+
+      // If rejecting, restore credits first
+      if (action === 'reject') {
+        // Check if credits were already restored
+        if (!leaveData.creditsRestored) {
+          await restoreLeaveCreditsOnRejection(leaveId, leaveData);
+        }
+        
+        // Update status to Rejected with reason
+        await updateDoc(doc(db, 'leaveRequests', leaveId), { 
+          status: 'Rejected',
+          reviewedBy: userName,
+          rejectionReason: rejectReason || 'No reason provided',
+          reviewedAt: new Date().toISOString()
+        });
+
+        // Create notification for employee
+        await addDoc(collection(db, 'notifications'), {
+          employeeId: leaveData.employeeId,
+          employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+          department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+          leaveId: leaveId,
+          leaveType: leaveData.type,
+          leaveDays: leaveData.days,
+          status: 'Rejected',
+          reviewedBy: userName,
+          message: `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been REJECTED by ${userName}. Reason: ${rejectReason || 'No reason provided'}. ${leaveData.days} days have been restored to your balance.`,
+          type: 'leave_action',
+          read: false,
+          forEmployee: true,
+          forMGDH: false,
+          createdAt: new Date().toISOString()
+        });
+
+        // Create notification for MGDH
+        await addDoc(collection(db, 'notifications'), {
+          employeeId: leaveData.employeeId,
+          employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+          department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+          leaveId: leaveId,
+          leaveType: leaveData.type,
+          leaveDays: leaveData.days,
+          status: 'Rejected',
+          reviewedBy: userName,
+          message: `❌ ${leaveData.employeeName || getEmployeeName(leaveData.employeeId)}'s ${leaveData.type} leave request was REJECTED by ${userName}. Credits restored.`,
+          type: 'leave_action_confirmation',
+          read: false,
+          forEmployee: false,
+          forMGDH: true,
+          createdAt: new Date().toISOString()
+        });
+
+        alert(`✅ Leave request rejected. ${leaveData.days} ${leaveData.type} days restored to employee's balance.`);
+        
+        // Reset reject modal
+        setShowRejectReason(false);
+        setSelectedLeaveId(null);
+        setRejectReason('');
+        
+      } else if (action === 'approve') {
+        // Check if employee has enough leave balance before approving
+        const balance = getEmployeeLeaveBalance(leaveData.employeeId);
+        let availableBalance = 0;
+        switch(leaveData.type) {
+          case 'Vacation': availableBalance = balance.vacationLeave; break;
+          case 'Sick': availableBalance = balance.sickLeave; break;
+          case 'Maternity': availableBalance = balance.maternityLeave; break;
+          case 'Paternity': availableBalance = balance.paternityLeave; break;
+          default: availableBalance = 0;
+        }
+        
+        if (leaveData.days > availableBalance) {
+          alert(`❌ Insufficient leave credits!\n${leaveData.employeeName || getEmployeeName(leaveData.employeeId)} has only ${availableBalance} ${leaveData.type} leave days available.\nRequested: ${leaveData.days} days.\nPlease reject this request or ask the employee to adjust.`);
+          setProcessingAction(false);
+          return;
+        }
+
+        // Update status to Approved
+        await updateDoc(doc(db, 'leaveRequests', leaveId), { 
+          status: 'Approved',
+          reviewedBy: userName,
+          reviewedAt: new Date().toISOString()
+        });
+
+        // Deduct leave balance
+        const balanceObj = leaveBalances[leaveData.employeeId];
+        if (balanceObj && balanceObj.id) {
+          const updates = {};
+          switch(leaveData.type) {
+            case 'Vacation': updates.vacationLeave = (balanceObj.vacationLeave || 0) - leaveData.days; break;
+            case 'Sick': updates.sickLeave = (balanceObj.sickLeave || 0) - leaveData.days; break;
+            case 'Maternity': updates.maternityLeave = (balanceObj.maternityLeave || 0) - leaveData.days; break;
+            case 'Paternity': updates.paternityLeave = (balanceObj.paternityLeave || 0) - leaveData.days; break;
+            default: break;
+          }
+          await updateDoc(doc(db, 'leaveBalances', balanceObj.id), {
+            ...updates,
+            updatedAt: new Date().toISOString()
+          });
+          
+          // Update local state
+          const updatedBalances = { ...leaveBalances };
+          if (updatedBalances[leaveData.employeeId]) {
+            updatedBalances[leaveData.employeeId] = {
+              ...updatedBalances[leaveData.employeeId],
+              ...updates,
+              updatedAt: new Date().toISOString()
+            };
+            setLeaveBalances(updatedBalances);
+          }
+        }
+
+        // Create notification for employee
+        await addDoc(collection(db, 'notifications'), {
+          employeeId: leaveData.employeeId,
+          employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+          department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+          leaveId: leaveId,
+          leaveType: leaveData.type,
+          leaveDays: leaveData.days,
+          status: 'Approved',
+          reviewedBy: userName,
+          message: `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been APPROVED by ${userName}. ${leaveData.days} ${leaveData.type} days deducted.`,
+          type: 'leave_action',
+          read: false,
+          forEmployee: true,
+          forMGDH: false,
+          createdAt: new Date().toISOString()
+        });
+
+        // Create notification for MGDH
+        await addDoc(collection(db, 'notifications'), {
+          employeeId: leaveData.employeeId,
+          employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+          department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+          leaveId: leaveId,
+          leaveType: leaveData.type,
+          leaveDays: leaveData.days,
+          status: 'Approved',
+          reviewedBy: userName,
+          message: `✅ ${leaveData.employeeName || getEmployeeName(leaveData.employeeId)}'s ${leaveData.type} leave request was APPROVED by ${userName}. ${leaveData.days} ${leaveData.type} days deducted.`,
+          type: 'leave_action_confirmation',
+          read: false,
+          forEmployee: false,
+          forMGDH: true,
+          createdAt: new Date().toISOString()
+        });
+
+        alert(`✅ Leave request approved! ${leaveData.days} ${leaveData.type} days deducted.`);
+      }
+
+      await fetchMGDHData();
+    } catch (error) {
+      console.error('Error updating leave:', error);
+      alert('Failed to update leave request: ' + error.message);
+    } finally {
+      setProcessingAction(false);
+    }
+  };
+
+  // ====== OPEN REJECT MODAL ======
+  const openRejectModal = (leaveId) => {
+    setSelectedLeaveId(leaveId);
+    setShowRejectReason(true);
+  };
+
+  // ====== HANDLE REJECT ======
+  const handleReject = () => {
+    if (selectedLeaveId && rejectReason.trim()) {
+      handleLeaveAction(selectedLeaveId, 'reject');
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    switch(status) {
+      case 'Approved':
+        return <span className="status-badge success"><CheckCircleIcon style={{ fontSize: 14, marginRight: 4 }} /> Approved</span>;
+      case 'Pending':
+        return <span className="status-badge warning"><HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4 }} /> Pending</span>;
+      case 'Rejected':
+        return <span className="status-badge danger"><CancelIcon style={{ fontSize: 14, marginRight: 4 }} /> Rejected</span>;
+      default:
+        return <span className="status-badge secondary">{status}</span>;
+    }
   };
 
   const unreadNotifications = allNotifications.filter(n => !n.read).length;
@@ -1643,7 +1823,7 @@ function MGDHDashboard() {
                       <CheckIcon />
                     </button>
                     <button 
-                      onClick={() => handleLeaveAction(leave.id, 'reject')}
+                      onClick={() => openRejectModal(leave.id)}
                       className="btn-reject"
                       disabled={processingAction}
                       title="Reject"
@@ -1776,7 +1956,14 @@ function MGDHDashboard() {
                       </button>
                     </span>
                   </td>
-                  <td>{getStatusBadge(leave.status)}</td>
+                  <td>
+                    {getStatusBadge(leave.status)}
+                    {leave.status === 'Rejected' && leave.creditsRestored && (
+                      <span style={{ marginLeft: '4px', fontSize: '11px', color: '#27ae60' }}>
+                        <RestoreIcon style={{ fontSize: 12, verticalAlign: 'middle' }} /> Restored
+                      </span>
+                    )}
+                  </td>
                   <td>
                     {leave.status === 'Pending' && (
                       <div className="action-group">
@@ -1790,7 +1977,7 @@ function MGDHDashboard() {
                           <ThumbUpIcon style={{ fontSize: 16 }} /> Approve
                         </button>
                         <button 
-                          onClick={() => handleLeaveAction(leave.id, 'reject')}
+                          onClick={() => openRejectModal(leave.id)}
                           className="btn-action reject"
                           disabled={processingAction}
                         >
@@ -1798,8 +1985,18 @@ function MGDHDashboard() {
                         </button>
                       </div>
                     )}
-                    {leave.status !== 'Pending' && (
+                    {leave.status === 'Rejected' && leave.creditsRestored && (
+                      <span style={{ fontSize: '11px', color: '#27ae60' }}>
+                        <RestoreIcon style={{ fontSize: 14, verticalAlign: 'middle' }} /> Restored
+                      </span>
+                    )}
+                    {leave.status !== 'Pending' && leave.status !== 'Rejected' && (
                       <span className="no-action">—</span>
+                    )}
+                    {leave.status === 'Rejected' && !leave.creditsRestored && (
+                      <span style={{ fontSize: '11px', color: '#f39c12' }}>
+                        <WarningIcon style={{ fontSize: 14, verticalAlign: 'middle' }} /> Restoring...
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -1811,6 +2008,102 @@ function MGDHDashboard() {
           </tbody>
         </table>
       </div>
+
+      {/* Reject Reason Modal */}
+      {showRejectReason && (
+        <div className="modal-overlay" onClick={() => { setShowRejectReason(false); setRejectReason(''); }}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '450px', borderRadius: '12px' }}>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CancelIcon style={{ color: '#e74c3c' }} />
+                Reject Leave Request
+              </h3>
+              <button 
+                className="modal-close" 
+                onClick={() => { setShowRejectReason(false); setRejectReason(''); }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  color: '#666'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ marginTop: 0, color: '#666' }}>
+                Please provide a reason for rejecting this leave request. This will be sent to the employee.
+              </p>
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Reason for Rejection *</label>
+                <textarea 
+                  placeholder="Enter reason for rejection..."
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows="4"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    border: '1px solid #dde1e8',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                  required
+                />
+              </div>
+              <div style={{ 
+                padding: '10px 14px', 
+                background: '#fff3cd', 
+                borderRadius: '8px',
+                marginBottom: '16px',
+                fontSize: '13px',
+                color: '#856404'
+              }}>
+                <WarningIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
+                Rejecting this request will automatically restore the leave credits to the employee's balance.
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  className="btn-cancel" 
+                  onClick={() => { setShowRejectReason(false); setRejectReason(''); }}
+                  style={{
+                    padding: '10px 24px',
+                    background: '#f0f2f7',
+                    color: '#333',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleReject}
+                  disabled={!rejectReason.trim() || processingAction}
+                  style={{
+                    padding: '10px 32px',
+                    background: (!rejectReason.trim() || processingAction) ? '#ccc' : '#e74c3c',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: (!rejectReason.trim() || processingAction) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {processingAction ? 'Processing...' : 'Confirm Rejection'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -1974,6 +2267,7 @@ function MGDHDashboard() {
             const isLeaveRequest = notif.type === 'leave_request';
             const isLeaveAction = notif.type === 'leave_action_confirmation';
             const isLeaveCancelled = notif.type === 'leave_cancelled';
+            const isLeaveRejectedRestored = notif.type === 'leave_rejected_restored';
             
             let iconColor = '#4a6fa5';
             let IconComponent = CalendarTodayIcon;
@@ -1987,6 +2281,9 @@ function MGDHDashboard() {
             } else if (isLeaveCancelled) {
               iconColor = '#e74c3c';
               IconComponent = CancelIcon;
+            } else if (isLeaveRejectedRestored) {
+              iconColor = '#27ae60';
+              IconComponent = RestoreIcon;
             }
             
             return (
@@ -2169,6 +2466,9 @@ function MGDHDashboard() {
             <div style={{ marginTop: '16px', padding: '12px', background: '#f0f4fe', borderRadius: '8px', textAlign: 'center' }}>
               <p style={{ margin: 0, fontSize: '13px', color: '#4a6fa5' }}>
                 💡 Employee can file leave if they have sufficient credits
+              </p>
+              <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#27ae60' }}>
+                ✅ Credits are automatically restored when leave is rejected
               </p>
             </div>
           </div>

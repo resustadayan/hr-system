@@ -6131,3 +6131,105 @@ body.printing-pdf .user-management .users-table-modern tbody td:last-child {
   border: 1px solid #d4e0f7;
   margin-top: 10px;
 }
+
+/* ========================================
+   FIX: MOBILE SIDEBAR TEXT DISPLAY
+   Add this to your styles.css file
+======================================== */
+
+/* Fix user badge text wrapping */
+.user-badge {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+  width: 100%;
+  overflow: hidden;
+  word-wrap: break-word;
+  word-break: break-word;
+}
+
+.user-badge .user-name {
+  display: block;
+  color: white;
+  font-weight: 600;
+  font-size: 15px;
+  line-height: 1.3;
+  padding: 0 4px;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.user-badge .user-role {
+  display: block;
+  color: #b0c4de;
+  font-size: 13px;
+  line-height: 1.3;
+  padding: 0 4px;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.user-badge .user-dept {
+  display: block;
+  color: #8aadc9;
+  font-size: 12px;
+  line-height: 1.3;
+  padding: 0 4px;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Mobile sidebar fixes */
+@media (max-width: 768px) {
+  .employee-sidebar .sidebar-link span,
+  .mgdh-sidebar .sidebar-link span {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow: visible !important;
+    text-overflow: unset !important;
+    line-height: 1.2 !important;
+  }
+
+  .user-badge .user-name {
+    font-size: 14px !important;
+  }
+
+  .user-badge .user-role {
+    font-size: 12px !important;
+  }
+
+  .user-badge .user-dept {
+    font-size: 11px !important;
+  }
+
+  .employee-sidebar .sidebar-link,
+  .mgdh-sidebar .sidebar-link {
+    padding: 10px 12px !important;
+    min-height: 44px !important;
+  }
+}
+
+/* Extra small phones */
+@media (max-width: 380px) {
+  .user-badge .user-name {
+    font-size: 13px !important;
+  }
+
+  .user-badge .user-role {
+    font-size: 11px !important;
+  }
+
+  .user-badge .user-dept {
+    font-size: 10px !important;
+  }
+
+  .employee-sidebar .sidebar-link,
+  .mgdh-sidebar .sidebar-link {
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+    min-height: 38px !important;
+  }
+}

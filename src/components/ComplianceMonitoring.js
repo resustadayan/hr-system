@@ -1,4 +1,4 @@
-// src/components/ComplianceMonitoring.js - Enhanced with Completion Notifications
+// src/components/ComplianceMonitoring.js - Enhanced with Completion Notifications & Advanced Filters
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
 import { collection, getDocs, updateDoc, doc, query, where, onSnapshot, addDoc } from 'firebase/firestore';
@@ -26,6 +26,8 @@ import PrintIcon from '@mui/icons-material/Print';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import StarsIcon from '@mui/icons-material/Stars';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
 
 function ComplianceMonitoring() {
   const location = useLocation();
@@ -36,7 +38,7 @@ function ComplianceMonitoring() {
   const [loading, setLoading] = useState(false);
   const [highlightedEmployeeId, setHighlightedEmployeeId] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
-  const [toastType, setToastType] = useState('info'); // 'info', 'success', 'warning'
+  const [toastType, setToastType] = useState('info');
   const [pendingCount, setPendingCount] = useState(0);
   const [previewFile, setPreviewFile] = useState(false);
   const [previewFileUrl, setPreviewFileUrl] = useState('');
@@ -46,8 +48,12 @@ function ComplianceMonitoring() {
   const notificationRef = useRef(null);
   const complianceRef = useRef(null);
 
+  // ====== NEW FILTER STATES ======
+  const [searchTerm, setSearchTerm] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('All Departments');
+  const [roleFilter, setRoleFilter] = useState('All Roles');
+
   // ====== COMPLETION TRACKING ======
-  // Track which employees were recently completed
   const recentlyCompleted = useRef(new Set());
 
   // ====== SMART FILE VIEWER ======
@@ -154,13 +160,11 @@ function ComplianceMonitoring() {
     const unsubscribe = onSnapshot(collection(db, 'documents'), (snapshot) => {
       const docList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Check for new documents and completion status changes
       const previousDocs = documents;
       const newDocs = docList.filter(d => 
         !previousDocs.some(p => p.id === d.id)
       );
       
-      // Check for status changes to "Complete"
       const completedNow = docList.filter(d => {
         const prev = previousDocs.find(p => p.id === d.id);
         return prev && prev.status !== 'Complete' && d.status === 'Complete';
@@ -171,7 +175,6 @@ function ComplianceMonitoring() {
       const pending = docList.filter(d => d.status === 'Pending Review').length;
       setPendingCount(pending);
       
-      // Handle new pending documents
       const newPending = newDocs.filter(d => d.status === 'Pending Review');
       if (newPending.length > 0 && !toastMessage) {
         const latestDoc = newPending.sort((a, b) => 
@@ -189,9 +192,7 @@ function ComplianceMonitoring() {
         }
       }
       
-      // ====== HANDLE COMPLETION NOTIFICATIONS ======
       if (completedNow.length > 0) {
-        // Group by employee
         const completionByEmployee = {};
         completedNow.forEach(doc => {
           if (!completionByEmployee[doc.employeeId]) {
@@ -200,23 +201,18 @@ function ComplianceMonitoring() {
           completionByEmployee[doc.employeeId].push(doc);
         });
         
-        // Check if any employee is now fully compliant
         Object.entries(completionByEmployee).forEach(([employeeId, completedDocs]) => {
           const employee = employees.find(e => e.id === employeeId);
           if (!employee) return;
           
-          // Recalculate compliance status
           const employeeDocs = docList.filter(d => d.employeeId === employeeId);
           const totalDocs = employeeDocs.length;
           const completeDocs = employeeDocs.filter(d => d.status === 'Complete').length;
           
-          // Check if this completion made them 100% compliant
           const oldStatus = getComplianceStatusFromDocs(employeeId, previousDocs);
           const newStatus = getComplianceStatusFromDocs(employeeId, docList);
           
-          // If they weren't 100% before but are now
           if (oldStatus.percentage < 100 && newStatus.percentage === 100) {
-            // Send notification to admin
             addDoc(collection(db, 'notifications'), {
               type: 'compliance_completed',
               employeeId: employeeId,
@@ -231,7 +227,6 @@ function ComplianceMonitoring() {
               category: 'compliance_completion'
             });
             
-            // Send notification to employee
             addDoc(collection(db, 'notifications'), {
               type: 'compliance_completed',
               employeeId: employeeId,
@@ -245,15 +240,12 @@ function ComplianceMonitoring() {
               category: 'compliance_completion'
             });
             
-            // Show toast notification
             setToastMessage(`🎉 ${employee.fullName} is now 100% COMPLIANT!`);
             setToastType('success');
             setHighlightedEmployeeId(employeeId);
             
-            // Track completion
             recentlyCompleted.current.add(employeeId);
             
-            // Clear toast after longer delay for success
             setTimeout(() => {
               setToastMessage(null);
             }, 10000);
@@ -265,7 +257,6 @@ function ComplianceMonitoring() {
     return unsubscribe;
   };
 
-  // Helper to get compliance status from a specific document list
   const getComplianceStatusFromDocs = (employeeId, docList) => {
     const employeeDocs = docList.filter(doc => doc.employeeId === employeeId);
     const total = employeeDocs.length;
@@ -300,13 +291,10 @@ function ComplianceMonitoring() {
     setRefreshing(false);
   };
 
-  // ====== UPDATE DOCUMENT STATUS WITH COMPLETION CHECK ======
   const updateDocumentStatus = async (docId, newStatus) => {
     setLoading(true);
     try {
       const docData = documents.find(d => d.id === docId);
-      
-      // Get old status before update
       const oldStatus = docData?.status;
       
       await updateDoc(doc(db, 'documents', docId), { 
@@ -315,7 +303,6 @@ function ComplianceMonitoring() {
       });
       
       if (docData) {
-        // Notify employee about status change
         await addDoc(collection(db, 'notifications'), {
           employeeId: docData.employeeId,
           employeeName: docData.employeeName,
@@ -328,12 +315,9 @@ function ComplianceMonitoring() {
         });
       }
       
-      // Refresh documents to get updated list
       await fetchDocuments();
       
-      // ====== CHECK IF EMPLOYEE IS NOW FULLY COMPLIANT ======
       if (docData && newStatus === 'Complete' && oldStatus !== 'Complete') {
-        // Re-fetch documents to get latest state
         const freshDocs = await getDocs(collection(db, 'documents'));
         const freshDocList = freshDocs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         
@@ -341,11 +325,9 @@ function ComplianceMonitoring() {
         const totalDocs = employeeDocs.length;
         const completeDocs = employeeDocs.filter(d => d.status === 'Complete').length;
         
-        // If all documents are complete
         if (totalDocs > 0 && completeDocs === totalDocs) {
           const employee = employees.find(e => e.id === docData.employeeId);
           if (employee) {
-            // Send admin notification
             await addDoc(collection(db, 'notifications'), {
               type: 'compliance_completed',
               employeeId: docData.employeeId,
@@ -360,7 +342,6 @@ function ComplianceMonitoring() {
               category: 'compliance_completion'
             });
             
-            // Send employee notification
             await addDoc(collection(db, 'notifications'), {
               type: 'compliance_completed',
               employeeId: docData.employeeId,
@@ -374,7 +355,6 @@ function ComplianceMonitoring() {
               category: 'compliance_completion'
             });
             
-            // Show success toast
             setToastMessage(`🎉 ${employee.fullName} is now 100% COMPLIANT!`);
             setToastType('success');
             setHighlightedEmployeeId(docData.employeeId);
@@ -422,11 +402,36 @@ function ComplianceMonitoring() {
     return 'secondary';
   };
 
+  // ====== GET UNIQUE DEPARTMENTS & ROLES ======
+  const uniqueDepartments = ['All Departments', ...new Set(employees.map(emp => emp.department).filter(Boolean))];
+  const uniqueRoles = ['All Roles', ...new Set(employees.map(emp => emp.role || emp.position).filter(Boolean))];
+
+  // ====== ENHANCED FILTERING WITH SEARCH, DEPARTMENT, ROLE ======
   const filteredEmployees = employees.filter(emp => {
+    // Filter by compliance status
     const status = getComplianceStatus(emp.id);
-    if (filter === 'pending') return status.pending > 0;
-    if (filter === 'missing') return status.pending > 0 || status.percentage < 100;
-    if (filter === 'complete') return status.percentage === 100;
+    if (filter === 'pending' && status.pending === 0) return false;
+    if (filter === 'missing' && status.pending === 0 && status.percentage >= 100) return false;
+    if (filter === 'complete' && status.percentage !== 100) return false;
+
+    // Filter by search term (name or email)
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      const nameMatch = (emp.fullName || '').toLowerCase().includes(term);
+      const emailMatch = (emp.email || '').toLowerCase().includes(term);
+      if (!nameMatch && !emailMatch) return false;
+    }
+
+    // Filter by department
+    if (departmentFilter !== 'All Departments') {
+      if (emp.department !== departmentFilter) return false;
+    }
+
+    // Filter by role
+    if (roleFilter !== 'All Roles') {
+      if ((emp.role || emp.position) !== roleFilter) return false;
+    }
+
     return true;
   });
 
@@ -436,13 +441,11 @@ function ComplianceMonitoring() {
 
   // ===== EXPORT FUNCTIONS =====
 
-  // Export to PDF
   const exportToPDF = () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
       const pageWidth = doc.internal.pageSize.getWidth();
       
-      // Header
       doc.setFontSize(20);
       doc.setTextColor(44, 62, 80);
       doc.text('Compliance Monitoring Report', pageWidth / 2, 20, { align: 'center' });
@@ -462,7 +465,6 @@ function ComplianceMonitoring() {
       
       let yPosition = 55;
       
-      // Summary Cards as a table
       doc.setFontSize(14);
       doc.setTextColor(44, 62, 80);
       doc.text('Summary', 20, yPosition);
@@ -492,13 +494,11 @@ function ComplianceMonitoring() {
       
       yPosition = doc.lastAutoTable.finalY + 12;
       
-      // Check if we need a new page
       if (yPosition > 240) {
         doc.addPage();
         yPosition = 20;
       }
       
-      // Compliance Records
       doc.setFontSize(14);
       doc.setTextColor(44, 62, 80);
       doc.text('Employee Compliance Status', 20, yPosition);
@@ -545,7 +545,6 @@ function ComplianceMonitoring() {
         doc.text('No employees found matching the filter.', pageWidth / 2, yPosition + 10, { align: 'center' });
       }
       
-      // Footer on all pages
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -567,7 +566,6 @@ function ComplianceMonitoring() {
     }
   };
 
-  // Handle Print
   const handlePrint = () => {
     try {
       const printContent = `
@@ -843,7 +841,149 @@ function ComplianceMonitoring() {
         </div>
       </div>
 
-      {/* Filter Controls */}
+      {/* ====== ADVANCED FILTER BAR (Search, Department, Role, Count) ====== */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '16px 20px',
+        background: 'white',
+        borderRadius: '12px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+        marginBottom: '16px',
+        flexWrap: 'wrap'
+      }}>
+        {/* Search Input */}
+        <div style={{
+          position: 'relative',
+          flex: 1,
+          minWidth: '280px'
+        }}>
+          <SearchIcon style={{
+            position: 'absolute',
+            left: '14px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: '#94a3b8',
+            fontSize: '20px'
+          }} />
+          <input
+            type="text"
+            placeholder="Search by name or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 16px 10px 44px',
+              borderRadius: '10px',
+              border: '1px solid #e2e8f0',
+              background: '#f8fafc',
+              fontSize: '14px',
+              outline: 'none',
+              transition: 'all 0.2s',
+              boxSizing: 'border-box'
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = '#4a6fa5';
+              e.target.style.background = 'white';
+              e.target.style.boxShadow = '0 0 0 3px rgba(74, 111, 165, 0.1)';
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = '#e2e8f0';
+              e.target.style.background = '#f8fafc';
+              e.target.style.boxShadow = 'none';
+            }}
+          />
+        </div>
+
+        {/* Filter Icon */}
+        <FilterListIcon style={{ color: '#94a3b8', fontSize: '24px' }} />
+
+        {/* Department Filter */}
+        <select
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          style={{
+            padding: '10px 36px 10px 16px',
+            borderRadius: '10px',
+            border: '1px solid #e2e8f0',
+            background: '#f8fafc',
+            fontSize: '14px',
+            outline: 'none',
+            cursor: 'pointer',
+            appearance: 'none',
+            backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%2394a3b8\' d=\'M6 8L1 3h10z\'/%3E%3C/svg%3E")',
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 12px center',
+            minWidth: '160px',
+            transition: 'all 0.2s'
+          }}
+          onFocus={(e) => {
+            e.target.style.borderColor = '#4a6fa5';
+            e.target.style.background = 'white';
+          }}
+          onBlur={(e) => {
+            e.target.style.borderColor = '#e2e8f0';
+            e.target.style.background = '#f8fafc';
+          }}
+        >
+          {uniqueDepartments.map(dept => (
+            <option key={dept} value={dept}>{dept}</option>
+          ))}
+        </select>
+
+        {/* Role Filter */}
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value)}
+          style={{
+            padding: '10px 36px 10px 16px',
+            borderRadius: '10px',
+            border: '1px solid #e2e8f0',
+            background: '#f8fafc',
+            fontSize: '14px',
+            outline: 'none',
+            cursor: 'pointer',
+            appearance: 'none',
+            backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%2394a3b8\' d=\'M6 8L1 3h10z\'/%3E%3C/svg%3E")',
+            backgroundRepeat: 'no-repeat',
+            backgroundPosition: 'right 12px center',
+            minWidth: '160px',
+            transition: 'all 0.2s'
+          }}
+          onFocus={(e) => {
+            e.target.style.borderColor = '#4a6fa5';
+            e.target.style.background = 'white';
+          }}
+          onBlur={(e) => {
+            e.target.style.borderColor = '#e2e8f0';
+            e.target.style.background = '#f8fafc';
+          }}
+        >
+          {uniqueRoles.map(role => (
+            <option key={role} value={role}>{role}</option>
+          ))}
+        </select>
+
+        {/* User Count Badge */}
+        <div style={{
+          background: '#4a6fa5',
+          color: 'white',
+          padding: '8px 18px',
+          borderRadius: '20px',
+          fontSize: '14px',
+          fontWeight: '600',
+          whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '6px'
+        }}>
+          <PeopleIcon style={{ fontSize: 16 }} />
+          {filteredEmployees.length} {filteredEmployees.length === 1 ? 'user' : 'users'}
+        </div>
+      </div>
+
+      {/* Filter Controls (Status) */}
       <div className="filter-bar-modern">
         <button onClick={() => setFilter('all')} className={`filter-btn ${filter === 'all' ? 'active' : ''}`}>
           <FolderIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />

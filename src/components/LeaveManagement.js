@@ -1,7 +1,7 @@
 // src/components/LeaveManagement.js
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../firebase';
-import { collection, getDocs, addDoc, updateDoc, doc, query, where, getDoc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, where, getDoc, onSnapshot } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -32,6 +32,7 @@ import PrintIcon from '@mui/icons-material/Print';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import BalanceIcon from '@mui/icons-material/Balance';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import RestoreIcon from '@mui/icons-material/Restore'; // ADD THIS IMPORT
 
 function LeaveManagement() {
   const [leaveRequests, setLeaveRequests] = useState([]);
@@ -51,14 +52,69 @@ function LeaveManagement() {
   const [showBalanceModal, setShowBalanceModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [showRejectReason, setShowRejectReason] = useState(false);
+  const [selectedLeaveId, setSelectedLeaveId] = useState(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [processingRestore, setProcessingRestore] = useState({});
   const leaveRef = useRef(null);
 
+  // ====== INITIAL FETCH ======
   useEffect(() => {
     fetchEmployees();
     fetchLeaveRequests();
     fetchLeaveBalances();
+    setupRealtimeListeners();
   }, []);
 
+  // ====== SETUP REALTIME LISTENERS ======
+  const setupRealtimeListeners = () => {
+    // Listen to leaveRequests collection
+    const unsubscribeLeaveRequests = onSnapshot(collection(db, 'leaveRequests'), (snapshot) => {
+      const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Check for newly rejected leave requests that need credit restoration
+      requests.forEach(request => {
+        if (request.status === 'Rejected' && !request.creditsRestored) {
+          const previousRequest = leaveRequests.find(r => r.id === request.id);
+          if (previousRequest && previousRequest.status !== 'Rejected') {
+            restoreLeaveCreditsOnRejection(request.id, request);
+          } else if (!previousRequest) {
+            restoreLeaveCreditsOnRejection(request.id, request);
+          }
+        }
+      });
+      
+      setLeaveRequests(requests);
+    });
+
+    // Listen to leaveBalances collection
+    const unsubscribeBalances = onSnapshot(collection(db, 'leaveBalances'), (snapshot) => {
+      const balances = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        balances[data.employeeId] = {
+          id: doc.id,
+          ...data
+        };
+      });
+      setLeaveBalances(balances);
+    });
+
+    // Listen to employees collection
+    const unsubscribeEmployees = onSnapshot(collection(db, 'employees'), (snapshot) => {
+      const empList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setEmployees(empList);
+    });
+
+    return () => {
+      unsubscribeLeaveRequests();
+      unsubscribeBalances();
+      unsubscribeEmployees();
+    };
+  };
+
+  // ====== FETCH FUNCTIONS ======
   const fetchEmployees = async () => {
     const querySnapshot = await getDocs(collection(db, 'employees'));
     const empList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -93,6 +149,7 @@ function LeaveManagement() {
     setRefreshing(false);
   };
 
+  // ====== HELPER FUNCTIONS ======
   const getEmployeeLeaveBalance = (employeeId) => {
     const balance = leaveBalances[employeeId];
     if (!balance) {
@@ -134,6 +191,108 @@ function LeaveManagement() {
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
   };
 
+  // ====== RESTORE LEAVE CREDITS ON REJECTION ======
+  const restoreLeaveCreditsOnRejection = async (leaveId, leaveData) => {
+    // Prevent duplicate restoration
+    if (processingRestore[leaveId]) {
+      console.log(`⏳ Restoration already in progress for ${leaveId}`);
+      return;
+    }
+
+    try {
+      // Only restore if status is 'Rejected' and not already restored
+      if (leaveData.status !== 'Rejected') {
+        console.log(`⚠️ Status is ${leaveData.status}, not Rejected. Skipping.`);
+        return;
+      }
+      
+      if (leaveData.creditsRestored === true) {
+        console.log(`✅ Credits already restored for ${leaveId}`);
+        return;
+      }
+
+      // Set processing flag
+      setProcessingRestore(prev => ({ ...prev, [leaveId]: true }));
+
+      console.log(`🔄 [Admin] Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
+
+      // Get the current balance for this employee
+      const balance = leaveBalances[leaveData.employeeId];
+      if (!balance || !balance.id) {
+        console.warn('No leave balance found for employee:', leaveData.employeeId);
+        setProcessingRestore(prev => ({ ...prev, [leaveId]: false }));
+        return;
+      }
+
+      const currentBalance = leaveData.type === 'Vacation' 
+        ? (balance.vacationLeave || 0)
+        : leaveData.type === 'Maternity'
+        ? (balance.maternityLeave || 0)
+        : leaveData.type === 'Paternity'
+        ? (balance.paternityLeave || 0)
+        : (balance.sickLeave || 0);
+      
+      const updatedBalance = { ...balance };
+      if (leaveData.type === 'Vacation') {
+        updatedBalance.vacationLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Maternity') {
+        updatedBalance.maternityLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Paternity') {
+        updatedBalance.paternityLeave = currentBalance + leaveData.days;
+      } else {
+        updatedBalance.sickLeave = currentBalance + leaveData.days;
+      }
+
+      // Update the leave balance in Firestore
+      await updateDoc(doc(db, 'leaveBalances', balance.id), {
+        vacationLeave: updatedBalance.vacationLeave || 0,
+        sickLeave: updatedBalance.sickLeave || 0,
+        maternityLeave: updatedBalance.maternityLeave || 0,
+        paternityLeave: updatedBalance.paternityLeave || 0,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Mark the leave request as credits restored
+      await updateDoc(doc(db, 'leaveRequests', leaveId), {
+        creditsRestored: true,
+        creditsRestoredAt: new Date().toISOString()
+      });
+
+      // Update local state
+      const newBalances = { ...leaveBalances };
+      newBalances[leaveData.employeeId] = {
+        ...newBalances[leaveData.employeeId],
+        ...updatedBalance,
+        updatedAt: new Date().toISOString()
+      };
+      setLeaveBalances(newBalances);
+
+      // Notify employee
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: leaveData.employeeId,
+        employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+        department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+        leaveId: leaveId,
+        leaveType: leaveData.type,
+        leaveDays: leaveData.days,
+        message: `Your ${leaveData.type} leave request was rejected by Admin. ${leaveData.days} days have been restored to your balance.`,
+        type: 'leave_rejected_restored',
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      console.log(`✅ [Admin] Successfully restored ${leaveData.days} ${leaveData.type} days for ${leaveData.employeeName || getEmployeeName(leaveData.employeeId)}`);
+
+    } catch (error) {
+      console.error('Error restoring leave credits on rejection:', error);
+    } finally {
+      setProcessingRestore(prev => ({ ...prev, [leaveId]: false }));
+    }
+  };
+
+  // ====== SUBMIT LEAVE ======
   const submitLeave = async () => {
     if (!formData.employeeId || !formData.startDate || !formData.endDate) {
       alert('Please fill all required fields');
@@ -153,15 +312,16 @@ function LeaveManagement() {
     setLoading(true);
 
     try {
-      // Add leave request
+      // Add leave request with creditsRestored flag
       await addDoc(collection(db, 'leaveRequests'), {
         ...formData,
         days: days,
         status: 'Pending',
-        dateSubmitted: new Date().toISOString()
+        dateSubmitted: new Date().toISOString(),
+        creditsRestored: false
       });
 
-      // Update leave balance
+      // Update leave balance (deduct days)
       const balance = leaveBalances[formData.employeeId];
       if (balance && balance.id) {
         const updates = {};
@@ -176,13 +336,46 @@ function LeaveManagement() {
           ...updates,
           updatedAt: new Date().toISOString()
         });
+        
+        // Update local state
+        const newBalances = { ...leaveBalances };
+        newBalances[formData.employeeId] = {
+          ...balance,
+          ...updates,
+          updatedAt: new Date().toISOString()
+        };
+        setLeaveBalances(newBalances);
       }
+
+      // Create notification for MGDH
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: formData.employeeId,
+        employeeName: getEmployeeName(formData.employeeId),
+        department: getEmployeeDepartment(formData.employeeId),
+        leaveType: formData.type,
+        leaveDays: days,
+        message: `${getEmployeeName(formData.employeeId)} submitted a ${formData.type} leave request for ${days} days`,
+        type: 'leave_request',
+        read: false,
+        forMGDH: true,
+        forEmployee: false,
+        createdAt: new Date().toISOString()
+      });
+
+      // Create confirmation for employee
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: formData.employeeId,
+        message: `Your ${formData.type} leave request for ${days} days has been submitted and is pending approval.`,
+        type: 'leave_confirmation',
+        read: false,
+        forEmployee: true,
+        forMGDH: false,
+        createdAt: new Date().toISOString()
+      });
 
       alert('✅ Leave request submitted successfully');
       setShowForm(false);
       setFormData({ employeeId: '', type: 'Vacation', startDate: '', endDate: '', reason: '' });
-      await fetchLeaveRequests();
-      await fetchLeaveBalances();
     } catch (error) {
       console.error('Error submitting leave:', error);
       alert('❌ Failed to submit leave request');
@@ -191,21 +384,81 @@ function LeaveManagement() {
     }
   };
 
-  const updateStatus = async (id, status) => {
+  // ====== UPDATE STATUS ======
+  const updateStatus = async (id, status, reason = '') => {
+    setActionLoading(true);
     try {
-      await updateDoc(doc(db, 'leaveRequests', id), { status });
+      // Get the leave request data first
+      const leaveDoc = await getDoc(doc(db, 'leaveRequests', id));
+      if (!leaveDoc.exists()) {
+        alert('Leave request not found');
+        setActionLoading(false);
+        return;
+      }
+      
+      const leaveData = leaveDoc.data();
+      
+      // If rejecting, restore credits first
+      if (status === 'Rejected') {
+        // Check if credits were already restored
+        if (!leaveData.creditsRestored) {
+          await restoreLeaveCreditsOnRejection(id, leaveData);
+        }
+      }
+      
+      // Update the status
+      await updateDoc(doc(db, 'leaveRequests', id), { 
+        status,
+        reviewedBy: 'Admin',
+        rejectionReason: status === 'Rejected' ? reason || 'No reason provided' : '',
+        reviewedAt: new Date().toISOString()
+      });
+      
+      // Create notification for employee
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: leaveData.employeeId,
+        employeeName: leaveData.employeeName || getEmployeeName(leaveData.employeeId),
+        department: leaveData.department || getEmployeeDepartment(leaveData.employeeId),
+        leaveId: id,
+        leaveType: leaveData.type,
+        leaveDays: leaveData.days,
+        status: status,
+        reviewedBy: 'Admin',
+        message: status === 'Approved' 
+          ? `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been APPROVED by Admin.`
+          : `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been REJECTED by Admin. Reason: ${reason || 'No reason provided'}. ${leaveData.days} days have been restored to your balance.`,
+        type: 'leave_action',
+        read: false,
+        forEmployee: true,
+        forMGDH: false,
+        createdAt: new Date().toISOString()
+      });
+
+      // Refresh data
       await fetchLeaveRequests();
+      await fetchLeaveBalances();
+
+      alert(`✅ Leave request ${status.toLowerCase()} successfully!`);
+      
+      setShowRejectReason(false);
+      setSelectedLeaveId(null);
+      setRejectReason('');
+      
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('❌ Failed to update status');
+      alert('❌ Failed to update status: ' + error.message);
+    } finally {
+      setActionLoading(false);
     }
   };
 
+  // ====== HANDLE EMPLOYEE SELECT ======
   const handleEmployeeSelect = (employeeId) => {
     setFormData({...formData, employeeId});
     setErrorMessage('');
   };
 
+  // ====== VIEW EMPLOYEE BALANCE ======
   const viewEmployeeBalance = (employeeId) => {
     const emp = employees.find(e => e.id === employeeId);
     const balance = getEmployeeLeaveBalance(employeeId);
@@ -217,6 +470,20 @@ function LeaveManagement() {
     setShowBalanceModal(true);
   };
 
+  // ====== OPEN REJECT MODAL ======
+  const openRejectModal = (leaveId) => {
+    setSelectedLeaveId(leaveId);
+    setShowRejectReason(true);
+  };
+
+  // ====== HANDLE REJECT ======
+  const handleReject = () => {
+    if (selectedLeaveId && rejectReason.trim()) {
+      updateStatus(selectedLeaveId, 'Rejected', rejectReason.trim());
+    }
+  };
+
+  // ====== FILTER REQUESTS ======
   const filteredRequests = leaveRequests.filter(req => {
     if (filter === 'pending') return req.status === 'Pending';
     if (filter === 'approved') return req.status === 'Approved';
@@ -224,6 +491,7 @@ function LeaveManagement() {
     return true;
   });
 
+  // ====== STATUS BADGE ======
   const getStatusBadge = (status) => {
     const badges = {
       'Pending': { class: 'warning', icon: <HourglassEmptyIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} /> },
@@ -234,6 +502,7 @@ function LeaveManagement() {
     return <span className={`status-badge ${badge.class}`}>{badge.icon} {status}</span>;
   };
 
+  // ====== LEAVE TYPE ICON ======
   const getLeaveTypeIcon = (type) => {
     const icons = {
       'Vacation': <BeachAccessIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />,
@@ -246,13 +515,14 @@ function LeaveManagement() {
     return icons[type] || <MoreHorizIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />;
   };
 
+  // ====== BALANCE COLOR ======
   const getBalanceColor = (balance) => {
     if (balance > 5) return '#27ae60';
     if (balance > 0) return '#e67e22';
     return '#e74c3c';
   };
 
-  // Export to PDF (enhanced with balance info)
+  // ====== EXPORT TO PDF ======
   const exportToPDF = () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
@@ -330,12 +600,13 @@ function LeaveManagement() {
           req.startDate || '—',
           req.endDate || '—',
           (req.days || 0).toString(),
-          req.status || 'Pending'
+          req.status || 'Pending',
+          req.creditsRestored ? 'Restored ✓' : '—'
         ]);
         
         autoTable(doc, {
           startY: yPosition,
-          head: [['Employee', 'Department', 'Leave Type', 'Start', 'End', 'Days', 'Status']],
+          head: [['Employee', 'Department', 'Leave Type', 'Start', 'End', 'Days', 'Status', 'Credits']],
           body: leaveRows,
           theme: 'striped',
           headStyles: { 
@@ -353,7 +624,8 @@ function LeaveManagement() {
             3: { cellWidth: 20 },
             4: { cellWidth: 20 },
             5: { cellWidth: 12 },
-            6: { cellWidth: 22 }
+            6: { cellWidth: 22 },
+            7: { cellWidth: 18 }
           }
         });
       } else {
@@ -383,7 +655,7 @@ function LeaveManagement() {
     }
   };
 
-  // Handle Print
+  // ====== HANDLE PRINT ======
   const handlePrint = () => {
     try {
       const pendingCount = leaveRequests.filter(r => r.status === 'Pending').length;
@@ -455,6 +727,7 @@ function LeaveManagement() {
                                      font-weight: 600;">
                           ${req.status || 'Pending'}
                         </span>
+                        ${req.creditsRestored ? '<span style="margin-left: 5px; color: #27ae60; font-size: 11px;">✓ Restored</span>' : ''}
                       </td>
                     </tr>
                   `).join('')}
@@ -508,6 +781,7 @@ function LeaveManagement() {
     }
   };
 
+  // ====== RENDER ======
   return (
     <div className="leave-management" ref={leaveRef}>
 
@@ -694,6 +968,16 @@ function LeaveManagement() {
                     >
                       <BalanceIcon style={{ fontSize: 16 }} />
                     </button>
+                    {req.creditsRestored && req.status === 'Rejected' && (
+                      <span style={{ 
+                        fontSize: '10px', 
+                        color: '#27ae60', 
+                        marginLeft: '4px',
+                        fontWeight: 'bold'
+                      }}>
+                        ✓ Restored
+                      </span>
+                    )}
                   </div>
                 </td>
                 <td><span className="dept-tag">{getEmployeeDepartment(req.employeeId)}</span></td>
@@ -717,20 +1001,54 @@ function LeaveManagement() {
                       <button 
                         onClick={() => updateStatus(req.id, 'Approved')} 
                         className="btn-action approve"
+                        disabled={actionLoading}
                       >
                         <CheckCircleIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
                         Approve
                       </button>
                       <button 
-                        onClick={() => updateStatus(req.id, 'Rejected')} 
+                        onClick={() => openRejectModal(req.id)} 
                         className="btn-action reject"
+                        disabled={actionLoading}
                       >
                         <CancelIcon style={{ fontSize: 14, marginRight: 4, verticalAlign: 'middle' }} />
                         Reject
                       </button>
                     </div>
                   )}
-                  {req.status !== 'Pending' && (
+                  {req.status === 'Rejected' && req.creditsRestored && (
+                    <span style={{ fontSize: '11px', color: '#27ae60', fontWeight: '500' }}>
+                      <RestoreIcon style={{ fontSize: 14, marginRight: 2, verticalAlign: 'middle' }} />
+                      Credits Restored
+                    </span>
+                  )}
+                  {req.status === 'Rejected' && !req.creditsRestored && !processingRestore[req.id] && (
+                    <button
+                      onClick={() => restoreLeaveCreditsOnRejection(req.id, req)}
+                      style={{
+                        padding: '4px 12px',
+                        background: '#f39c12',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}
+                    >
+                      <RestoreIcon style={{ fontSize: 14 }} />
+                      Restore Credits
+                    </button>
+                  )}
+                  {req.status === 'Rejected' && !req.creditsRestored && processingRestore[req.id] && (
+                    <span style={{ fontSize: '11px', color: '#f39c12', fontWeight: '500' }}>
+                      <HourglassEmptyIcon style={{ fontSize: 14, marginRight: 2, verticalAlign: 'middle' }} />
+                      Restoring...
+                    </span>
+                  )}
+                  {req.status !== 'Pending' && req.status !== 'Rejected' && (
                     <span className="no-action">—</span>
                   )}
                 </td>
@@ -748,6 +1066,102 @@ function LeaveManagement() {
           </tbody>
         </table>
       </div>
+
+      {/* Reject Reason Modal */}
+      {showRejectReason && (
+        <div className="modal-overlay" onClick={() => { setShowRejectReason(false); setRejectReason(''); }}>
+          <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '450px', borderRadius: '12px' }}>
+            <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CancelIcon style={{ color: '#e74c3c' }} />
+                Reject Leave Request
+              </h3>
+              <button 
+                className="modal-close" 
+                onClick={() => { setShowRejectReason(false); setRejectReason(''); }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '20px',
+                  cursor: 'pointer',
+                  color: '#666'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '20px' }}>
+              <p style={{ marginTop: 0, color: '#666' }}>
+                Please provide a reason for rejecting this leave request. This will be sent to the employee.
+              </p>
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Reason for Rejection *</label>
+                <textarea 
+                  placeholder="Enter reason for rejection..."
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows="4"
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    border: '1px solid #dde1e8',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                  required
+                />
+              </div>
+              <div style={{ 
+                padding: '10px 14px', 
+                background: '#fff3cd', 
+                borderRadius: '8px',
+                marginBottom: '16px',
+                fontSize: '13px',
+                color: '#856404'
+              }}>
+                <WarningIcon style={{ fontSize: 16, marginRight: 6, verticalAlign: 'middle' }} />
+                Rejecting this request will automatically restore the leave credits to the employee's balance.
+              </div>
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  className="btn-cancel" 
+                  onClick={() => { setShowRejectReason(false); setRejectReason(''); }}
+                  style={{
+                    padding: '10px 24px',
+                    background: '#f0f2f7',
+                    color: '#333',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleReject}
+                  disabled={!rejectReason.trim() || actionLoading}
+                  style={{
+                    padding: '10px 32px',
+                    background: (!rejectReason.trim() || actionLoading) ? '#ccc' : '#e74c3c',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '600',
+                    cursor: (!rejectReason.trim() || actionLoading) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {actionLoading ? 'Processing...' : 'Confirm Rejection'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal Form */}
       {showForm && (
@@ -972,6 +1386,9 @@ function LeaveManagement() {
               <div style={{ marginTop: '16px', padding: '12px', background: '#f0f4fe', borderRadius: '8px', textAlign: 'center' }}>
                 <p style={{ margin: 0, fontSize: '13px', color: '#4a6fa5' }}>
                   💡 Employee can file leave if they have sufficient credits
+                </p>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#27ae60' }}>
+                  ✅ Credits are automatically restored when leave is rejected
                 </p>
               </div>
             </div>

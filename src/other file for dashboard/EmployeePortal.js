@@ -142,21 +142,21 @@ function EmployeePortal() {
   const [showEditModal, setShowEditModal] = useState(false);
 
   // ====== DOCUMENT SCANNER STATES ======
-  const [showScanner, setShowScanner] = useState(false);
-  const [capturedImage, setCapturedImage] = useState(null);
-  const [originalImage, setOriginalImage] = useState(null);
-  const [isProcessingScan, setIsProcessingScan] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
-  const [showScanPreview, setShowScanPreview] = useState(false);
-  const [scannedFile, setScannedFile] = useState(null);
-  const [scannerDocType, setScannerDocType] = useState('');
-  const [scanningQuality, setScanningQuality] = useState('high');
-  const [filterMode, setFilterMode] = useState('original');
-  const [batchMode, setBatchMode] = useState(false);
-  const [batchDocuments, setBatchDocuments] = useState([]);
-  const [showBatchUpload, setShowBatchUpload] = useState(false);
-  const [rotationAngle, setRotationAngle] = useState(0);
-  const [scannerUploadStatus, setScannerUploadStatus] = useState('');
+  // const [showScanner, setShowScanner] = useState(false);
+  // const [capturedImage, setCapturedImage] = useState(null);
+  // const [originalImage, setOriginalImage] = useState(null);
+  // const [isProcessingScan, setIsProcessingScan] = useState(false);
+  // const [scanProgress, setScanProgress] = useState(0);
+  // const [showScanPreview, setShowScanPreview] = useState(false);
+  // const [scannedFile, setScannedFile] = useState(null);
+  // const [scannerDocType, setScannerDocType] = useState('');
+  // const [scanningQuality, setScanningQuality] = useState('high');
+  // const [filterMode, setFilterMode] = useState('original');
+  // const [batchMode, setBatchMode] = useState(false);
+  // const [batchDocuments, setBatchDocuments] = useState([]);
+  // const [showBatchUpload, setShowBatchUpload] = useState(false);
+  // const [rotationAngle, setRotationAngle] = useState(0);
+  // const [scannerUploadStatus, setScannerUploadStatus] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -225,459 +225,459 @@ function EmployeePortal() {
     return `${hours}:${minutes}`;
   };
 
-  // ====== SCANNER FUNCTIONS ======
+  // // ====== SCANNER FUNCTIONS ======
   
-  const openScanner = () => {
-    setShowScanner(true);
-    setCapturedImage(null);
-    setOriginalImage(null);
-    setBatchDocuments([]);
-    setBatchMode(false);
-    setShowBatchUpload(false);
-    setFilterMode('original');
-    setShowScanPreview(false);
-    setScannedFile(null);
-    setScannerDocType('');
-    setRotationAngle(0);
-    setScannerUploadStatus('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  // const openScanner = () => {
+  //   setShowScanner(true);
+  //   setCapturedImage(null);
+  //   setOriginalImage(null);
+  //   setBatchDocuments([]);
+  //   setBatchMode(false);
+  //   setShowBatchUpload(false);
+  //   setFilterMode('original');
+  //   setShowScanPreview(false);
+  //   setScannedFile(null);
+  //   setScannerDocType('');
+  //   setRotationAngle(0);
+  //   setScannerUploadStatus('');
+  //   if (fileInputRef.current) {
+  //     fileInputRef.current.value = '';
+  //   }
+  // };
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // const handleImageUpload = (e) => {
+  //   const file = e.target.files[0];
+  //   if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (JPG, PNG, etc.)');
-      return;
-    }
+  //   if (!file.type.startsWith('image/')) {
+  //     alert('Please select an image file (JPG, PNG, etc.)');
+  //     return;
+  //   }
 
-    if (file.size > 20 * 1024 * 1024) {
-      alert('File is too large. Maximum size is 20MB.');
-      return;
-    }
+  //   if (file.size > 20 * 1024 * 1024) {
+  //     alert('File is too large. Maximum size is 20MB.');
+  //     return;
+  //   }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const imageData = event.target.result;
-      setOriginalImage(imageData);
-      setCapturedImage(imageData);
-      setShowScanPreview(false);
-      setScannedFile(null);
-      setScannerUploadStatus('');
-    };
-    reader.readAsDataURL(file);
-  };
+  //   const reader = new FileReader();
+  //   reader.onload = (event) => {
+  //     const imageData = event.target.result;
+  //     setOriginalImage(imageData);
+  //     setCapturedImage(imageData);
+  //     setShowScanPreview(false);
+  //     setScannedFile(null);
+  //     setScannerUploadStatus('');
+  //   };
+  //   reader.readAsDataURL(file);
+  // };
 
-  const handleFileDrop = (e) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith('image/')) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const imageData = event.target.result;
-        setOriginalImage(imageData);
-        setCapturedImage(imageData);
-        setShowScanPreview(false);
-        setScannedFile(null);
-        setScannerUploadStatus('');
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+  // const handleFileDrop = (e) => {
+  //   e.preventDefault();
+  //   const file = e.dataTransfer.files[0];
+  //   if (file && file.type.startsWith('image/')) {
+  //     const reader = new FileReader();
+  //     reader.onload = (event) => {
+  //       const imageData = event.target.result;
+  //       setOriginalImage(imageData);
+  //       setCapturedImage(imageData);
+  //       setShowScanPreview(false);
+  //       setScannedFile(null);
+  //       setScannerUploadStatus('');
+  //     };
+  //     reader.readAsDataURL(file);
+  //   }
+  // };
 
-  const applyFilterToImage = (imageData, filter, rotation = 0) => {
-    return new Promise((resolve) => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
+  // const applyFilterToImage = (imageData, filter, rotation = 0) => {
+  //   return new Promise((resolve) => {
+  //     const canvas = document.createElement('canvas');
+  //     const ctx = canvas.getContext('2d');
+  //     const img = new Image();
       
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
+  //     img.onload = () => {
+  //       let width = img.width;
+  //       let height = img.height;
         
-        if (rotation === 90 || rotation === 270) {
-          width = img.height;
-          height = img.width;
-        }
+  //       if (rotation === 90 || rotation === 270) {
+  //         width = img.height;
+  //         height = img.width;
+  //       }
         
-        canvas.width = width;
-        canvas.height = height;
+  //       canvas.width = width;
+  //       canvas.height = height;
         
-        ctx.save();
-        ctx.clearRect(0, 0, width, height);
+  //       ctx.save();
+  //       ctx.clearRect(0, 0, width, height);
         
-        if (rotation === 90) {
-          ctx.translate(width / 2, height / 2);
-          ctx.rotate(Math.PI / 2);
-          ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        } else if (rotation === 180) {
-          ctx.translate(width / 2, height / 2);
-          ctx.rotate(Math.PI);
-          ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        } else if (rotation === 270) {
-          ctx.translate(width / 2, height / 2);
-          ctx.rotate(-Math.PI / 2);
-          ctx.drawImage(img, -img.width / 2, -img.height / 2);
-        } else {
-          ctx.drawImage(img, 0, 0);
-        }
-        ctx.restore();
+  //       if (rotation === 90) {
+  //         ctx.translate(width / 2, height / 2);
+  //         ctx.rotate(Math.PI / 2);
+  //         ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  //       } else if (rotation === 180) {
+  //         ctx.translate(width / 2, height / 2);
+  //         ctx.rotate(Math.PI);
+  //         ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  //       } else if (rotation === 270) {
+  //         ctx.translate(width / 2, height / 2);
+  //         ctx.rotate(-Math.PI / 2);
+  //         ctx.drawImage(img, -img.width / 2, -img.height / 2);
+  //       } else {
+  //         ctx.drawImage(img, 0, 0);
+  //       }
+  //       ctx.restore();
         
-        const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageDataObj.data;
+  //       const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  //       const data = imageDataObj.data;
         
-        for (let i = 0; i < data.length; i += 4) {
-          let r = data[i];
-          let g = data[i + 1];
-          let b = data[i + 2];
+  //       for (let i = 0; i < data.length; i += 4) {
+  //         let r = data[i];
+  //         let g = data[i + 1];
+  //         let b = data[i + 2];
           
-          switch(filter) {
-            case 'grayscale':
-              const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-              r = g = b = gray;
-              break;
-            case 'blackwhite':
-              const grayBW = 0.299 * r + 0.587 * g + 0.114 * b;
-              const threshold = 140;
-              const value = grayBW > threshold ? 255 : 0;
-              r = g = b = value;
-              break;
-            case 'enhanced':
-              const enhanced = ((r / 255 - 0.5) * 1.5 + 0.5) * 255;
-              r = Math.min(255, Math.max(0, enhanced));
-              const enhancedG = ((g / 255 - 0.5) * 1.5 + 0.5) * 255;
-              g = Math.min(255, Math.max(0, enhancedG));
-              const enhancedB = ((b / 255 - 0.5) * 1.5 + 0.5) * 255;
-              b = Math.min(255, Math.max(0, enhancedB));
-              break;
-            case 'magic':
-              const magic = ((r / 255 - 0.5) * 1.6 + 0.5) * 255;
-              r = Math.min(255, Math.max(0, magic));
-              const magicG = ((g / 255 - 0.5) * 1.6 + 0.5) * 255;
-              g = Math.min(255, Math.max(0, magicG));
-              const magicB = ((b / 255 - 0.5) * 1.6 + 0.5) * 255;
-              b = Math.min(255, Math.max(0, magicB));
-              break;
-            case 'document':
-              const docGray = 0.299 * r + 0.587 * g + 0.114 * b;
-              const docValue = ((docGray / 255 - 0.5) * 1.8 + 0.5) * 255;
-              const finalValue = Math.min(255, Math.max(0, docValue));
-              r = g = b = finalValue;
-              break;
-            default:
-              break;
-          }
+  //         switch(filter) {
+  //           case 'grayscale':
+  //             const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+  //             r = g = b = gray;
+  //             break;
+  //           case 'blackwhite':
+  //             const grayBW = 0.299 * r + 0.587 * g + 0.114 * b;
+  //             const threshold = 140;
+  //             const value = grayBW > threshold ? 255 : 0;
+  //             r = g = b = value;
+  //             break;
+  //           case 'enhanced':
+  //             const enhanced = ((r / 255 - 0.5) * 1.5 + 0.5) * 255;
+  //             r = Math.min(255, Math.max(0, enhanced));
+  //             const enhancedG = ((g / 255 - 0.5) * 1.5 + 0.5) * 255;
+  //             g = Math.min(255, Math.max(0, enhancedG));
+  //             const enhancedB = ((b / 255 - 0.5) * 1.5 + 0.5) * 255;
+  //             b = Math.min(255, Math.max(0, enhancedB));
+  //             break;
+  //           case 'magic':
+  //             const magic = ((r / 255 - 0.5) * 1.6 + 0.5) * 255;
+  //             r = Math.min(255, Math.max(0, magic));
+  //             const magicG = ((g / 255 - 0.5) * 1.6 + 0.5) * 255;
+  //             g = Math.min(255, Math.max(0, magicG));
+  //             const magicB = ((b / 255 - 0.5) * 1.6 + 0.5) * 255;
+  //             b = Math.min(255, Math.max(0, magicB));
+  //             break;
+  //           case 'document':
+  //             const docGray = 0.299 * r + 0.587 * g + 0.114 * b;
+  //             const docValue = ((docGray / 255 - 0.5) * 1.8 + 0.5) * 255;
+  //             const finalValue = Math.min(255, Math.max(0, docValue));
+  //             r = g = b = finalValue;
+  //             break;
+  //           default:
+  //             break;
+  //         }
           
-          data[i] = Math.min(255, Math.max(0, r));
-          data[i + 1] = Math.min(255, Math.max(0, g));
-          data[i + 2] = Math.min(255, Math.max(0, b));
-        }
+  //         data[i] = Math.min(255, Math.max(0, r));
+  //         data[i + 1] = Math.min(255, Math.max(0, g));
+  //         data[i + 2] = Math.min(255, Math.max(0, b));
+  //       }
         
-        ctx.putImageData(imageDataObj, 0, 0);
-        resolve(canvas.toDataURL('image/jpeg', 0.95));
-      };
+  //       ctx.putImageData(imageDataObj, 0, 0);
+  //       resolve(canvas.toDataURL('image/jpeg', 0.95));
+  //     };
       
-      img.src = imageData;
-    });
-  };
+  //     img.src = imageData;
+  //   });
+  // };
 
-  const processScannedImage = async () => {
-    if (!capturedImage && !originalImage) {
-      alert('Please upload an image first.');
-      return;
-    }
+  // const processScannedImage = async () => {
+  //   if (!capturedImage && !originalImage) {
+  //     alert('Please upload an image first.');
+  //     return;
+  //   }
 
-    setIsProcessingScan(true);
-    setScanProgress(10);
+  //   setIsProcessingScan(true);
+  //   setScanProgress(10);
 
-    try {
-      const imageToProcess = capturedImage || originalImage;
-      setScanProgress(30);
+  //   try {
+  //     const imageToProcess = capturedImage || originalImage;
+  //     setScanProgress(30);
       
-      let processedImage = await applyFilterToImage(imageToProcess, filterMode, rotationAngle);
+  //     let processedImage = await applyFilterToImage(imageToProcess, filterMode, rotationAngle);
       
-      setScanProgress(60);
+  //     setScanProgress(60);
       
-      const response = await fetch(processedImage);
-      const blob = await response.blob();
-      const fileName = `scanned_document_${Date.now()}.jpg`;
-      const file = new File([blob], fileName, { type: 'image/jpeg' });
+  //     const response = await fetch(processedImage);
+  //     const blob = await response.blob();
+  //     const fileName = `scanned_document_${Date.now()}.jpg`;
+  //     const file = new File([blob], fileName, { type: 'image/jpeg' });
       
-      setScanProgress(80);
+  //     setScanProgress(80);
       
-      setScannedFile(file);
-      setCapturedImage(processedImage);
+  //     setScannedFile(file);
+  //     setCapturedImage(processedImage);
       
-      if (batchMode) {
-        const newDoc = {
-          id: Date.now(),
-          file: file,
-          preview: processedImage,
-          fileName: fileName,
-          timestamp: new Date().toISOString()
-        };
-        setBatchDocuments(prev => [...prev, newDoc]);
-        setCapturedImage(null);
-        setOriginalImage(null);
-        setFilterMode('original');
-        setRotationAngle(0);
-        setScannerUploadStatus(`✅ Document ${batchDocuments.length + 1} added to batch!`);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
-        // Reset after adding to batch
-        setShowScanPreview(false);
-        setScannedFile(null);
-      } else {
-        setShowScanPreview(true);
-      }
+  //     if (batchMode) {
+  //       const newDoc = {
+  //         id: Date.now(),
+  //         file: file,
+  //         preview: processedImage,
+  //         fileName: fileName,
+  //         timestamp: new Date().toISOString()
+  //       };
+  //       setBatchDocuments(prev => [...prev, newDoc]);
+  //       setCapturedImage(null);
+  //       setOriginalImage(null);
+  //       setFilterMode('original');
+  //       setRotationAngle(0);
+  //       setScannerUploadStatus(`✅ Document ${batchDocuments.length + 1} added to batch!`);
+  //       if (fileInputRef.current) {
+  //         fileInputRef.current.value = '';
+  //       }
+  //       // Reset after adding to batch
+  //       setShowScanPreview(false);
+  //       setScannedFile(null);
+  //     } else {
+  //       setShowScanPreview(true);
+  //     }
       
-      setScanProgress(100);
-    } catch (error) {
-      console.error('Error processing image:', error);
-      alert('Error processing image. Please try again.');
-    } finally {
-      setIsProcessingScan(false);
-      setScanProgress(0);
-    }
-  };
+  //     setScanProgress(100);
+  //   } catch (error) {
+  //     console.error('Error processing image:', error);
+  //     alert('Error processing image. Please try again.');
+  //   } finally {
+  //     setIsProcessingScan(false);
+  //     setScanProgress(0);
+  //   }
+  // };
 
-  const rotateImage = () => {
-    const newAngle = (rotationAngle + 90) % 360;
-    setRotationAngle(newAngle);
-    if (originalImage) {
-      applyFilterToImage(originalImage, filterMode, newAngle).then(result => {
-        setCapturedImage(result);
-      });
-    }
-  };
+  // const rotateImage = () => {
+  //   const newAngle = (rotationAngle + 90) % 360;
+  //   setRotationAngle(newAngle);
+  //   if (originalImage) {
+  //     applyFilterToImage(originalImage, filterMode, newAngle).then(result => {
+  //       setCapturedImage(result);
+  //     });
+  //   }
+  // };
 
-  const resetImage = () => {
-    setRotationAngle(0);
-    setFilterMode('original');
-    if (originalImage) {
-      setCapturedImage(originalImage);
-    }
-  };
+  // const resetImage = () => {
+  //   setRotationAngle(0);
+  //   setFilterMode('original');
+  //   if (originalImage) {
+  //     setCapturedImage(originalImage);
+  //   }
+  // };
 
-  const clearCurrentImage = () => {
-    setCapturedImage(null);
-    setOriginalImage(null);
-    setShowScanPreview(false);
-    setScannedFile(null);
-    setFilterMode('original');
-    setRotationAngle(0);
-    setScannerUploadStatus('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
+  // const clearCurrentImage = () => {
+  //   setCapturedImage(null);
+  //   setOriginalImage(null);
+  //   setShowScanPreview(false);
+  //   setScannedFile(null);
+  //   setFilterMode('original');
+  //   setRotationAngle(0);
+  //   setScannerUploadStatus('');
+  //   if (fileInputRef.current) {
+  //     fileInputRef.current.value = '';
+  //   }
+  // };
 
-  const removeBatchDocument = (docId) => {
-    setBatchDocuments(prev => prev.filter(d => d.id !== docId));
-  };
+  // const removeBatchDocument = (docId) => {
+  //   setBatchDocuments(prev => prev.filter(d => d.id !== docId));
+  // };
 
-  const uploadScannedDocument = async () => {
-    if (!scannedFile || !scannerDocType) {
-      alert('Please select a document type and ensure a document is scanned.');
-      return;
-    }
+  // const uploadScannedDocument = async () => {
+  //   if (!scannedFile || !scannerDocType) {
+  //     alert('Please select a document type and ensure a document is scanned.');
+  //     return;
+  //   }
 
-    setUploading(true);
-    setUploadProgress(0);
-    setScannerUploadStatus('Uploading scanned document...');
+  //   setUploading(true);
+  //   setUploadProgress(0);
+  //   setScannerUploadStatus('Uploading scanned document...');
 
-    try {
-      if (!authUser || !employee || !employee.id) {
-        alert('You must be logged in to upload');
-        setUploading(false);
-        return;
-      }
+  //   try {
+  //     if (!authUser || !employee || !employee.id) {
+  //       alert('You must be logged in to upload');
+  //       setUploading(false);
+  //       return;
+  //     }
 
-      const uploadResult = await uploadToVercelBlob(
-        scannedFile,
-        employee.id,
-        scannerDocType
-      );
+  //     const uploadResult = await uploadToVercelBlob(
+  //       scannedFile,
+  //       employee.id,
+  //       scannerDocType
+  //     );
 
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'Upload failed');
-      }
+  //     if (!uploadResult.success) {
+  //       throw new Error(uploadResult.error || 'Upload failed');
+  //     }
 
-      setUploadProgress(50);
-      setScannerUploadStatus('Saving to database...');
+  //     setUploadProgress(50);
+  //     setScannerUploadStatus('Saving to database...');
 
-      await addDoc(collection(db, 'documents'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: scannerDocType,
-        status: 'Pending Review',
-        fileUrl: uploadResult.url,
-        downloadUrl: uploadResult.downloadUrl,
-        fileName: scannedFile.name,
-        fileSize: scannedFile.size,
-        storagePath: uploadResult.path,
-        storageProvider: 'vercel-blob',
-        scanned: true,
-        scannedAt: new Date().toISOString(),
-        uploadedAt: new Date().toISOString()
-      });
+  //     await addDoc(collection(db, 'documents'), {
+  //       employeeId: employee.id,
+  //       employeeName: employee.fullName,
+  //       department: employee.department || 'N/A',
+  //       documentType: scannerDocType,
+  //       status: 'Pending Review',
+  //       fileUrl: uploadResult.url,
+  //       downloadUrl: uploadResult.downloadUrl,
+  //       fileName: scannedFile.name,
+  //       fileSize: scannedFile.size,
+  //       storagePath: uploadResult.path,
+  //       storageProvider: 'vercel-blob',
+  //       scanned: true,
+  //       scannedAt: new Date().toISOString(),
+  //       uploadedAt: new Date().toISOString()
+  //     });
 
-      setUploadProgress(75);
-      setScannerUploadStatus('Creating notifications...');
+  //     setUploadProgress(75);
+  //     setScannerUploadStatus('Creating notifications...');
 
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload',
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: scannerDocType,
-        message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded scanned ${scannerDocType} for compliance review`,
-        read: false,
-        forAdmin: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
+  //     await addDoc(collection(db, 'notifications'), {
+  //       type: 'compliance_upload',
+  //       employeeId: employee.id,
+  //       employeeName: employee.fullName,
+  //       department: employee.department || 'N/A',
+  //       documentType: scannerDocType,
+  //       message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded scanned ${scannerDocType} for compliance review`,
+  //       read: false,
+  //       forAdmin: true,
+  //       forEmployee: false,
+  //       createdAt: new Date().toISOString()
+  //     });
 
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload_confirmation',
-        employeeId: employee.id,
-        message: `Your scanned ${scannerDocType} has been uploaded and is pending review by HR`,
-        read: false,
-        forEmployee: true,
-        forAdmin: false,
-        createdAt: new Date().toISOString()
-      });
+  //     await addDoc(collection(db, 'notifications'), {
+  //       type: 'compliance_upload_confirmation',
+  //       employeeId: employee.id,
+  //       message: `Your scanned ${scannerDocType} has been uploaded and is pending review by HR`,
+  //       read: false,
+  //       forEmployee: true,
+  //       forAdmin: false,
+  //       createdAt: new Date().toISOString()
+  //     });
 
-      setUploadProgress(100);
-      setScannerUploadStatus('✅ Scanned document uploaded successfully!');
+  //     setUploadProgress(100);
+  //     setScannerUploadStatus('Scanned document uploaded successfully!');
       
-      setTimeout(() => {
-        setShowScanPreview(false);
-        setShowScanner(false);
-        setCapturedImage(null);
-        setOriginalImage(null);
-        setScannedFile(null);
-        setScannerDocType('');
-        setFilterMode('original');
-        setRotationAngle(0);
-        setBatchDocuments([]);
-        setBatchMode(false);
-        setScannerUploadStatus('');
-        fetchEmployeeData();
-      }, 1500);
+  //     setTimeout(() => {
+  //       setShowScanPreview(false);
+  //       setShowScanner(false);
+  //       setCapturedImage(null);
+  //       setOriginalImage(null);
+  //       setScannedFile(null);
+  //       setScannerDocType('');
+  //       setFilterMode('original');
+  //       setRotationAngle(0);
+  //       setBatchDocuments([]);
+  //       setBatchMode(false);
+  //       setScannerUploadStatus('');
+  //       fetchEmployeeData();
+  //     }, 1500);
       
-      setUploading(false);
+  //     setUploading(false);
       
-    } catch (error) {
-      console.error('Error uploading scanned document:', error);
-      setScannerUploadStatus(`❌ Upload failed: ${error.message}`);
-      setUploading(false);
-    }
-  };
+  //   } catch (error) {
+  //     console.error('Error uploading scanned document:', error);
+  //     setScannerUploadStatus(`Upload failed: ${error.message}`);
+  //     setUploading(false);
+  //   }
+  // };
 
-  const uploadBatchDocuments = async () => {
-    if (batchDocuments.length === 0) {
-      alert('No documents to upload.');
-      return;
-    }
+  // const uploadBatchDocuments = async () => {
+  //   if (batchDocuments.length === 0) {
+  //     alert('No documents to upload.');
+  //     return;
+  //   }
 
-    if (!scannerDocType) {
-      alert('Please select a document type.');
-      return;
-    }
+  //   if (!scannerDocType) {
+  //     alert('Please select a document type.');
+  //     return;
+  //   }
 
-    setUploading(true);
-    setUploadProgress(0);
-    setScannerUploadStatus(`Uploading ${batchDocuments.length} documents...`);
+  //   setUploading(true);
+  //   setUploadProgress(0);
+  //   setScannerUploadStatus(`Uploading ${batchDocuments.length} documents...`);
 
-    let successCount = 0;
-    let failCount = 0;
+  //   let successCount = 0;
+  //   let failCount = 0;
 
-    try {
-      for (let i = 0; i < batchDocuments.length; i++) {
-        const doc = batchDocuments[i];
-        setUploadProgress(Math.round((i / batchDocuments.length) * 80));
-        setScannerUploadStatus(`Uploading document ${i + 1} of ${batchDocuments.length}...`);
+  //   try {
+  //     for (let i = 0; i < batchDocuments.length; i++) {
+  //       const doc = batchDocuments[i];
+  //       setUploadProgress(Math.round((i / batchDocuments.length) * 80));
+  //       setScannerUploadStatus(`Uploading document ${i + 1} of ${batchDocuments.length}...`);
 
-        try {
-          const uploadResult = await uploadToVercelBlob(
-            doc.file,
-            employee.id,
-            scannerDocType
-          );
+  //       try {
+  //         const uploadResult = await uploadToVercelBlob(
+  //           doc.file,
+  //           employee.id,
+  //           scannerDocType
+  //         );
 
-          if (uploadResult.success) {
-            await addDoc(collection(db, 'documents'), {
-              employeeId: employee.id,
-              employeeName: employee.fullName,
-              department: employee.department || 'N/A',
-              documentType: scannerDocType,
-              status: 'Pending Review',
-              fileUrl: uploadResult.url,
-              downloadUrl: uploadResult.downloadUrl,
-              fileName: doc.fileName,
-              fileSize: doc.file.size,
-              storagePath: uploadResult.path,
-              storageProvider: 'vercel-blob',
-              scanned: true,
-              scannedAt: new Date().toISOString(),
-              uploadedAt: new Date().toISOString()
-            });
-            successCount++;
-          } else {
-            failCount++;
-          }
-        } catch (err) {
-          console.error('Error uploading batch document:', err);
-          failCount++;
-        }
-      }
+  //         if (uploadResult.success) {
+  //           await addDoc(collection(db, 'documents'), {
+  //             employeeId: employee.id,
+  //             employeeName: employee.fullName,
+  //             department: employee.department || 'N/A',
+  //             documentType: scannerDocType,
+  //             status: 'Pending Review',
+  //             fileUrl: uploadResult.url,
+  //             downloadUrl: uploadResult.downloadUrl,
+  //             fileName: doc.fileName,
+  //             fileSize: doc.file.size,
+  //             storagePath: uploadResult.path,
+  //             storageProvider: 'vercel-blob',
+  //             scanned: true,
+  //             scannedAt: new Date().toISOString(),
+  //             uploadedAt: new Date().toISOString()
+  //           });
+  //           successCount++;
+  //         } else {
+  //           failCount++;
+  //         }
+  //       } catch (err) {
+  //         console.error('Error uploading batch document:', err);
+  //         failCount++;
+  //       }
+  //     }
 
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload',
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: scannerDocType,
-        message: `${employee.fullName} uploaded ${successCount} scanned ${scannerDocType} documents for compliance review`,
-        read: false,
-        forAdmin: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
+  //     await addDoc(collection(db, 'notifications'), {
+  //       type: 'compliance_upload',
+  //       employeeId: employee.id,
+  //       employeeName: employee.fullName,
+  //       department: employee.department || 'N/A',
+  //       documentType: scannerDocType,
+  //       message: `${employee.fullName} uploaded ${successCount} scanned ${scannerDocType} documents for compliance review`,
+  //       read: false,
+  //       forAdmin: true,
+  //       forEmployee: false,
+  //       createdAt: new Date().toISOString()
+  //     });
 
-      setUploadProgress(100);
-      setScannerUploadStatus(`✅ Upload complete! ${successCount} uploaded, ${failCount} failed.`);
+  //     setUploadProgress(100);
+  //     setScannerUploadStatus(`Upload complete! ${successCount} uploaded, ${failCount} failed.`);
       
-      setTimeout(() => {
-        setShowScanner(false);
-        setBatchDocuments([]);
-        setBatchMode(false);
-        setShowBatchUpload(false);
-        setScannerDocType('');
-        setScannerUploadStatus('');
-        fetchEmployeeData();
-      }, 2000);
+  //     setTimeout(() => {
+  //       setShowScanner(false);
+  //       setBatchDocuments([]);
+  //       setBatchMode(false);
+  //       setShowBatchUpload(false);
+  //       setScannerDocType('');
+  //       setScannerUploadStatus('');
+  //       fetchEmployeeData();
+  //     }, 2000);
       
-      setUploading(false);
+  //     setUploading(false);
       
-    } catch (error) {
-      console.error('Error in batch upload:', error);
-      setScannerUploadStatus(`❌ Batch upload failed: ${error.message}`);
-      setUploading(false);
-    }
-  };
+  //   } catch (error) {
+  //     console.error('Error in batch upload:', error);
+  //     setScannerUploadStatus(`Batch upload failed: ${error.message}`);
+  //     setUploading(false);
+  //   }
+  // };
 
-  const triggerFileInput = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
+  // const triggerFileInput = () => {
+  //   if (fileInputRef.current) {
+  //     fileInputRef.current.click();
+  //   }
+  // };
 
   // ====== PRINT PAYSLIP FUNCTION ======
   const printPayslip = (payrollData) => {
@@ -989,7 +989,7 @@ function EmployeePortal() {
 
             <div class="print-btn-container">
               <button class="print-btn" onclick="window.print()">
-                🖨️ Print Payslip
+                Print Payslip
               </button>
             </div>
           </div>
@@ -1999,7 +1999,8 @@ function EmployeePortal() {
         reason: leaveFormData.reason || '',
         status: 'Pending',
         department: employee.department,
-        dateSubmitted: new Date().toISOString()
+        dateSubmitted: new Date().toISOString(),
+        creditsRestored: false // Add this flag
       });
 
       await addDoc(collection(db, 'notifications'), {
@@ -2072,6 +2073,77 @@ function EmployeePortal() {
       alert('Failed to submit leave request');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ====== RESTORE LEAVE CREDITS ON REJECTION ======
+  const restoreLeaveCreditsOnRejection = async (leaveId, leaveData) => {
+    try {
+      // Only restore if status is 'Rejected' and not already restored
+      if (leaveData.status !== 'Rejected') return;
+      
+      // Check if already restored (add a flag to prevent double restoration)
+      if (leaveData.creditsRestored === true) return;
+
+      console.log(`🔄 Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
+
+      const currentBalance = leaveData.type === 'Vacation' 
+        ? leaveBalance.vacationLeave
+        : leaveData.type === 'Maternity'
+        ? leaveBalance.maternityLeave
+        : leaveData.type === 'Paternity'
+        ? leaveBalance.paternityLeave
+        : leaveBalance.sickLeave;
+      
+      const updatedBalance = { ...leaveBalance };
+      if (leaveData.type === 'Vacation') {
+        updatedBalance.vacationLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Maternity') {
+        updatedBalance.maternityLeave = currentBalance + leaveData.days;
+      } else if (leaveData.type === 'Paternity') {
+        updatedBalance.paternityLeave = currentBalance + leaveData.days;
+      } else {
+        updatedBalance.sickLeave = currentBalance + leaveData.days;
+      }
+
+      if (leaveBalanceId) {
+        await updateDoc(doc(db, 'leaveBalances', leaveBalanceId), {
+          vacationLeave: updatedBalance.vacationLeave,
+          sickLeave: updatedBalance.sickLeave,
+          maternityLeave: updatedBalance.maternityLeave,
+          paternityLeave: updatedBalance.paternityLeave,
+          updatedAt: new Date().toISOString()
+        });
+      }
+
+      // Mark the leave request as credits restored to prevent double restoration
+      await updateDoc(doc(db, 'leaveRequests', leaveId), {
+        creditsRestored: true,
+        creditsRestoredAt: new Date().toISOString()
+      });
+
+      setLeaveBalance(updatedBalance);
+
+      // Notify employee
+      await addDoc(collection(db, 'notifications'), {
+        employeeId: employee.id,
+        employeeName: employee.fullName,
+        department: employee.department,
+        leaveId: leaveId,
+        leaveType: leaveData.type,
+        leaveDays: leaveData.days,
+        message: `Your ${leaveData.type} leave request was rejected. ${leaveData.days} days have been restored to your balance.`,
+        type: 'leave_rejected_restored',
+        read: false,
+        forEmployee: true,
+        forAdmin: false,
+        createdAt: new Date().toISOString()
+      });
+
+      console.log(`✅ Successfully restored ${leaveData.days} ${leaveData.type} days`);
+
+    } catch (error) {
+      console.error('Error restoring leave credits on rejection:', error);
     }
   };
 
@@ -2216,6 +2288,23 @@ function EmployeePortal() {
     const leaveQuery = query(collection(db, 'leaveRequests'), where('employeeId', '==', employee.id));
     onSnapshot(leaveQuery, (snapshot) => {
       const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Check for newly rejected leave requests
+      requests.forEach(request => {
+        // If status is 'Rejected' and credits haven't been restored yet
+        if (request.status === 'Rejected' && !request.creditsRestored) {
+          // Find the previous version of this request to check if it just became rejected
+          const previousRequest = leaveRequests.find(r => r.id === request.id);
+          if (previousRequest && previousRequest.status !== 'Rejected') {
+            // This request was just rejected - restore the credits
+            restoreLeaveCreditsOnRejection(request.id, request);
+          } else if (!previousRequest) {
+            // New request that is already rejected (edge case)
+            restoreLeaveCreditsOnRejection(request.id, request);
+          }
+        }
+      });
+      
       setLeaveRequests(requests);
     });
 
@@ -2358,10 +2447,10 @@ function EmployeePortal() {
         if (docSnapshot.exists()) {
           const updatedData = { id: docSnapshot.id, ...docSnapshot.data() };
           setEmployee(updatedData);
-          console.log('🔄 Employee data updated in real-time:', updatedData);
+          console.log('Employee data updated in real-time:', updatedData);
           
           if (updatedData.salary !== employee.salary) {
-            console.log('💰 Salary updated from', employee.salary, 'to', updatedData.salary);
+            console.log('Salary updated from', employee.salary, 'to', updatedData.salary);
             fetchEmployeePayroll();
           }
         }
@@ -2379,801 +2468,800 @@ function EmployeePortal() {
     setShowEditModal(true);
   };
 
-  // ====== RENDER SCANNER MODAL ======
-  const renderScannerModal = () => {
-    if (!showScanner) return null;
+//   // ====== RENDER SCANNER MODAL ======
+//   const renderScannerModal = () => {
+//     if (!showScanner) return null;
 
-    return (
-      <div className="modal-overlay" onClick={() => !isProcessingScan && !uploading && setShowScanner(false)}>
-        <div className="modal-form scanner-modal" onClick={(e) => e.stopPropagation()} style={{ 
-          maxWidth: '750px', 
-          maxHeight: '95vh',
-          width: '95%',
-          padding: '0',
-          overflow: 'hidden',
-          borderRadius: '16px'
-        }}>
-          <div className="modal-header" style={{ 
-            padding: '16px 20px',
-            borderBottom: '1px solid #eef2f7',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: '10px',
-            background: '#f8fafd'
-          }}>
-            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px' }}>
-              <span style={{ fontSize: '24px' }}>📄</span>
-              Document Scanner
-              <span style={{ 
-                fontSize: '11px', 
-                background: '#27ae60', 
-                color: 'white', 
-                padding: '2px 12px', 
-                borderRadius: '12px',
-                fontWeight: '400'
-              }}>
-                Upload Image
-              </span>
-            </h3>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-              {!capturedImage && !showScanPreview && !isProcessingScan && (
-                <button
-                  onClick={() => setBatchMode(!batchMode)}
-                  style={{
-                    padding: '4px 12px',
-                    background: batchMode ? '#27ae60' : '#e8f0fe',
-                    border: batchMode ? '1px solid #27ae60' : '1px solid #4a6fa5',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    color: batchMode ? 'white' : '#4a6fa5'
-                  }}
-                >
-                  {batchMode ? '📚 Batch ON' : '📚 Batch'}
-                </button>
-              )}
-              {batchMode && batchDocuments.length > 0 && (
-                <button
-                  onClick={() => {
-                    if (scannerDocType || batchDocuments.length === 0) {
-                      setShowBatchUpload(true);
-                    } else {
-                      alert('Please select a document type first.');
-                    }
-                  }}
-                  style={{
-                    padding: '4px 12px',
-                    background: '#27ae60',
-                    border: 'none',
-                    borderRadius: '4px',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    color: 'white'
-                  }}
-                >
-                  📤 Upload ({batchDocuments.length})
-                </button>
-              )}
-              <button 
-                className="modal-close" 
-                onClick={() => {
-                  setShowScanner(false);
-                  setBatchMode(false);
-                  setBatchDocuments([]);
-                  setScannerUploadStatus('');
-                }}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  fontSize: '20px',
-                  cursor: 'pointer',
-                  color: '#666',
-                  padding: '4px 8px'
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+//     return (
+//       <div className="modal-overlay" onClick={() => !isProcessingScan && !uploading && setShowScanner(false)}>
+//         <div className="modal-form scanner-modal" onClick={(e) => e.stopPropagation()} style={{ 
+//           maxWidth: '750px', 
+//           maxHeight: '95vh',
+//           width: '95%',
+//           padding: '0',
+//           overflow: 'hidden',
+//           borderRadius: '16px'
+//         }}>
+//           <div className="modal-header" style={{ 
+//             padding: '16px 20px',
+//             borderBottom: '1px solid #eef2f7',
+//             display: 'flex',
+//             justifyContent: 'space-between',
+//             alignItems: 'center',
+//             flexWrap: 'wrap',
+//             gap: '10px',
+//             background: '#f8fafd'
+//           }}>
+//             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px' }}>
+//               <span style={{ fontSize: '24px' }}>📄</span>
+//               Document Scanner
+//               <span style={{ 
+//                 fontSize: '11px', 
+//                 background: '#27ae60', 
+//                 color: 'white', 
+//                 padding: '2px 12px', 
+//                 borderRadius: '12px',
+//                 fontWeight: '400'
+//               }}>
+//                 Upload Image
+//               </span>
+//             </h3>
+//             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+//               {!capturedImage && !showScanPreview && !isProcessingScan && (
+//                 <button
+//                   onClick={() => setBatchMode(!batchMode)}
+//                   style={{
+//                     padding: '4px 12px',
+//                     background: batchMode ? '#27ae60' : '#e8f0fe',
+//                     border: batchMode ? '1px solid #27ae60' : '1px solid #4a6fa5',
+//                     borderRadius: '4px',
+//                     fontSize: '11px',
+//                     cursor: 'pointer',
+//                     color: batchMode ? 'white' : '#4a6fa5'
+//                   }}
+//                 >
+//                   {batchMode ? 'Batch ON' : 'Batch'}
+//                 </button>
+//               )}
+//               {batchMode && batchDocuments.length > 0 && (
+//                 <button
+//                   onClick={() => {
+//                     if (scannerDocType || batchDocuments.length === 0) {
+//                       setShowBatchUpload(true);
+//                     } else {
+//                       alert('Please select a document type first.');
+//                     }
+//                   }}
+//                   style={{
+//                     padding: '4px 12px',
+//                     background: '#27ae60',
+//                     border: 'none',
+//                     borderRadius: '4px',
+//                     fontSize: '11px',
+//                     cursor: 'pointer',
+//                     color: 'white'
+//                   }}
+//                 >
+//                   Upload ({batchDocuments.length})
+//                 </button>
+//               )}
+//               <button 
+//                 className="modal-close" 
+//                 onClick={() => {
+//                   setShowScanner(false);
+//                   setBatchMode(false);
+//                   setBatchDocuments([]);
+//                   setScannerUploadStatus('');
+//                 }}
+//                 style={{
+//                   background: 'transparent',
+//                   border: 'none',
+//                   fontSize: '20px',
+//                   cursor: 'pointer',
+//                   color: '#666',
+//                   padding: '4px 8px'
+//                 }}
+//               >
+//                 ✕
+//               </button>
+//             </div>
+//           </div>
 
-          <div style={{ padding: '16px 20px 20px', maxHeight: '80vh', overflowY: 'auto' }}>
-            {/* Upload Area */}
-            {!capturedImage && !showScanPreview && (
-              <div 
-                onDrop={handleFileDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onClick={triggerFileInput}
-                style={{
-                  border: '2px dashed #dde1e8',
-                  borderRadius: '12px',
-                  padding: '40px 20px',
-                  textAlign: 'center',
-                  background: '#fafbfc',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  minHeight: '200px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderColor: '#dde1e8'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#4a6fa5';
-                  e.currentTarget.style.background = '#f0f4fe';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#dde1e8';
-                  e.currentTarget.style.background = '#fafbfc';
-                }}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  style={{ display: 'none' }}
-                />
-                <span style={{ fontSize: '48px', display: 'block', marginBottom: '12px' }}>🖼️</span>
-                <h4 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Upload Document Image</h4>
-                <p style={{ margin: '8px 0 4px', color: '#888', fontSize: '14px' }}>
-                  Click or drag and drop an image of your document
-                </p>
-                <p style={{ margin: 0, color: '#aaa', fontSize: '12px' }}>
-                  Supports JPG, PNG, GIF, WebP (Max 20MB)
-                </p>
-                {batchMode && (
-                  <div style={{
-                    marginTop: '12px',
-                    padding: '8px 16px',
-                    background: '#d4edda',
-                    borderRadius: '6px',
-                    color: '#155724',
-                    fontSize: '13px'
-                  }}>
-                    Batch Mode: {batchDocuments.length} document{batchDocuments.length !== 1 ? 's' : ''} scanned
-                  </div>
-                )}
-              </div>
-            )}
+//           <div style={{ padding: '16px 20px 20px', maxHeight: '80vh', overflowY: 'auto' }}>
+//             {/* Upload Area */}
+//             {!capturedImage && !showScanPreview && (
+//               <div 
+//                 onDrop={handleFileDrop}
+//                 onDragOver={(e) => e.preventDefault()}
+//                 onClick={triggerFileInput}
+//                 style={{
+//                   border: '2px dashed #dde1e8',
+//                   borderRadius: '12px',
+//                   padding: '40px 20px',
+//                   textAlign: 'center',
+//                   background: '#fafbfc',
+//                   cursor: 'pointer',
+//                   transition: 'all 0.3s ease',
+//                   minHeight: '200px',
+//                   display: 'flex',
+//                   flexDirection: 'column',
+//                   alignItems: 'center',
+//                   justifyContent: 'center',
+//                   borderColor: '#dde1e8'
+//                 }}
+//                 onMouseEnter={(e) => {
+//                   e.currentTarget.style.borderColor = '#4a6fa5';
+//                   e.currentTarget.style.background = '#f0f4fe';
+//                 }}
+//                 onMouseLeave={(e) => {
+//                   e.currentTarget.style.borderColor = '#dde1e8';
+//                   e.currentTarget.style.background = '#fafbfc';
+//                 }}
+//               >
+//                 <input
+//                   ref={fileInputRef}
+//                   type="file"
+//                   accept="image/*"
+//                   onChange={handleImageUpload}
+//                   style={{ display: 'none' }}
+//                 />
+//                 <span style={{ fontSize: '48px', display: 'block', marginBottom: '12px' }}>🖼️</span>
+//                 <h4 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Upload Document Image</h4>
+//                 <p style={{ margin: '8px 0 4px', color: '#888', fontSize: '14px' }}>
+//                   Click or drag and drop an image of your document
+//                 </p>
+//                 <p style={{ margin: 0, color: '#aaa', fontSize: '12px' }}>
+//                   Supports JPG, PNG, GIF, WebP (Max 20MB)
+//                 </p>
+//                 {batchMode && (
+//                   <div style={{
+//                     marginTop: '12px',
+//                     padding: '8px 16px',
+//                     background: '#d4edda',
+//                     borderRadius: '6px',
+//                     color: '#155724',
+//                     fontSize: '13px'
+//                   }}>
+//                     Batch Mode: {batchDocuments.length} document{batchDocuments.length !== 1 ? 's' : ''} scanned
+//                   </div>
+//                 )}
+//               </div>
+//             )}
 
-            {/* Batch Documents Preview */}
-            {batchMode && batchDocuments.length > 0 && !capturedImage && !showScanPreview && (
-              <div style={{
-                marginTop: '12px',
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
-                gap: '8px'
-              }}>
-                {batchDocuments.map((doc, index) => (
-                  <div key={doc.id} style={{
-                    position: 'relative',
-                    borderRadius: '6px',
-                    overflow: 'hidden',
-                    border: '1px solid #eef2f7',
-                    background: 'white'
-                  }}>
-                    <img 
-                      src={doc.preview} 
-                      alt={`Doc ${index + 1}`}
-                      style={{
-                        width: '100%',
-                        height: '80px',
-                        objectFit: 'cover'
-                      }}
-                    />
-                    <button
-                      onClick={() => removeBatchDocument(doc.id)}
-                      style={{
-                        position: 'absolute',
-                        top: '2px',
-                        right: '2px',
-                        background: 'rgba(231,76,60,0.9)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '50%',
-                        width: '20px',
-                        height: '20px',
-                        cursor: 'pointer',
-                        fontSize: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      ✕
-                    </button>
-                    <div style={{
-                      fontSize: '8px',
-                      padding: '2px 4px',
-                      background: 'rgba(0,0,0,0.7)',
-                      color: 'white',
-                      position: 'absolute',
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      textAlign: 'center'
-                    }}>
-                      #{index + 1}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+//             {/* Batch Documents Preview */}
+//             {batchMode && batchDocuments.length > 0 && !capturedImage && !showScanPreview && (
+//               <div style={{
+//                 marginTop: '12px',
+//                 display: 'grid',
+//                 gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
+//                 gap: '8px'
+//               }}>
+//                 {batchDocuments.map((doc, index) => (
+//                   <div key={doc.id} style={{
+//                     position: 'relative',
+//                     borderRadius: '6px',
+//                     overflow: 'hidden',
+//                     border: '1px solid #eef2f7',
+//                     background: 'white'
+//                   }}>
+//                     <img 
+//                       src={doc.preview} 
+//                       alt={`Doc ${index + 1}`}
+//                       style={{
+//                         width: '100%',
+//                         height: '80px',
+//                         objectFit: 'cover'
+//                       }}
+//                     />
+//                     <button
+//                       onClick={() => removeBatchDocument(doc.id)}
+//                       style={{
+//                         position: 'absolute',
+//                         top: '2px',
+//                         right: '2px',
+//                         background: 'rgba(231,76,60,0.9)',
+//                         color: 'white',
+//                         border: 'none',
+//                         borderRadius: '50%',
+//                         width: '20px',
+//                         height: '20px',
+//                         cursor: 'pointer',
+//                         fontSize: '10px',
+//                         display: 'flex',
+//                         alignItems: 'center',
+//                         justifyContent: 'center'
+//                       }}
+//                     >
+//                       ✕
+//                     </button>
+//                     <div style={{
+//                       fontSize: '8px',
+//                       padding: '2px 4px',
+//                       background: 'rgba(0,0,0,0.7)',
+//                       color: 'white',
+//                       position: 'absolute',
+//                       bottom: 0,
+//                       left: 0,
+//                       right: 0,
+//                       textAlign: 'center'
+//                     }}>
+//                       #{index + 1}
+//                     </div>
+//                   </div>
+//                 ))}
+//               </div>
+//             )}
 
-            {/* Image Preview with Filters */}
-            {capturedImage && !showScanPreview && (
-              <div>
-                <div style={{
-                  position: 'relative',
-                  borderRadius: '12px',
-                  overflow: 'hidden',
-                  background: '#f5f5f5',
-                  marginBottom: '16px',
-                  maxHeight: '450px',
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center'
-                }}>
-                  <img 
-                    src={capturedImage} 
-                    alt="Document to scan"
-                    style={{ 
-                      width: '100%', 
-                      height: 'auto', 
-                      maxHeight: '450px',
-                      objectFit: 'contain'
-                    }}
-                  />
-                  {/* Document corner overlay */}
-                  <div style={{
-                    position: 'absolute',
-                    top: '8px',
-                    left: '8px',
-                    right: '8px',
-                    bottom: '8px',
-                    border: '2px solid rgba(74,111,165,0.3)',
-                    borderRadius: '8px',
-                    pointerEvents: 'none'
-                  }}>
-                    <div style={{
-                      position: 'absolute',
-                      top: '-6px',
-                      left: '-6px',
-                      width: '20px',
-                      height: '20px',
-                      borderTop: '3px solid #4a6fa5',
-                      borderLeft: '3px solid #4a6fa5',
-                      borderRadius: '4px 0 0 0'
-                    }} />
-                    <div style={{
-                      position: 'absolute',
-                      top: '-6px',
-                      right: '-6px',
-                      width: '20px',
-                      height: '20px',
-                      borderTop: '3px solid #4a6fa5',
-                      borderRight: '3px solid #4a6fa5',
-                      borderRadius: '0 4px 0 0'
-                    }} />
-                    <div style={{
-                      position: 'absolute',
-                      bottom: '-6px',
-                      left: '-6px',
-                      width: '20px',
-                      height: '20px',
-                      borderBottom: '3px solid #4a6fa5',
-                      borderLeft: '3px solid #4a6fa5',
-                      borderRadius: '0 0 0 4px'
-                    }} />
-                    <div style={{
-                      position: 'absolute',
-                      bottom: '-6px',
-                      right: '-6px',
-                      width: '20px',
-                      height: '20px',
-                      borderBottom: '3px solid #4a6fa5',
-                      borderRight: '3px solid #4a6fa5',
-                      borderRadius: '0 0 4px 0'
-                    }} />
-                  </div>
-                </div>
+//             {/* Image Preview with Filters */}
+//             {capturedImage && !showScanPreview && (
+//               <div>
+//                 <div style={{
+//                   position: 'relative',
+//                   borderRadius: '12px',
+//                   overflow: 'hidden',
+//                   background: '#f5f5f5',
+//                   marginBottom: '16px',
+//                   maxHeight: '450px',
+//                   display: 'flex',
+//                   justifyContent: 'center',
+//                   alignItems: 'center'
+//                 }}>
+//                   <img 
+//                     src={capturedImage} 
+//                     alt="Document to scan"
+//                     style={{ 
+//                       width: '100%', 
+//                       height: 'auto', 
+//                       maxHeight: '450px',
+//                       objectFit: 'contain'
+//                     }}
+//                   />
+//                   {/* Document corner overlay */}
+//                   <div style={{
+//                     position: 'absolute',
+//                     top: '8px',
+//                     left: '8px',
+//                     right: '8px',
+//                     bottom: '8px',
+//                     border: '2px solid rgba(74,111,165,0.3)',
+//                     borderRadius: '8px',
+//                     pointerEvents: 'none'
+//                   }}>
+//                     <div style={{
+//                       position: 'absolute',
+//                       top: '-6px',
+//                       left: '-6px',
+//                       width: '20px',
+//                       height: '20px',
+//                       borderTop: '3px solid #4a6fa5',
+//                       borderLeft: '3px solid #4a6fa5',
+//                       borderRadius: '4px 0 0 0'
+//                     }} />
+//                     <div style={{
+//                       position: 'absolute',
+//                       top: '-6px',
+//                       right: '-6px',
+//                       width: '20px',
+//                       height: '20px',
+//                       borderTop: '3px solid #4a6fa5',
+//                       borderRight: '3px solid #4a6fa5',
+//                       borderRadius: '0 4px 0 0'
+//                     }} />
+//                     <div style={{
+//                       position: 'absolute',
+//                       bottom: '-6px',
+//                       left: '-6px',
+//                       width: '20px',
+//                       height: '20px',
+//                       borderBottom: '3px solid #4a6fa5',
+//                       borderLeft: '3px solid #4a6fa5',
+//                       borderRadius: '0 0 0 4px'
+//                     }} />
+//                     <div style={{
+//                       position: 'absolute',
+//                       bottom: '-6px',
+//                       right: '-6px',
+//                       width: '20px',
+//                       height: '20px',
+//                       borderBottom: '3px solid #4a6fa5',
+//                       borderRight: '3px solid #4a6fa5',
+//                       borderRadius: '0 0 4px 0'
+//                     }} />
+//                   </div>
+//                 </div>
 
-                {/* Filter Controls */}
-                <div style={{
-                  display: 'flex',
-                  gap: '6px',
-                  flexWrap: 'wrap',
-                  marginBottom: '12px',
-                  alignItems: 'center'
-                }}>
-                  <span style={{ fontSize: '12px', fontWeight: '500', color: '#666' }}>Filter:</span>
-                  {['original', 'grayscale', 'blackwhite', 'enhanced', 'magic', 'document'].map((filter) => (
-                    <button
-                      key={filter}
-                      onClick={() => {
-                        setFilterMode(filter);
-                        if (originalImage) {
-                          applyFilterToImage(originalImage, filter, rotationAngle).then(result => {
-                            setCapturedImage(result);
-                          });
-                        }
-                      }}
-                      style={{
-                        padding: '3px 10px',
-                        background: filterMode === filter ? '#4a6fa5' : '#f0f2f7',
-                        color: filterMode === filter ? 'white' : '#333',
-                        border: 'none',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        textTransform: 'capitalize'
-                      }}
-                    >
-                      {filter === 'blackwhite' ? 'B&W' : filter}
-                    </button>
-                  ))}
+//                 {/* Filter Controls */}
+//                 <div style={{
+//                   display: 'flex',
+//                   gap: '6px',
+//                   flexWrap: 'wrap',
+//                   marginBottom: '12px',
+//                   alignItems: 'center'
+//                 }}>
+//                   <span style={{ fontSize: '12px', fontWeight: '500', color: '#666' }}>Filter:</span>
+//                   {['original', 'grayscale', 'blackwhite', 'enhanced', 'magic', 'document'].map((filter) => (
+//                     <button
+//                       key={filter}
+//                       onClick={() => {
+//                         setFilterMode(filter);
+//                         if (originalImage) {
+//                           applyFilterToImage(originalImage, filter, rotationAngle).then(result => {
+//                             setCapturedImage(result);
+//                           });
+//                         }
+//                       }}
+//                       style={{
+//                         padding: '3px 10px',
+//                         background: filterMode === filter ? '#4a6fa5' : '#f0f2f7',
+//                         color: filterMode === filter ? 'white' : '#333',
+//                         border: 'none',
+//                         borderRadius: '4px',
+//                         fontSize: '11px',
+//                         cursor: 'pointer',
+//                         textTransform: 'capitalize'
+//                       }}
+//                     >
+//                       {filter === 'blackwhite' ? 'B&W' : filter}
+//                     </button>
+//                   ))}
 
-                  <button
-                    onClick={rotateImage}
-                    style={{
-                      padding: '3px 10px',
-                      background: '#f0f2f7',
-                      border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    <Rotate90DegreesCcwIcon style={{ fontSize: 14 }} />
-                    Rotate
-                  </button>
+//                   <button
+//                     onClick={rotateImage}
+//                     style={{
+//                       padding: '3px 10px',
+//                       background: '#91a4d3',
+//                       border: 'none',
+//                       borderRadius: '4px',
+//                       fontSize: '11px',
+//                       cursor: 'pointer',
+//                       display: 'flex',
+//                       alignItems: 'center',
+//                       gap: '4px'
+//                     }}
+//                   >
+//                     <Rotate90DegreesCcwIcon style={{ fontSize: 14 }} />
+//                     Rotate
+//                   </button>
 
-                  <button
-                    onClick={resetImage}
-                    style={{
-                      padding: '3px 10px',
-                      background: '#f0f2f7',
-                      border: 'none',
-                      borderRadius: '4px',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      color: '#e74c3c'
-                    }}
-                  >
-                    <RefreshIcon style={{ fontSize: 14 }} />
-                    Reset
-                  </button>
+//                   <button
+//                     onClick={resetImage}
+//                     style={{
+//                       padding: '3px 10px',
+//                       background: '#acbeea',
+//                       border: 'none',
+//                       borderRadius: '4px',
+//                       fontSize: '11px',
+//                       cursor: 'pointer',
+//                       display: 'flex',
+//                       alignItems: 'center',
+//                       gap: '4px',
+//                       color: '#e74c3c'
+//                     }}
+//                   >
+//                     <RefreshIcon style={{ fontSize: 14 }} />
+//                     Reset
+//                   </button>
 
-                  {isProcessingScan && (
-                    <span style={{ 
-                      marginLeft: 'auto',
-                      fontSize: '12px',
-                      color: '#4a6fa5'
-                    }}>
-                      Processing... {scanProgress}%
-                    </span>
-                  )}
-                </div>
+//                   {isProcessingScan && (
+//                     <span style={{ 
+//                       marginLeft: 'auto',
+//                       fontSize: '12px',
+//                       color: '#4a6fa5'
+//                     }}>
+//                       Processing... {scanProgress}%
+//                     </span>
+//                   )}
+//                 </div>
 
-                {/* Progress Bar */}
-                {isProcessingScan && (
-                  <div style={{
-                    width: '100%',
-                    height: '4px',
-                    background: '#eef2f7',
-                    borderRadius: '2px',
-                    marginBottom: '16px',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `${scanProgress}%`,
-                      height: '100%',
-                      background: '#4a6fa5',
-                      borderRadius: '2px',
-                      transition: 'width 0.3s ease'
-                    }} />
-                  </div>
-                )}
+//                 {/* Progress Bar */}
+//                 {isProcessingScan && (
+//                   <div style={{
+//                     width: '100%',
+//                     height: '4px',
+//                     background: '#eef2f7',
+//                     borderRadius: '2px',
+//                     marginBottom: '16px',
+//                     overflow: 'hidden'
+//                   }}>
+//                     <div style={{
+//                       width: `${scanProgress}%`,
+//                       height: '100%',
+//                       background: '#4a6fa5',
+//                       borderRadius: '2px',
+//                       transition: 'width 0.3s ease'
+//                     }} />
+//                   </div>
+//                 )}
 
-                {/* Action Buttons */}
-                <div style={{
-                  display: 'flex',
-                  gap: '12px',
-                  flexWrap: 'wrap',
-                  justifyContent: 'center'
-                }}>
-                  <button
-                    onClick={clearCurrentImage}
-                    style={{
-                      padding: '10px 24px',
-                      background: '#e74c3c',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    <CloseIcon style={{ fontSize: 18 }} />
-                    Cancel
-                  </button>
-                  <button
-                    onClick={processScannedImage}
-                    disabled={isProcessingScan}
-                    style={{
-                      padding: '10px 32px',
-                      background: isProcessingScan ? '#ccc' : '#27ae60',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: isProcessingScan ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    {isProcessingScan ? 'Processing...' : '✅ Scan Document'}
-                  </button>
-                </div>
-              </div>
-            )}
+//                 {/* Action Buttons */}
+//                 <div style={{
+//                   display: 'flex',
+//                   gap: '12px',
+//                   flexWrap: 'wrap',
+//                   justifyContent: 'center'
+//                 }}>
+//                   <button
+//                     onClick={clearCurrentImage}
+//                     style={{
+//                       padding: '10px 24px',
+//                       background: '#e74c3c',
+//                       color: 'white',
+//                       border: 'none',
+//                       borderRadius: '8px',
+//                       fontSize: '14px',
+//                       cursor: 'pointer',
+//                       display: 'flex',
+//                       alignItems: 'center',
+//                       gap: '8px'
+//                     }}
+//                   >
+//                     <CloseIcon style={{ fontSize: 18 }} />
+//                     Cancel
+//                   </button>
+//                   <button
+//                     onClick={processScannedImage}
+//                     disabled={isProcessingScan}
+//                     style={{
+//                       padding: '10px 32px',
+//                       background: isProcessingScan ? '#ccc' : '#27ae60',
+//                       color: 'white',
+//                       border: 'none',
+//                       borderRadius: '8px',
+//                       fontSize: '14px',
+//                       fontWeight: '600',
+//                       cursor: isProcessingScan ? 'not-allowed' : 'pointer',
+//                       display: 'flex',
+//                       alignItems: 'center',
+//                       gap: '8px'
+//                     }}
+//                   >
+//                     {isProcessingScan ? 'Processing...' : 'Scan Document'}
+//                   </button>
+//                 </div>
+//               </div>
+//             )}
 
-            {/* Scan Preview / Upload */}
-            {showScanPreview && capturedImage && (
-              <div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  marginBottom: '16px',
-                  background: '#d4edda',
-                  padding: '10px 16px',
-                  borderRadius: '8px',
-                  color: '#155724'
-                }}>
-                  <span style={{ fontSize: '20px' }}>✅</span>
-                  <span>Document scanned successfully! Select document type and upload.</span>
-                </div>
+//             {/* Scan Preview / Upload */}
+//             {showScanPreview && capturedImage && (
+//               <div>
+//                 <div style={{
+//                   display: 'flex',
+//                   alignItems: 'center',
+//                   gap: '12px',
+//                   marginBottom: '16px',
+//                   background: '#d4edda',
+//                   padding: '10px 16px',
+//                   borderRadius: '8px',
+//                   color: '#155724'
+//                 }}>
+//                   <span>Document scanned successfully! Select document type and upload.</span>
+//                 </div>
 
-                <div style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '16px',
-                  marginBottom: '16px'
-                }}>
-                  <div>
-                    <label style={{ 
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#333',
-                      marginBottom: '4px'
-                    }}>
-                      Document Type *
-                    </label>
-                    <select
-                      value={scannerDocType}
-                      onChange={(e) => setScannerDocType(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 14px',
-                        border: '1px solid #dde1e8',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white'
-                      }}
-                      required
-                    >
-                      <option value="">Select Document Type</option>
-                      <option value="Accomplishment">Accomplishment Report</option>
-                      <option value="Certificates">Certificates</option>
-                      <option value="DTR">Daily Time Record (DTR)</option>
-                      <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
-                      <option value="Pass Slip">Pass Slip</option>
-                      <option value="Personal Data Sheet">Personal Data Sheet</option>
-                      <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-                      <option value="Other">Other Document</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ 
-                      display: 'block',
-                      fontSize: '13px',
-                      fontWeight: '500',
-                      color: '#333',
-                      marginBottom: '4px'
-                    }}>
-                      Quality
-                    </label>
-                    <select
-                      value={scanningQuality}
-                      onChange={(e) => setScanningQuality(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '10px 14px',
-                        border: '1px solid #dde1e8',
-                        borderRadius: '8px',
-                        fontSize: '14px',
-                        background: 'white'
-                      }}
-                    >
-                      <option value="high">High Quality</option>
-                      <option value="medium">Medium Quality</option>
-                      <option value="low">Low Quality (Smaller File)</option>
-                    </select>
-                  </div>
-                </div>
+//                 <div style={{ 
+//                   display: 'grid', 
+//                   gridTemplateColumns: '1fr 1fr',
+//                   gap: '16px',
+//                   marginBottom: '16px'
+//                 }}>
+//                   <div>
+//                     <label style={{ 
+//                       display: 'block',
+//                       fontSize: '13px',
+//                       fontWeight: '500',
+//                       color: '#333',
+//                       marginBottom: '4px'
+//                     }}>
+//                       Document Type *
+//                     </label>
+//                     <select
+//                       value={scannerDocType}
+//                       onChange={(e) => setScannerDocType(e.target.value)}
+//                       style={{
+//                         width: '100%',
+//                         padding: '10px 14px',
+//                         border: '1px solid #dde1e8',
+//                         borderRadius: '8px',
+//                         fontSize: '14px',
+//                         background: 'white'
+//                       }}
+//                       required
+//                     >
+//                       <option value="">Select Document Type</option>
+//                       <option value="Accomplishment">Accomplishment Report</option>
+//                       <option value="Certificates">Certificates</option>
+//                       <option value="DTR">Daily Time Record (DTR)</option>
+//                       <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
+//                       <option value="Pass Slip">Pass Slip</option>
+//                       <option value="Personal Data Sheet">Personal Data Sheet</option>
+//                       <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+//                       <option value="Other">Other Document</option>
+//                     </select>
+//                   </div>
+//                   <div>
+//                     <label style={{ 
+//                       display: 'block',
+//                       fontSize: '13px',
+//                       fontWeight: '500',
+//                       color: '#333',
+//                       marginBottom: '4px'
+//                     }}>
+//                       Quality
+//                     </label>
+//                     <select
+//                       value={scanningQuality}
+//                       onChange={(e) => setScanningQuality(e.target.value)}
+//                       style={{
+//                         width: '100%',
+//                         padding: '10px 14px',
+//                         border: '1px solid #dde1e8',
+//                         borderRadius: '8px',
+//                         fontSize: '14px',
+//                         background: 'white'
+//                       }}
+//                     >
+//                       <option value="high">High Quality</option>
+//                       <option value="medium">Medium Quality</option>
+//                       <option value="low">Low Quality (Smaller File)</option>
+//                     </select>
+//                   </div>
+//                 </div>
 
-                <div style={{
-                  display: 'flex',
-                  gap: '12px',
-                  flexWrap: 'wrap',
-                  justifyContent: 'flex-end'
-                }}>
-                  <button
-                    onClick={() => {
-                      setShowScanPreview(false);
-                      setCapturedImage(originalImage || null);
-                      setFilterMode('original');
-                      setRotationAngle(0);
-                      setScannedFile(null);
-                      setScannerUploadStatus('');
-                    }}
-                    style={{
-                      padding: '10px 20px',
-                      background: '#f0f2f7',
-                      color: '#333',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Rescan
-                  </button>
-                  <button
-                    onClick={uploadScannedDocument}
-                    disabled={!scannerDocType || uploading}
-                    style={{
-                      padding: '10px 32px',
-                      background: (!scannerDocType || uploading) ? '#ccc' : '#4a6fa5',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      fontWeight: '600',
-                      cursor: (!scannerDocType || uploading) ? 'not-allowed' : 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px'
-                    }}
-                  >
-                    {uploading ? 'Uploading...' : 'Upload Document'}
-                  </button>
-                </div>
+//                 <div style={{
+//                   display: 'flex',
+//                   gap: '12px',
+//                   flexWrap: 'wrap',
+//                   justifyContent: 'flex-end'
+//                 }}>
+//                   <button
+//                     onClick={() => {
+//                       setShowScanPreview(false);
+//                       setCapturedImage(originalImage || null);
+//                       setFilterMode('original');
+//                       setRotationAngle(0);
+//                       setScannedFile(null);
+//                       setScannerUploadStatus('');
+//                     }}
+//                     style={{
+//                       padding: '10px 20px',
+//                       background: '#f0f2f7',
+//                       color: '#333',
+//                       border: 'none',
+//                       borderRadius: '8px',
+//                       fontSize: '14px',
+//                       cursor: 'pointer'
+//                     }}
+//                   >
+//                     Rescan
+//                   </button>
+//                   <button
+//                     onClick={uploadScannedDocument}
+//                     disabled={!scannerDocType || uploading}
+//                     style={{
+//                       padding: '10px 32px',
+//                       background: (!scannerDocType || uploading) ? '#ccc' : '#4a6fa5',
+//                       color: 'white',
+//                       border: 'none',
+//                       borderRadius: '8px',
+//                       fontSize: '14px',
+//                       fontWeight: '600',
+//                       cursor: (!scannerDocType || uploading) ? 'not-allowed' : 'pointer',
+//                       display: 'flex',
+//                       alignItems: 'center',
+//                       gap: '8px'
+//                     }}
+//                   >
+//                     {uploading ? 'Uploading...' : 'Upload Document'}
+//                   </button>
+//                 </div>
 
-                {scannerUploadStatus && (
-                  <p style={{
-                    marginTop: '12px',
-                    fontSize: '13px',
-                    color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
-                           scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
-                    textAlign: 'center',
-                    padding: '8px',
-                    background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
-                               scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
-                    borderRadius: '6px'
-                  }}>
-                    {scannerUploadStatus}
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+//                 {scannerUploadStatus && (
+//                   <p style={{
+//                     marginTop: '12px',
+//                     fontSize: '13px',
+//                     color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
+//                            scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
+//                     textAlign: 'center',
+//                     padding: '8px',
+//                     background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
+//                                scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
+//                     borderRadius: '6px'
+//                   }}>
+//                     {scannerUploadStatus}
+//                   </p>
+//                 )}
+//               </div>
+//             )}
+//           </div>
+//         </div>
+//       </div>
+//     );
+//   };
 
-  // ====== RENDER BATCH UPLOAD MODAL ======
-const renderBatchUploadModal = () => {
-  if (!showBatchUpload) return null;
+//   // ====== RENDER BATCH UPLOAD MODAL ======
+// const renderBatchUploadModal = () => {
+//   if (!showBatchUpload) return null;
 
-  return (
-    <div className="modal-overlay" onClick={() => setShowBatchUpload(false)}>
-      <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', borderRadius: '12px' }}>
-        <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
-          <h3 style={{ margin: 0 }}> Batch Upload - {batchDocuments.length} Documents</h3>
-          <button className="modal-close" onClick={() => setShowBatchUpload(false)} style={{
-            background: 'transparent',
-            border: 'none',
-            fontSize: '20px',
-            cursor: 'pointer',
-            color: '#666'
-          }}>✕</button>
-        </div>
+//   return (
+//     <div className="modal-overlay" onClick={() => setShowBatchUpload(false)}>
+//       <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', borderRadius: '12px' }}>
+//         <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
+//           <h3 style={{ margin: 0 }}> Batch Upload - {batchDocuments.length} Documents</h3>
+//           <button className="modal-close" onClick={() => setShowBatchUpload(false)} style={{
+//             background: 'transparent',
+//             border: 'none',
+//             fontSize: '20px',
+//             cursor: 'pointer',
+//             color: '#666'
+//           }}>✕</button>
+//         </div>
 
-        <div style={{ padding: '16px 20px', maxHeight: '400px', overflowY: 'auto' }}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ 
-              display: 'block',
-              fontSize: '13px',
-              fontWeight: '500',
-              color: '#333',
-              marginBottom: '4px'
-            }}>
-              Document Type *
-            </label>
-            <select
-              value={scannerDocType}
-              onChange={(e) => setScannerDocType(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px 14px',
-                border: '1px solid #dde1e8',
-                borderRadius: '8px',
-                fontSize: '14px'
-              }}
-              required
-            >
-              <option value="">Select Document Type</option>
-              <option value="Accomplishment">Accomplishment Report</option>
-              <option value="Certificates">Certificates</option>
-              <option value="DTR">Daily Time Record (DTR)</option>
-              <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
-              <option value="Pass Slip">Pass Slip</option>
-              <option value="Personal Data Sheet">Personal Data Sheet</option>
-              <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-            </select>
-          </div>
+//         <div style={{ padding: '16px 20px', maxHeight: '400px', overflowY: 'auto' }}>
+//           <div style={{ marginBottom: '16px' }}>
+//             <label style={{ 
+//               display: 'block',
+//               fontSize: '13px',
+//               fontWeight: '500',
+//               color: '#333',
+//               marginBottom: '4px'
+//             }}>
+//               Document Type *
+//             </label>
+//             <select
+//               value={scannerDocType}
+//               onChange={(e) => setScannerDocType(e.target.value)}
+//               style={{
+//                 width: '100%',
+//                 padding: '10px 14px',
+//                 border: '1px solid #dde1e8',
+//                 borderRadius: '8px',
+//                 fontSize: '14px'
+//               }}
+//               required
+//             >
+//               <option value="">Select Document Type</option>
+//               <option value="Accomplishment">Accomplishment Report</option>
+//               <option value="Certificates">Certificates</option>
+//               <option value="DTR">Daily Time Record (DTR)</option>
+//               <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
+//               <option value="Pass Slip">Pass Slip</option>
+//               <option value="Personal Data Sheet">Personal Data Sheet</option>
+//               <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
+//             </select>
+//           </div>
 
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-            gap: '12px',
-            marginBottom: '16px'
-          }}>
-            {batchDocuments.map((doc) => (
-              <div key={doc.id} style={{
-                position: 'relative',
-                background: '#f8fafd',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                border: '1px solid #eef2f7'
-              }}>
-                <img 
-                  src={doc.preview} 
-                  alt={doc.fileName}
-                  style={{
-                    width: '100%',
-                    height: '120px',
-                    objectFit: 'cover'
-                  }}
-                />
-                <button
-                  onClick={() => removeBatchDocument(doc.id)}
-                  style={{
-                    position: 'absolute',
-                    top: '4px',
-                    right: '4px',
-                    background: 'rgba(231, 76, 60, 0.9)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '50%',
-                    width: '24px',
-                    height: '24px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  ✕
-                </button>
-                <div style={{
-                  padding: '6px 8px',
-                  fontSize: '10px',
-                  color: '#666',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {doc.fileName}
-                </div>
-              </div>
-            ))}
-            {batchDocuments.length === 0 && (
-              <div style={{ 
-                gridColumn: '1 / -1',
-                textAlign: 'center',
-                padding: '30px',
-                color: '#999'
-              }}>
-                No documents scanned yet. Add documents using the scanner.
-              </div>
-            )}
-          </div>
-        </div>
+//           <div style={{ 
+//             display: 'grid', 
+//             gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+//             gap: '12px',
+//             marginBottom: '16px'
+//           }}>
+//             {batchDocuments.map((doc) => (
+//               <div key={doc.id} style={{
+//                 position: 'relative',
+//                 background: '#f8fafd',
+//                 borderRadius: '8px',
+//                 overflow: 'hidden',
+//                 border: '1px solid #eef2f7'
+//               }}>
+//                 <img 
+//                   src={doc.preview} 
+//                   alt={doc.fileName}
+//                   style={{
+//                     width: '100%',
+//                     height: '120px',
+//                     objectFit: 'cover'
+//                   }}
+//                 />
+//                 <button
+//                   onClick={() => removeBatchDocument(doc.id)}
+//                   style={{
+//                     position: 'absolute',
+//                     top: '4px',
+//                     right: '4px',
+//                     background: 'rgba(231, 76, 60, 0.9)',
+//                     color: 'white',
+//                     border: 'none',
+//                     borderRadius: '50%',
+//                     width: '24px',
+//                     height: '24px',
+//                     cursor: 'pointer',
+//                     fontSize: '12px',
+//                     display: 'flex',
+//                     alignItems: 'center',
+//                     justifyContent: 'center'
+//                   }}
+//                 >
+//                   ✕
+//                 </button>
+//                 <div style={{
+//                   padding: '6px 8px',
+//                   fontSize: '10px',
+//                   color: '#666',
+//                   overflow: 'hidden',
+//                   textOverflow: 'ellipsis',
+//                   whiteSpace: 'nowrap'
+//                 }}>
+//                   {doc.fileName}
+//                 </div>
+//               </div>
+//             ))}
+//             {batchDocuments.length === 0 && (
+//               <div style={{ 
+//                 gridColumn: '1 / -1',
+//                 textAlign: 'center',
+//                 padding: '30px',
+//                 color: '#999'
+//               }}>
+//                 No documents scanned yet. Add documents using the scanner.
+//               </div>
+//             )}
+//           </div>
+//         </div>
 
-        <div style={{
-          display: 'flex',
-          gap: '12px',
-          justifyContent: 'flex-end',
-          borderTop: '1px solid #eef2f7',
-          padding: '16px 20px'
-        }}>
-          <button
-            onClick={() => {
-              setShowBatchUpload(false);
-              setCapturedImage(null);
-            }}
-            style={{
-              padding: '10px 20px',
-              background: '#f0f2f7',
-              color: '#333',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              cursor: 'pointer'
-            }}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={uploadBatchDocuments}
-            disabled={!scannerDocType || uploading || batchDocuments.length === 0}
-            style={{
-              padding: '10px 32px',
-              background: (!scannerDocType || uploading || batchDocuments.length === 0) ? '#ccc' : '#27ae60',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: (!scannerDocType || uploading || batchDocuments.length === 0) ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px'
-            }}
-          >
-            {uploading ? 'Uploading...' : `📤 Upload All (${batchDocuments.length})`}
-          </button>
-        </div>
+//         <div style={{
+//           display: 'flex',
+//           gap: '12px',
+//           justifyContent: 'flex-end',
+//           borderTop: '1px solid #eef2f7',
+//           padding: '16px 20px'
+//         }}>
+//           <button
+//             onClick={() => {
+//               setShowBatchUpload(false);
+//               setCapturedImage(null);
+//             }}
+//             style={{
+//               padding: '10px 20px',
+//               background: '#f0f2f7',
+//               color: '#333',
+//               border: 'none',
+//               borderRadius: '8px',
+//               fontSize: '14px',
+//               cursor: 'pointer'
+//             }}
+//           >
+//             Cancel
+//           </button>
+//           <button
+//             onClick={uploadBatchDocuments}
+//             disabled={!scannerDocType || uploading || batchDocuments.length === 0}
+//             style={{
+//               padding: '10px 32px',
+//               background: (!scannerDocType || uploading || batchDocuments.length === 0) ? '#ccc' : '#27ae60',
+//               color: 'white',
+//               border: 'none',
+//               borderRadius: '8px',
+//               fontSize: '14px',
+//               fontWeight: '600',
+//               cursor: (!scannerDocType || uploading || batchDocuments.length === 0) ? 'not-allowed' : 'pointer',
+//               display: 'flex',
+//               alignItems: 'center',
+//               gap: '8px'
+//             }}
+//           >
+//             {uploading ? 'Uploading...' : `Upload All (${batchDocuments.length})`}
+//           </button>
+//         </div>
 
-        {scannerUploadStatus && (
-          <p style={{
-            margin: '0 20px 16px 20px',
-            fontSize: '13px',
-            color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
-                   scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
-            textAlign: 'center',
-            padding: '8px',
-            background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
-                       scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
-            borderRadius: '6px'
-          }}>
-            {scannerUploadStatus}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-};
+//         {scannerUploadStatus && (
+//           <p style={{
+//             margin: '0 20px 16px 20px',
+//             fontSize: '13px',
+//             color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
+//                    scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
+//             textAlign: 'center',
+//             padding: '8px',
+//             background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
+//                        scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
+//             borderRadius: '6px'
+//           }}>
+//             {scannerUploadStatus}
+//           </p>
+//         )}
+//       </div>
+//     </div>
+//   );
+// };
 
   // ====== RENDER COMPLIANCE TAB ======
   const renderCompliance = () => {
@@ -3191,7 +3279,7 @@ const renderBatchUploadModal = () => {
         }}>
           <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a2a4a' }}>My Compliance</h2>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button 
+            {/* <button 
               onClick={openScanner}
               className="btn-add-modern"
               style={{
@@ -3209,7 +3297,7 @@ const renderBatchUploadModal = () => {
               }}
             >
               Scan Document
-            </button>
+            </button> */}
             <button 
               onClick={() => setShowUploadForm(true)} 
               className="btn-add-modern"
@@ -3625,7 +3713,7 @@ const renderBatchUploadModal = () => {
           <div className="stat-icon green" style={{ background: '#d4edda', borderRadius: '50%', padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
           <div className="stat-info">
             <h3 style={{ margin: 0, fontSize: '14px', color: '#666' }}>Leave Balance</h3>
-            <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{leaveBalance.vacationLeave || 0} VL / {leaveBalance.sickLeave || 0} SL</p>
+            <p style={{ margin: 0, fontSize: '16px', fontWeight: 'bold', color: '#333' }}>{leaveBalance.vacationLeave || 0} VL / {leaveBalance.sickLeave || 0} SL / {leaveBalance.maternityLeave || 0} ML / {leaveBalance.paternityLeave || 0} PL</p>
           </div>
         </div>
         <div className="stat-card" style={{ background: 'white', borderRadius: '12px', padding: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -3835,222 +3923,295 @@ const renderBatchUploadModal = () => {
   );
 
   // ====== RENDER ATTENDANCE ======
-  const renderAttendance = () => (
-    <div className="employee-attendance-content">
-      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-        <h2 style={{ margin: 0 }}><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="stats-badge" style={{ padding: '6px 14px', background: '#678ed2', borderRadius: '6px', fontSize: '13px' }}>{new Date().toLocaleDateString()}</span>
-          <button 
-            onClick={downloadAttendancePDF}
-            disabled={attendanceRecords.length === 0}
-            style={{
-              padding: '8px 18px',
-              background: attendanceRecords.length === 0 ? '#ccc' : '#e74c3c',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '500',
-              cursor: attendanceRecords.length === 0 ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              opacity: attendanceRecords.length === 0 ? 0.6 : 1
-            }}
-          >
-            <PictureAsPdfIcon style={{ fontSize: 18 }} />
-            Download PDF
-          </button>
+const renderAttendance = () => (
+  <div className="employee-attendance-content">
+    <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+      <h2 style={{ margin: 0 }}><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="stats-badge" style={{ padding: '6px 14px', background: '#678ed2', borderRadius: '6px', fontSize: '13px' }}>{new Date().toLocaleDateString()}</span>
+        <button 
+          onClick={downloadAttendancePDF}
+          disabled={attendanceRecords.length === 0}
+          style={{
+            padding: '8px 18px',
+            background: attendanceRecords.length === 0 ? '#ccc' : '#e74c3c',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '13px',
+            fontWeight: '500',
+            cursor: attendanceRecords.length === 0 ? 'not-allowed' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            opacity: attendanceRecords.length === 0 ? 0.6 : 1
+          }}
+        >
+          <PictureAsPdfIcon style={{ fontSize: 18 }} />
+          Download PDF
+        </button>
+      </div>
+    </div>
+
+    <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+        <div className="stat-icon blue" style={{ fontSize: '24px' }}><EventNoteIcon /></div>
+        <div className="stat-info">
+          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Days</h3>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.totalDays}</p>
         </div>
       </div>
-
-      <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-          <div className="stat-icon blue" style={{ fontSize: '24px' }}><EventNoteIcon /></div>
-          <div className="stat-info">
-            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Days</h3>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.totalDays}</p>
-          </div>
-        </div>
-        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-          <div className="stat-icon green" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
-          <div className="stat-info">
-            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Present</h3>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.presentDays}</p>
-          </div>
-        </div>
-        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-          <div className="stat-icon orange" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#f39c12' }} /></div>
-          <div className="stat-info">
-            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Late</h3>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.lateDays}</p>
-          </div>
-        </div>
-        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-          <div className="stat-icon purple" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#8e44ad' }} /></div>
-          <div className="stat-info">
-            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Under Time</h3>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.underTimeDays || 0}</p>
-          </div>
-        </div>
-        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-          <div className="stat-icon success" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
-          <div className="stat-info">
-            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Over Time</h3>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.overTimeDays || 0}</p>
-          </div>
-        </div>
-        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-          <div className="stat-icon red" style={{ fontSize: '24px' }}><CancelIcon style={{ color: '#e74c3c' }} /></div>
-          <div className="stat-info">
-            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Absent</h3>
-            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.absentDays || 0}</p>
-          </div>
+      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+        <div className="stat-icon green" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
+        <div className="stat-info">
+          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Present</h3>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.presentDays}</p>
         </div>
       </div>
-
-      <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
-          <AccessTimeIcon />
-          Today's Attendance
-        </h3>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '15px',
-          padding: '10px 0'
-        }}>
-          <div>
-            <p style={{ margin: '5px 0' }}>
-              <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
-            </p>
-            {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
-            {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
-            <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
-              <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button 
-              onClick={handleTimeIn} 
-              className="btn-time-in"
-              disabled={attendanceLoading}
-              style={{
-                padding: '12px 30px',
-                background: '#4a6fa5',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: attendanceLoading ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                opacity: attendanceLoading ? 0.7 : 1
-              }}
-            >
-              <LoginIcon style={{ fontSize: 20 }} />
-              {attendanceLoading ? 'Processing...' : 'Time In'}
-            </button>
-            <button 
-              onClick={handleTimeOut} 
-              className="btn-time-out"
-              disabled={attendanceLoading || !isTimedIn}
-              style={{
-                padding: '12px 30px',
-                background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}
-            >
-              <Logout style={{ fontSize: 20 }} />
-              {attendanceLoading ? 'Processing...' : 'Time Out'}
-            </button>
-          </div>
+      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+        <div className="stat-icon orange" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#f39c12' }} /></div>
+        <div className="stat-info">
+          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Late</h3>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.lateDays}</p>
         </div>
-        {isTimedIn && isTimedOut && (
-          <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
-            You have completed your attendance entry. You can time in again if needed.
-          </div>
-        )}
-        {isTimedIn && !isTimedOut && (
-          <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
-            You are currently timed in. Click "Time Out" when leaving.
-          </div>
-        )}
       </div>
-
-      <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
-          <TimelineIcon />
-          Attendance History
-        </h3>
-        <div className="table-container" style={{ overflowX: 'auto' }}>
-          <table className="attendance-table-modern" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-            <thead>
-              <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
-                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Time In</th>
-                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Time Out</th>
-                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Status</th>
-                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Remarks</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attendanceRecords.length > 0 ? (
-                [...attendanceRecords]
-                  .sort((a, b) => b.date.localeCompare(a.date))
-                  .slice(0, 20)
-                  .map(record => {
-                    let remarks = '';
-                    if (record.status === 'Under Time' && record.undertimeMinutes) {
-                      remarks = ` Undertime: ${record.undertimeMinutes} mins`;
-                    } else if (record.status === 'Over Time' && record.overtimeMinutes) {
-                      remarks = `⏱️ Overtime: ${record.overtimeMinutes} mins`;
-                    } else if (record.status === 'Late') {
-                      remarks = 'Late arrival';
-                    } else if (record.status === 'On Time') {
-                      remarks = 'On time';
-                    }
-                    if (record.entryNumber && record.entryNumber > 1) {
-                      remarks = remarks ? `${remarks} (Entry ${record.entryNumber})` : `Entry ${record.entryNumber}`;
-                    }
-                    return (
-                      <tr key={record.id} className={record.status === 'Late' || record.status === 'Under Time' ? 'late-row' : ''} style={{ borderBottom: '1px solid #f0f2f7' }}>
-                        <td style={{ padding: '10px 14px' }}>{record.date}</td>
-                        <td className="time-cell" style={{ padding: '10px 14px' }}>{record.timeIn || '—'}</td>
-                        <td className="time-cell" style={{ padding: '10px 14px' }}>{record.timeOut || '—'}</td>
-                        <td style={{ padding: '10px 14px' }}>
-                          {getAttendanceStatusBadge(record.status || 'Present')}
-                        </td>
-                        <td style={{ padding: '10px 14px', fontSize: '12px', color: '#666' }}>{remarks}</td>
-                      </tr>
-                    );
-                  })
-              ) : (
-                <tr>
-                  <td colSpan="5" className="empty-state" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>
-                    No attendance records found
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+        <div className="stat-icon purple" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#8e44ad' }} /></div>
+        <div className="stat-info">
+          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Under Time</h3>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.underTimeDays || 0}</p>
+        </div>
+      </div>
+      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+        <div className="stat-icon success" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
+        <div className="stat-info">
+          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Over Time</h3>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.overTimeDays || 0}</p>
+        </div>
+      </div>
+      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+        <div className="stat-icon red" style={{ fontSize: '24px' }}><CancelIcon style={{ color: '#e74c3c' }} /></div>
+        <div className="stat-info">
+          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Absent</h3>
+          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.absentDays || 0}</p>
         </div>
       </div>
     </div>
-  );
+
+    <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
+        <AccessTimeIcon />
+        Today's Attendance
+      </h3>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '15px',
+        padding: '10px 0'
+      }}>
+        <div>
+          <p style={{ margin: '5px 0' }}>
+            <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
+          </p>
+          {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
+          {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
+          <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
+            <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            onClick={handleTimeIn} 
+            className="btn-time-in"
+            disabled={attendanceLoading}
+            style={{
+              padding: '12px 30px',
+              background: '#4a6fa5',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              opacity: attendanceLoading ? 0.7 : 1
+            }}
+          >
+            <LoginIcon style={{ fontSize: 20 }} />
+            {attendanceLoading ? 'Processing...' : 'Time In'}
+          </button>
+          <button 
+            onClick={handleTimeOut} 
+            className="btn-time-out"
+            disabled={attendanceLoading || !isTimedIn}
+            style={{
+              padding: '12px 30px',
+              background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}
+          >
+            <Logout style={{ fontSize: 20 }} />
+            {attendanceLoading ? 'Processing...' : 'Time Out'}
+          </button>
+        </div>
+      </div>
+      {isTimedIn && isTimedOut && (
+        <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
+          You have completed your attendance entry. You can time in again if needed.
+        </div>
+      )}
+      {isTimedIn && !isTimedOut && (
+        <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
+          You are currently timed in. Click "Time Out" when leaving.
+        </div>
+      )}
+    </div>
+
+    <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
+        <TimelineIcon />
+        Attendance History
+      </h3>
+      <div className="table-container" style={{ overflowX: 'auto' }}>
+        <table className="attendance-table-modern" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+          <thead>
+            <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>#</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>Date</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM In</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM Out</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM Status</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM In</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM Out</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM Status</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>Daily Status</th>
+              <th style={{ padding: '10px 14px', textAlign: 'left' }}>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {attendanceRecords.length > 0 ? (
+              (() => {
+                // Group records by date
+                const recordsByDate = {};
+                attendanceRecords.forEach(record => {
+                  if (!recordsByDate[record.date]) {
+                    recordsByDate[record.date] = [];
+                  }
+                  recordsByDate[record.date].push(record);
+                });
+
+                // Sort dates (newest first)
+                const sortedDates = Object.keys(recordsByDate).sort((a, b) => b.localeCompare(a));
+
+                return sortedDates.slice(0, 50).map((date, index) => {
+                  const dayRecords = recordsByDate[date].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
+                  
+                  let amTimeIn = '—';
+                  let amTimeOut = '—';
+                  let amStatus = '—';
+                  let pmTimeIn = '—';
+                  let pmTimeOut = '—';
+                  let pmStatus = '—';
+                  let combinedStatus = 'Present';
+                  let remarks = '';
+
+                  dayRecords.forEach(record => {
+                    const entryNum = record.entryNumber || 1;
+                    const timeInVal = record.timeIn || '';
+                    const timeOutVal = record.timeOut || '';
+                    const status = record.status || 'Present';
+                    
+                    if (entryNum === 1 || entryNum === 0) {
+                      amTimeIn = timeInVal || '—';
+                      amTimeOut = timeOutVal || '—';
+                      amStatus = status;
+                    } else if (entryNum === 2) {
+                      pmTimeIn = timeInVal || '—';
+                      pmTimeOut = timeOutVal || '—';
+                      pmStatus = status;
+                    }
+                    
+                    // Build remarks
+                    if (record.status === 'Under Time' && record.undertimeMinutes) {
+                      const remark = `Undertime: ${record.undertimeMinutes} mins`;
+                      remarks = remarks ? `${remarks}, ${remark}` : remark;
+                    } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+                      const remark = `Overtime: ${record.overtimeMinutes} mins`;
+                      remarks = remarks ? `${remarks}, ${remark}` : remark;
+                    } else if (record.status === 'Late') {
+                      remarks = remarks ? `${remarks}, Late` : 'Late';
+                    } else if (record.status === 'On Time') {
+                      remarks = remarks ? `${remarks}, On time` : 'On time';
+                    }
+                  });
+
+                  // Determine combined status (PM takes precedence if exists)
+                  if (pmStatus && pmStatus !== '—' && pmStatus !== 'Present' && pmStatus !== 'On Time') {
+                    combinedStatus = pmStatus;
+                  } else if (amStatus && amStatus !== '—' && (amStatus === 'Late' || amStatus === 'Under Time')) {
+                    combinedStatus = amStatus;
+                  } else if (amStatus === 'Over Time' || pmStatus === 'Over Time') {
+                    combinedStatus = 'Over Time';
+                  } else if (amStatus === 'On Time' || pmStatus === 'On Time' || amStatus === 'Present' || pmStatus === 'Present') {
+                    combinedStatus = 'On Time';
+                  } else if (amStatus === '—' && pmStatus === '—') {
+                    combinedStatus = 'Absent';
+                  }
+
+                  // Clean up remarks
+                  if (remarks && remarks.startsWith(', ')) {
+                    remarks = remarks.substring(2);
+                  }
+
+                  // Get status badge function
+                  const getStatusBadgeForTable = (status) => {
+                    if (status === '—' || status === 'Absent') {
+                      return <span className="status-badge secondary">{status}</span>;
+                    }
+                    return getAttendanceStatusBadge(status);
+                  };
+
+                  return (
+                    <tr key={date} style={{ borderBottom: '1px solid #f0f2f7' }}>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{index + 1}</td>
+                      <td style={{ padding: '10px 14px' }}>{date}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{amTimeIn}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{amTimeOut}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(amStatus)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{pmTimeIn}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{pmTimeOut}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(pmStatus)}</td>
+                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(combinedStatus)}</td>
+                      <td style={{ padding: '10px 14px', fontSize: '12px', color: '#666' }}>{remarks || '—'}</td>
+                    </tr>
+                  );
+                });
+              })()
+            ) : (
+              <tr>
+                <td colSpan="10" className="empty-state" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>
+                  No attendance records found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+);
 
   // ====== RENDER LEAVE ======
   const renderLeave = () => (
@@ -5017,8 +5178,8 @@ const renderBatchUploadModal = () => {
   return (
     <div className="employee-portal" style={{ display: 'flex', minHeight: '100vh', background: '#f0f4fe' }}>
       {renderPreviewModal()}
-      {renderScannerModal()}
-      {renderBatchUploadModal()}
+      {/* {renderScannerModal()}
+      {renderBatchUploadModal()} */}
 
       {showNotificationAlert && latestNotification && (
         <div className={`notification-alert ${latestNotification.status === 'Approved' ? 'approved' : 'rejected'}`} style={{

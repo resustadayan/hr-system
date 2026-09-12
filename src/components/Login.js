@@ -1,14 +1,16 @@
 // src/components/Login.js
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, register } from '../firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { login, register, auth, db } from '../firebase';
+import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import logoLeft from '../assets/pagbilogo.jpg';
 import logoRight from '../assets/hrmo logo.jpg';
 import coverImage from '../assets/pagbi_bg (1).jpg';
+
+import { sendAdminRegistrationEmail } from './contexts/emailService';
 
 function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -26,6 +28,9 @@ function Login() {
   const [isRegistered, setIsRegistered] = useState(false);
   const navigate = useNavigate();
 
+  // ============================================
+  // LOGIN
+  // ============================================
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -36,19 +41,35 @@ function Login() {
       const user = userCredential.user;
 
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      
+
       if (userDoc.exists()) {
         const userData = userDoc.data();
         const role = userData.role || 'Employee';
         const name = userData.name || 'User';
+        const status = userData.status || 'Active';
 
+        // 🚫 BLOCK PENDING / INACTIVE USERS
+        if (status === 'Pending Approval') {
+          await signOut(auth);
+          setError('⏳ Your account is still pending approval by HR. Please wait for the approval email.');
+          setLoading(false);
+          return;
+        }
+        if (status === 'Inactive') {
+          await signOut(auth);
+          setError('❌ Your account has been deactivated. Please contact HR.');
+          setLoading(false);
+          return;
+        }
+
+        // ✅ Active user — let them in
         localStorage.setItem('isAuthenticated', 'true');
         localStorage.setItem('userRole', role);
         localStorage.setItem('userName', name);
         localStorage.setItem('userEmail', user.email);
         localStorage.setItem('userId', user.uid);
 
-        switch(role) {
+        switch (role) {
           case 'HR Admin':
             navigate('/dashboard');
             break;
@@ -61,17 +82,16 @@ function Login() {
             break;
         }
       } else {
-        // User exists in Auth but not in Firestore
-        // Create a basic user document
+        // No Firestore user doc — create one
         await setDoc(doc(db, 'users', user.uid), {
           name: user.email?.split('@')[0] || 'User',
           email: user.email,
           role: 'Employee',
           uid: user.uid,
-          createdAt: new Date().toISOString()
+          status: 'Active',
+          createdAt: new Date().toISOString(),
         });
 
-        // Create employee document
         await setDoc(doc(db, 'employees', user.uid), {
           fullName: user.email?.split('@')[0] || 'User',
           email: user.email,
@@ -80,14 +100,13 @@ function Login() {
           employmentStatus: 'Active',
           dateHired: new Date().toISOString().split('T')[0],
           salary: 0,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
         });
 
-        // Create leave balance
         await setDoc(doc(db, 'leaveBalances', user.uid), {
           employeeId: user.uid,
           vacationLeave: 15,
-          sickLeave: 15
+          sickLeave: 15,
         });
 
         localStorage.setItem('isAuthenticated', 'true');
@@ -102,7 +121,7 @@ function Login() {
       console.error('Login error:', err);
       if (err.code === 'auth/user-not-found') {
         setError('No account found with this email');
-      } else if (err.code === 'auth/wrong-password') {
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
         setError('Incorrect password');
       } else if (err.code === 'auth/too-many-requests') {
         setError('Too many failed attempts. Please try again later.');
@@ -114,72 +133,123 @@ function Login() {
     }
   };
 
+  // ============================================
+  // REGISTER
+  // ============================================
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
     setSuccess('');
     setLoading(true);
 
-    // Validation
+    // ---- Validation ----
     if (!fullName || !email || !password || !confirmPassword || !contact || !department || !position) {
       setError('Please fill all required fields');
       setLoading(false);
       return;
     }
-
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       setLoading(false);
       return;
     }
-
     if (password.length < 6) {
       setError('Password must be at least 6 characters');
       setLoading(false);
       return;
     }
 
+    const capturedEmail = email;
+
+    // 🛑 CRITICAL: tell AuthContext to IGNORE any onAuthStateChanged fires
+    // until we're done writing Firestore docs. Without this, AuthContext
+    // signs the user out mid-write and the UI hangs forever.
+    if (window.__setHrRegistering) {
+      window.__setHrRegistering(true);
+    }
+
     try {
+      // ---- 1. Create Firebase Auth account ----
       const userCredential = await register(email, password);
       const user = userCredential.user;
 
-      await setDoc(doc(db, 'users', user.uid), {
-        name: fullName,
-        email: email,
-        role: 'Employee',
-        contact: contact,
-        department: department,
-        position: position,
-        uid: user.uid,
-        createdAt: new Date().toISOString(),
-        status: 'Pending Approval' // Add status for HR to approve
+      const now = new Date().toISOString();
+      const today = now.split('T')[0];
+
+      // ---- 2. Fire ALL Firestore writes IN PARALLEL (fast!) ----
+      await Promise.all([
+        setDoc(doc(db, 'users', user.uid), {
+          name: fullName,
+          email: email,
+          role: 'Employee',
+          contact: contact,
+          department: department,
+          position: position,
+          uid: user.uid,
+          status: 'Pending Approval',
+          createdAt: now,
+        }),
+
+        setDoc(doc(db, 'employees', user.uid), {
+          fullName: fullName,
+          email: email,
+          department: department,
+          position: position,
+          contact: contact,
+          employmentStatus: 'Pending Approval',
+          status: 'Pending Approval',
+          dateHired: today,
+          salary: 0,
+          createdAt: now,
+        }),
+
+        setDoc(doc(db, 'leaveBalances', user.uid), {
+          employeeId: user.uid,
+          vacationLeave: 15,
+          sickLeave: 15,
+          createdAt: now,
+        }),
+
+        addDoc(collection(db, 'notifications'), {
+          type: 'new_registration',
+          employeeId: user.uid,
+          employeeName: fullName,
+          employeeEmail: email,
+          department: department,
+          position: position,
+          message: `${fullName} (${department}) registered and is awaiting approval.`,
+          read: false,
+          forAdmin: true,
+          forEmployee: false,
+          createdAt: now,
+          priority: 'high',
+          category: 'registration_approval',
+        }),
+      ]);
+
+      console.log('✅ All Firestore writes complete');
+
+      // ---- 3. Fire-and-forget email (never blocks UI) ----
+      sendAdminRegistrationEmail({
+        employeeName: fullName,
+        employeeEmail: email,
+        employeeDepartment: department,
+        employeePosition: position,
+      }).then((res) => {
+        if (res.success) {
+          console.log('✅ Admin notified by email');
+        } else {
+          console.warn('⚠️ Admin email not sent:', res.error || res.reason);
+        }
       });
 
-      await setDoc(doc(db, 'employees', user.uid), {
-        fullName: fullName,
-        email: email,
-        department: department,
-        position: position,
-        contact: contact,
-        employmentStatus: 'Pending Approval',
-        dateHired: new Date().toISOString().split('T')[0],
-        salary: 0,
-        createdAt: new Date().toISOString()
-      });
-
-      await setDoc(doc(db, 'leaveBalances', user.uid), {
-        employeeId: user.uid,
-        vacationLeave: 15,
-        sickLeave: 15
-      });
-
-      // DON'T set localStorage - user should NOT be logged in yet
-      // DON'T navigate - stay on login page
-
+      // ---- 4. Show success UI IMMEDIATELY (before signOut) ----
       setIsRegistered(true);
-      setSuccess('Registration successful! Your account is pending approval by HR. You will be notified once approved.');
+      setSuccess(
+        'Registration successful! Your account is pending approval by HR. You will receive an email once approved.'
+      );
 
-      // Clear form fields
+      // Clear form
       setFullName('');
       setEmail('');
       setPassword('');
@@ -188,31 +258,63 @@ function Login() {
       setDepartment('');
       setPosition('');
 
-      // Switch back to login after 5 seconds
+      // Auto-return to login after 6 seconds
       setTimeout(() => {
         setIsRegistered(false);
         setIsLogin(true);
         setSuccess('');
-        // Pre-fill email for convenience
-        setEmail(email);
-      }, 5000);
+        setEmail(capturedEmail); // convenience prefill
+      }, 6000);
+
+      // ---- 5. Unlock the form (user sees success screen NOW) ----
+      setLoading(false);
+
+      // ---- 6. Background: sign out + clear local state ----
+      signOut(auth)
+        .then(() => {
+          console.log('✅ Signed out (post-registration)');
+        })
+        .catch((err) => console.warn('Sign out warning:', err))
+        .finally(() => {
+          // ✅ Now it's safe to un-flag AuthContext
+          if (window.__setHrRegistering) {
+            window.__setHrRegistering(false);
+          }
+        });
+
+      // Clear localStorage immediately
+      localStorage.removeItem('isAuthenticated');
+      localStorage.removeItem('userRole');
+      localStorage.removeItem('userName');
+      localStorage.removeItem('userEmail');
+      localStorage.removeItem('userId');
 
     } catch (err) {
       console.error('Registration error:', err);
+
+      // ✅ ALWAYS un-flag on error, or the app stays frozen
+      if (window.__setHrRegistering) {
+        window.__setHrRegistering(false);
+      }
+
       if (err.code === 'auth/email-already-in-use') {
         setError('Email is already registered. Please login.');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address.');
+      } else if (err.code === 'auth/weak-password') {
+        setError('Password is too weak. Use at least 6 characters.');
       } else {
-        setError('Registration failed: ' + err.message);
+        setError('Registration failed: ' + (err.message || 'Unknown error'));
       }
-    } finally {
       setLoading(false);
     }
   };
 
-  const togglePasswordVisibility = () => {
-    setShowPassword(!showPassword);
-  };
+  const togglePasswordVisibility = () => setShowPassword(!showPassword);
 
+  // ============================================
+  // RENDER
+  // ============================================
   return (
     <div className="login-container-split">
       {/* Left Side - Cover Image */}
@@ -241,33 +343,40 @@ function Login() {
           </div>
 
           {error && <div className="error-message">{error}</div>}
-          {success && <div className="success-message" style={{ 
-            background: isRegistered ? '#d4edda' : '#e4f5e9',
-            color: isRegistered ? '#155724' : '#27ae60',
-            border: isRegistered ? '1px solid #c3e6cb' : '1px solid #b8e6c9',
-            padding: '15px 20px',
-            borderRadius: '10px',
-            marginBottom: '20px',
-            textAlign: 'center'
-          }}>
-            {success}
-          </div>}
 
-          {/* Show a message if account is pending approval */}
+          {success && (
+            <div
+              className="success-message"
+              style={{
+                background: isRegistered ? '#d4edda' : '#e4f5e9',
+                color: isRegistered ? '#155724' : '#27ae60',
+                border: isRegistered ? '1px solid #c3e6cb' : '1px solid #b8e6c9',
+                padding: '15px 20px',
+                borderRadius: '10px',
+                marginBottom: '20px',
+                textAlign: 'center',
+              }}
+            >
+              {success}
+            </div>
+          )}
+
           {isRegistered && (
-            <div style={{
-              background: '#fff3cd',
-              color: '#856404',
-              padding: '15px 20px',
-              borderRadius: '10px',
-              marginBottom: '20px',
-              textAlign: 'center',
-              border: '1px solid #ffeaa7'
-            }}>
-              <p style={{ margin: 0, fontWeight: 'bold' }}>Account Pending Approval</p>
+            <div
+              style={{
+                background: '#fff3cd',
+                color: '#856404',
+                padding: '15px 20px',
+                borderRadius: '10px',
+                marginBottom: '20px',
+                textAlign: 'center',
+                border: '1px solid #ffeaa7',
+              }}
+            >
+              <p style={{ margin: 0, fontWeight: 'bold' }}>⏳ Account Pending Approval</p>
               <p style={{ margin: '5px 0 0', fontSize: '14px' }}>
                 Your account has been created but is awaiting HR approval.
-                You will be able to login once approved.
+                You will receive an email once approved.
               </p>
             </div>
           )}
@@ -331,7 +440,6 @@ function Login() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    disabled={isRegistered}
                   />
                 </div>
 
@@ -340,18 +448,18 @@ function Login() {
                   <div className="password-wrapper">
                     <input
                       type={showPassword ? 'text' : 'password'}
-                      placeholder={isLogin ? 'Enter your password' : 'Create a password (min 6 characters)'}
+                      placeholder={
+                        isLogin ? 'Enter your password' : 'Create a password (min 6 characters)'
+                      }
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      disabled={isRegistered}
                     />
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="password-toggle"
                       onClick={togglePasswordVisibility}
                       aria-label="Toggle password visibility"
-                      disabled={isRegistered}
                     >
                       {showPassword ? (
                         <VisibilityOffIcon sx={{ color: '#888', fontSize: 24 }} />
@@ -371,47 +479,46 @@ function Login() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
-                      disabled={isRegistered}
                     />
                   </div>
                 )}
 
                 <button type="submit" disabled={loading || isRegistered} className="login-btn">
-                  {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+                  {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
                 </button>
               </>
             )}
 
-           {/* Forgot Password button &*/}
             {isLogin && !isRegistered && (
-              <div style={{
-                textAlign: 'right',
-                marginBottom: '15px',
-                marginTop: '20px'
-              }}>
-                <button
-                type="button"
-                onClick={() => navigate('/forgot-password')}
+              <div
                 style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#4a6fa5',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  textDecoration: 'underline',
-                  padding: '0'
+                  textAlign: 'right',
+                  marginBottom: '15px',
+                  marginTop: '20px',
                 }}
+              >
+                <button
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#4a6fa5',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    textDecoration: 'underline',
+                    padding: '0',
+                  }}
                 >
                   Forgot Password?
                 </button>
               </div>
             )}
 
-            {/* Show a "Go to Login" button after registration */}
             {isRegistered && (
-              <button 
-                type="button" 
-                className="login-btn" 
+              <button
+                type="button"
+                className="login-btn"
                 onClick={() => {
                   setIsRegistered(false);
                   setIsLogin(true);
@@ -427,7 +534,7 @@ function Login() {
 
           {!isRegistered && (
             <div className="toggle-auth">
-              <button 
+              <button
                 onClick={() => {
                   setIsLogin(!isLogin);
                   setError('');
@@ -441,16 +548,18 @@ function Login() {
                 }}
                 className="toggle-btn"
               >
-                {isLogin ? "Don't have an account? Register here" : "Already have an account? Login here"}
+                {isLogin
+                  ? "Don't have an account? Register here"
+                  : 'Already have an account? Login here'}
               </button>
             </div>
           )}
 
           {isLogin && !isRegistered && (
             <div className="demo-credentials">
-              <p><strong>©2026 – HRMO Pagbilao, Quezon, Philippines</strong></p>
-              {/* <p>HR Admin: admin@pagbilao.gov.ph / admin123</p>
-              <p>MGDH: mgdh@pagbilao.gov.ph / mgdh123</p> */}
+              <p>
+                <strong>©2026 – HRMO Pagbilao, Quezon, Philippines</strong>
+              </p>
             </div>
           )}
         </div>
