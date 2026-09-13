@@ -105,7 +105,7 @@ function PendingApprovals() {
       }
     } catch (error) {
       console.error('Approval error:', error);
-      alert('❌ Failed to approve user: ' + error.message);
+      alert('Failed to approve user: ' + error.message);
     } finally {
       setProcessing(null);
     }

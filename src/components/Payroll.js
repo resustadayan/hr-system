@@ -833,14 +833,14 @@ function Payroll({ refreshTrigger, onPayrollProcessed }) {
             <small>Employees</small>
           </div>
         </div>
-        <div className="stat-card teal">
+        {/* <div className="stat-card teal">
           <div className="stat-icon"><PeopleIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">
             <h3>Leave Credits Used</h3>
             <p>{summary.totalLeaveCreditsUsed?.toFixed(1) || 0} days</p>
             <small>Casual & Regular</small>
           </div>
-        </div>
+        </div> */}
         <div className="stat-card red">
           <div className="stat-icon"><TrendingDownIcon style={{ fontSize: 30 }} /></div>
           <div className="stat-info">

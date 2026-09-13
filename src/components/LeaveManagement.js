@@ -202,19 +202,19 @@ function LeaveManagement() {
     try {
       // Only restore if status is 'Rejected' and not already restored
       if (leaveData.status !== 'Rejected') {
-        console.log(`⚠️ Status is ${leaveData.status}, not Rejected. Skipping.`);
+        console.log(`Status is ${leaveData.status}, not Rejected. Skipping.`);
         return;
       }
       
       if (leaveData.creditsRestored === true) {
-        console.log(`✅ Credits already restored for ${leaveId}`);
+        console.log(`Credits already restored for ${leaveId}`);
         return;
       }
 
       // Set processing flag
       setProcessingRestore(prev => ({ ...prev, [leaveId]: true }));
 
-      console.log(`🔄 [Admin] Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
+      console.log(` [Admin] Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
 
       // Get the current balance for this employee
       const balance = leaveBalances[leaveData.employeeId];
@@ -283,7 +283,7 @@ function LeaveManagement() {
         createdAt: new Date().toISOString()
       });
 
-      console.log(`✅ [Admin] Successfully restored ${leaveData.days} ${leaveData.type} days for ${leaveData.employeeName || getEmployeeName(leaveData.employeeId)}`);
+      console.log(`[Admin] Successfully restored ${leaveData.days} ${leaveData.type} days for ${leaveData.employeeName || getEmployeeName(leaveData.employeeId)}`);
 
     } catch (error) {
       console.error('Error restoring leave credits on rejection:', error);
@@ -304,7 +304,7 @@ function LeaveManagement() {
 
     // Check if employee has enough leave credits
     if (days > availableBalance) {
-      setErrorMessage(`❌ Insufficient ${formData.type} leave credits!\nAvailable: ${availableBalance} days\nRequested: ${days} days\nPlease reduce the number of days or choose a different leave type.`);
+      setErrorMessage(`Insufficient ${formData.type} leave credits!\nAvailable: ${availableBalance} days\nRequested: ${days} days\nPlease reduce the number of days or choose a different leave type.`);
       return;
     }
 
@@ -373,12 +373,12 @@ function LeaveManagement() {
         createdAt: new Date().toISOString()
       });
 
-      alert('✅ Leave request submitted successfully');
+      alert('Leave request submitted successfully');
       setShowForm(false);
       setFormData({ employeeId: '', type: 'Vacation', startDate: '', endDate: '', reason: '' });
     } catch (error) {
       console.error('Error submitting leave:', error);
-      alert('❌ Failed to submit leave request');
+      alert('Failed to submit leave request');
     } finally {
       setLoading(false);
     }
@@ -425,8 +425,8 @@ function LeaveManagement() {
         status: status,
         reviewedBy: 'Admin',
         message: status === 'Approved' 
-          ? `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been APPROVED by Admin.`
-          : `📋 Your ${leaveData.type} leave request for ${leaveData.days} days has been REJECTED by Admin. Reason: ${reason || 'No reason provided'}. ${leaveData.days} days have been restored to your balance.`,
+          ? `Your ${leaveData.type} leave request for ${leaveData.days} days has been APPROVED by Admin.`
+          : `Your ${leaveData.type} leave request for ${leaveData.days} days has been REJECTED by Admin. Reason: ${reason || 'No reason provided'}. ${leaveData.days} days have been restored to your balance.`,
         type: 'leave_action',
         read: false,
         forEmployee: true,
@@ -438,7 +438,7 @@ function LeaveManagement() {
       await fetchLeaveRequests();
       await fetchLeaveBalances();
 
-      alert(`✅ Leave request ${status.toLowerCase()} successfully!`);
+      alert(`Leave request ${status.toLowerCase()} successfully!`);
       
       setShowRejectReason(false);
       setSelectedLeaveId(null);
@@ -446,7 +446,7 @@ function LeaveManagement() {
       
     } catch (error) {
       console.error('Error updating status:', error);
-      alert('❌ Failed to update status: ' + error.message);
+      alert('Failed to update status: ' + error.message);
     } finally {
       setActionLoading(false);
     }
@@ -1385,10 +1385,10 @@ function LeaveManagement() {
               </div>
               <div style={{ marginTop: '16px', padding: '12px', background: '#f0f4fe', borderRadius: '8px', textAlign: 'center' }}>
                 <p style={{ margin: 0, fontSize: '13px', color: '#4a6fa5' }}>
-                  💡 Employee can file leave if they have sufficient credits
+                  Employee can file leave if they have sufficient credits
                 </p>
                 <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#27ae60' }}>
-                  ✅ Credits are automatically restored when leave is rejected
+                  Credits are automatically restored when leave is rejected
                 </p>
               </div>
             </div>

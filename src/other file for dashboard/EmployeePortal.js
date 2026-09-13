@@ -77,11 +77,12 @@ function EmployeePortal() {
   const [loading, setLoading] = useState(true);
   const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [showUploadForm, setShowUploadForm] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
   const [selectedDocType, setSelectedDocType] = useState('');
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [expandedGroups, setExpandedGroups] = useState({});
   const [leaveFormData, setLeaveFormData] = useState({
     type: 'Vacation',
     startDate: '',
@@ -141,22 +142,6 @@ function EmployeePortal() {
   const [selectedForm, setSelectedForm] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
-  // ====== DOCUMENT SCANNER STATES ======
-  // const [showScanner, setShowScanner] = useState(false);
-  // const [capturedImage, setCapturedImage] = useState(null);
-  // const [originalImage, setOriginalImage] = useState(null);
-  // const [isProcessingScan, setIsProcessingScan] = useState(false);
-  // const [scanProgress, setScanProgress] = useState(0);
-  // const [showScanPreview, setShowScanPreview] = useState(false);
-  // const [scannedFile, setScannedFile] = useState(null);
-  // const [scannerDocType, setScannerDocType] = useState('');
-  // const [scanningQuality, setScanningQuality] = useState('high');
-  // const [filterMode, setFilterMode] = useState('original');
-  // const [batchMode, setBatchMode] = useState(false);
-  // const [batchDocuments, setBatchDocuments] = useState([]);
-  // const [showBatchUpload, setShowBatchUpload] = useState(false);
-  // const [rotationAngle, setRotationAngle] = useState(0);
-  // const [scannerUploadStatus, setScannerUploadStatus] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -225,459 +210,6 @@ function EmployeePortal() {
     return `${hours}:${minutes}`;
   };
 
-  // // ====== SCANNER FUNCTIONS ======
-  
-  // const openScanner = () => {
-  //   setShowScanner(true);
-  //   setCapturedImage(null);
-  //   setOriginalImage(null);
-  //   setBatchDocuments([]);
-  //   setBatchMode(false);
-  //   setShowBatchUpload(false);
-  //   setFilterMode('original');
-  //   setShowScanPreview(false);
-  //   setScannedFile(null);
-  //   setScannerDocType('');
-  //   setRotationAngle(0);
-  //   setScannerUploadStatus('');
-  //   if (fileInputRef.current) {
-  //     fileInputRef.current.value = '';
-  //   }
-  // };
-
-  // const handleImageUpload = (e) => {
-  //   const file = e.target.files[0];
-  //   if (!file) return;
-
-  //   if (!file.type.startsWith('image/')) {
-  //     alert('Please select an image file (JPG, PNG, etc.)');
-  //     return;
-  //   }
-
-  //   if (file.size > 20 * 1024 * 1024) {
-  //     alert('File is too large. Maximum size is 20MB.');
-  //     return;
-  //   }
-
-  //   const reader = new FileReader();
-  //   reader.onload = (event) => {
-  //     const imageData = event.target.result;
-  //     setOriginalImage(imageData);
-  //     setCapturedImage(imageData);
-  //     setShowScanPreview(false);
-  //     setScannedFile(null);
-  //     setScannerUploadStatus('');
-  //   };
-  //   reader.readAsDataURL(file);
-  // };
-
-  // const handleFileDrop = (e) => {
-  //   e.preventDefault();
-  //   const file = e.dataTransfer.files[0];
-  //   if (file && file.type.startsWith('image/')) {
-  //     const reader = new FileReader();
-  //     reader.onload = (event) => {
-  //       const imageData = event.target.result;
-  //       setOriginalImage(imageData);
-  //       setCapturedImage(imageData);
-  //       setShowScanPreview(false);
-  //       setScannedFile(null);
-  //       setScannerUploadStatus('');
-  //     };
-  //     reader.readAsDataURL(file);
-  //   }
-  // };
-
-  // const applyFilterToImage = (imageData, filter, rotation = 0) => {
-  //   return new Promise((resolve) => {
-  //     const canvas = document.createElement('canvas');
-  //     const ctx = canvas.getContext('2d');
-  //     const img = new Image();
-      
-  //     img.onload = () => {
-  //       let width = img.width;
-  //       let height = img.height;
-        
-  //       if (rotation === 90 || rotation === 270) {
-  //         width = img.height;
-  //         height = img.width;
-  //       }
-        
-  //       canvas.width = width;
-  //       canvas.height = height;
-        
-  //       ctx.save();
-  //       ctx.clearRect(0, 0, width, height);
-        
-  //       if (rotation === 90) {
-  //         ctx.translate(width / 2, height / 2);
-  //         ctx.rotate(Math.PI / 2);
-  //         ctx.drawImage(img, -img.width / 2, -img.height / 2);
-  //       } else if (rotation === 180) {
-  //         ctx.translate(width / 2, height / 2);
-  //         ctx.rotate(Math.PI);
-  //         ctx.drawImage(img, -img.width / 2, -img.height / 2);
-  //       } else if (rotation === 270) {
-  //         ctx.translate(width / 2, height / 2);
-  //         ctx.rotate(-Math.PI / 2);
-  //         ctx.drawImage(img, -img.width / 2, -img.height / 2);
-  //       } else {
-  //         ctx.drawImage(img, 0, 0);
-  //       }
-  //       ctx.restore();
-        
-  //       const imageDataObj = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  //       const data = imageDataObj.data;
-        
-  //       for (let i = 0; i < data.length; i += 4) {
-  //         let r = data[i];
-  //         let g = data[i + 1];
-  //         let b = data[i + 2];
-          
-  //         switch(filter) {
-  //           case 'grayscale':
-  //             const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-  //             r = g = b = gray;
-  //             break;
-  //           case 'blackwhite':
-  //             const grayBW = 0.299 * r + 0.587 * g + 0.114 * b;
-  //             const threshold = 140;
-  //             const value = grayBW > threshold ? 255 : 0;
-  //             r = g = b = value;
-  //             break;
-  //           case 'enhanced':
-  //             const enhanced = ((r / 255 - 0.5) * 1.5 + 0.5) * 255;
-  //             r = Math.min(255, Math.max(0, enhanced));
-  //             const enhancedG = ((g / 255 - 0.5) * 1.5 + 0.5) * 255;
-  //             g = Math.min(255, Math.max(0, enhancedG));
-  //             const enhancedB = ((b / 255 - 0.5) * 1.5 + 0.5) * 255;
-  //             b = Math.min(255, Math.max(0, enhancedB));
-  //             break;
-  //           case 'magic':
-  //             const magic = ((r / 255 - 0.5) * 1.6 + 0.5) * 255;
-  //             r = Math.min(255, Math.max(0, magic));
-  //             const magicG = ((g / 255 - 0.5) * 1.6 + 0.5) * 255;
-  //             g = Math.min(255, Math.max(0, magicG));
-  //             const magicB = ((b / 255 - 0.5) * 1.6 + 0.5) * 255;
-  //             b = Math.min(255, Math.max(0, magicB));
-  //             break;
-  //           case 'document':
-  //             const docGray = 0.299 * r + 0.587 * g + 0.114 * b;
-  //             const docValue = ((docGray / 255 - 0.5) * 1.8 + 0.5) * 255;
-  //             const finalValue = Math.min(255, Math.max(0, docValue));
-  //             r = g = b = finalValue;
-  //             break;
-  //           default:
-  //             break;
-  //         }
-          
-  //         data[i] = Math.min(255, Math.max(0, r));
-  //         data[i + 1] = Math.min(255, Math.max(0, g));
-  //         data[i + 2] = Math.min(255, Math.max(0, b));
-  //       }
-        
-  //       ctx.putImageData(imageDataObj, 0, 0);
-  //       resolve(canvas.toDataURL('image/jpeg', 0.95));
-  //     };
-      
-  //     img.src = imageData;
-  //   });
-  // };
-
-  // const processScannedImage = async () => {
-  //   if (!capturedImage && !originalImage) {
-  //     alert('Please upload an image first.');
-  //     return;
-  //   }
-
-  //   setIsProcessingScan(true);
-  //   setScanProgress(10);
-
-  //   try {
-  //     const imageToProcess = capturedImage || originalImage;
-  //     setScanProgress(30);
-      
-  //     let processedImage = await applyFilterToImage(imageToProcess, filterMode, rotationAngle);
-      
-  //     setScanProgress(60);
-      
-  //     const response = await fetch(processedImage);
-  //     const blob = await response.blob();
-  //     const fileName = `scanned_document_${Date.now()}.jpg`;
-  //     const file = new File([blob], fileName, { type: 'image/jpeg' });
-      
-  //     setScanProgress(80);
-      
-  //     setScannedFile(file);
-  //     setCapturedImage(processedImage);
-      
-  //     if (batchMode) {
-  //       const newDoc = {
-  //         id: Date.now(),
-  //         file: file,
-  //         preview: processedImage,
-  //         fileName: fileName,
-  //         timestamp: new Date().toISOString()
-  //       };
-  //       setBatchDocuments(prev => [...prev, newDoc]);
-  //       setCapturedImage(null);
-  //       setOriginalImage(null);
-  //       setFilterMode('original');
-  //       setRotationAngle(0);
-  //       setScannerUploadStatus(`✅ Document ${batchDocuments.length + 1} added to batch!`);
-  //       if (fileInputRef.current) {
-  //         fileInputRef.current.value = '';
-  //       }
-  //       // Reset after adding to batch
-  //       setShowScanPreview(false);
-  //       setScannedFile(null);
-  //     } else {
-  //       setShowScanPreview(true);
-  //     }
-      
-  //     setScanProgress(100);
-  //   } catch (error) {
-  //     console.error('Error processing image:', error);
-  //     alert('Error processing image. Please try again.');
-  //   } finally {
-  //     setIsProcessingScan(false);
-  //     setScanProgress(0);
-  //   }
-  // };
-
-  // const rotateImage = () => {
-  //   const newAngle = (rotationAngle + 90) % 360;
-  //   setRotationAngle(newAngle);
-  //   if (originalImage) {
-  //     applyFilterToImage(originalImage, filterMode, newAngle).then(result => {
-  //       setCapturedImage(result);
-  //     });
-  //   }
-  // };
-
-  // const resetImage = () => {
-  //   setRotationAngle(0);
-  //   setFilterMode('original');
-  //   if (originalImage) {
-  //     setCapturedImage(originalImage);
-  //   }
-  // };
-
-  // const clearCurrentImage = () => {
-  //   setCapturedImage(null);
-  //   setOriginalImage(null);
-  //   setShowScanPreview(false);
-  //   setScannedFile(null);
-  //   setFilterMode('original');
-  //   setRotationAngle(0);
-  //   setScannerUploadStatus('');
-  //   if (fileInputRef.current) {
-  //     fileInputRef.current.value = '';
-  //   }
-  // };
-
-  // const removeBatchDocument = (docId) => {
-  //   setBatchDocuments(prev => prev.filter(d => d.id !== docId));
-  // };
-
-  // const uploadScannedDocument = async () => {
-  //   if (!scannedFile || !scannerDocType) {
-  //     alert('Please select a document type and ensure a document is scanned.');
-  //     return;
-  //   }
-
-  //   setUploading(true);
-  //   setUploadProgress(0);
-  //   setScannerUploadStatus('Uploading scanned document...');
-
-  //   try {
-  //     if (!authUser || !employee || !employee.id) {
-  //       alert('You must be logged in to upload');
-  //       setUploading(false);
-  //       return;
-  //     }
-
-  //     const uploadResult = await uploadToVercelBlob(
-  //       scannedFile,
-  //       employee.id,
-  //       scannerDocType
-  //     );
-
-  //     if (!uploadResult.success) {
-  //       throw new Error(uploadResult.error || 'Upload failed');
-  //     }
-
-  //     setUploadProgress(50);
-  //     setScannerUploadStatus('Saving to database...');
-
-  //     await addDoc(collection(db, 'documents'), {
-  //       employeeId: employee.id,
-  //       employeeName: employee.fullName,
-  //       department: employee.department || 'N/A',
-  //       documentType: scannerDocType,
-  //       status: 'Pending Review',
-  //       fileUrl: uploadResult.url,
-  //       downloadUrl: uploadResult.downloadUrl,
-  //       fileName: scannedFile.name,
-  //       fileSize: scannedFile.size,
-  //       storagePath: uploadResult.path,
-  //       storageProvider: 'vercel-blob',
-  //       scanned: true,
-  //       scannedAt: new Date().toISOString(),
-  //       uploadedAt: new Date().toISOString()
-  //     });
-
-  //     setUploadProgress(75);
-  //     setScannerUploadStatus('Creating notifications...');
-
-  //     await addDoc(collection(db, 'notifications'), {
-  //       type: 'compliance_upload',
-  //       employeeId: employee.id,
-  //       employeeName: employee.fullName,
-  //       department: employee.department || 'N/A',
-  //       documentType: scannerDocType,
-  //       message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded scanned ${scannerDocType} for compliance review`,
-  //       read: false,
-  //       forAdmin: true,
-  //       forEmployee: false,
-  //       createdAt: new Date().toISOString()
-  //     });
-
-  //     await addDoc(collection(db, 'notifications'), {
-  //       type: 'compliance_upload_confirmation',
-  //       employeeId: employee.id,
-  //       message: `Your scanned ${scannerDocType} has been uploaded and is pending review by HR`,
-  //       read: false,
-  //       forEmployee: true,
-  //       forAdmin: false,
-  //       createdAt: new Date().toISOString()
-  //     });
-
-  //     setUploadProgress(100);
-  //     setScannerUploadStatus('Scanned document uploaded successfully!');
-      
-  //     setTimeout(() => {
-  //       setShowScanPreview(false);
-  //       setShowScanner(false);
-  //       setCapturedImage(null);
-  //       setOriginalImage(null);
-  //       setScannedFile(null);
-  //       setScannerDocType('');
-  //       setFilterMode('original');
-  //       setRotationAngle(0);
-  //       setBatchDocuments([]);
-  //       setBatchMode(false);
-  //       setScannerUploadStatus('');
-  //       fetchEmployeeData();
-  //     }, 1500);
-      
-  //     setUploading(false);
-      
-  //   } catch (error) {
-  //     console.error('Error uploading scanned document:', error);
-  //     setScannerUploadStatus(`Upload failed: ${error.message}`);
-  //     setUploading(false);
-  //   }
-  // };
-
-  // const uploadBatchDocuments = async () => {
-  //   if (batchDocuments.length === 0) {
-  //     alert('No documents to upload.');
-  //     return;
-  //   }
-
-  //   if (!scannerDocType) {
-  //     alert('Please select a document type.');
-  //     return;
-  //   }
-
-  //   setUploading(true);
-  //   setUploadProgress(0);
-  //   setScannerUploadStatus(`Uploading ${batchDocuments.length} documents...`);
-
-  //   let successCount = 0;
-  //   let failCount = 0;
-
-  //   try {
-  //     for (let i = 0; i < batchDocuments.length; i++) {
-  //       const doc = batchDocuments[i];
-  //       setUploadProgress(Math.round((i / batchDocuments.length) * 80));
-  //       setScannerUploadStatus(`Uploading document ${i + 1} of ${batchDocuments.length}...`);
-
-  //       try {
-  //         const uploadResult = await uploadToVercelBlob(
-  //           doc.file,
-  //           employee.id,
-  //           scannerDocType
-  //         );
-
-  //         if (uploadResult.success) {
-  //           await addDoc(collection(db, 'documents'), {
-  //             employeeId: employee.id,
-  //             employeeName: employee.fullName,
-  //             department: employee.department || 'N/A',
-  //             documentType: scannerDocType,
-  //             status: 'Pending Review',
-  //             fileUrl: uploadResult.url,
-  //             downloadUrl: uploadResult.downloadUrl,
-  //             fileName: doc.fileName,
-  //             fileSize: doc.file.size,
-  //             storagePath: uploadResult.path,
-  //             storageProvider: 'vercel-blob',
-  //             scanned: true,
-  //             scannedAt: new Date().toISOString(),
-  //             uploadedAt: new Date().toISOString()
-  //           });
-  //           successCount++;
-  //         } else {
-  //           failCount++;
-  //         }
-  //       } catch (err) {
-  //         console.error('Error uploading batch document:', err);
-  //         failCount++;
-  //       }
-  //     }
-
-  //     await addDoc(collection(db, 'notifications'), {
-  //       type: 'compliance_upload',
-  //       employeeId: employee.id,
-  //       employeeName: employee.fullName,
-  //       department: employee.department || 'N/A',
-  //       documentType: scannerDocType,
-  //       message: `${employee.fullName} uploaded ${successCount} scanned ${scannerDocType} documents for compliance review`,
-  //       read: false,
-  //       forAdmin: true,
-  //       forEmployee: false,
-  //       createdAt: new Date().toISOString()
-  //     });
-
-  //     setUploadProgress(100);
-  //     setScannerUploadStatus(`Upload complete! ${successCount} uploaded, ${failCount} failed.`);
-      
-  //     setTimeout(() => {
-  //       setShowScanner(false);
-  //       setBatchDocuments([]);
-  //       setBatchMode(false);
-  //       setShowBatchUpload(false);
-  //       setScannerDocType('');
-  //       setScannerUploadStatus('');
-  //       fetchEmployeeData();
-  //     }, 2000);
-      
-  //     setUploading(false);
-      
-  //   } catch (error) {
-  //     console.error('Error in batch upload:', error);
-  //     setScannerUploadStatus(`Batch upload failed: ${error.message}`);
-  //     setUploading(false);
-  //   }
-  // };
-
-  // const triggerFileInput = () => {
-  //   if (fileInputRef.current) {
-  //     fileInputRef.current.click();
-  //   }
-  // };
 
   // ====== PRINT PAYSLIP FUNCTION ======
   const printPayslip = (payrollData) => {
@@ -1355,129 +887,150 @@ function EmployeePortal() {
     }
   };
 
-  // ====== handleDocumentUpload ======
+  // ====== handleDocumentUpload (MULTI-FILE) ======
   const handleDocumentUpload = async () => {
-    if (!selectedFile || !selectedDocType) {
-      alert('Please select a document type and a file');
+    if (selectedFiles.length === 0 || !selectedDocType) {
+      alert('Please select a document type and at least one file');
+      return;
+    }
+
+    if (!authUser) {
+      alert('You must be logged in to upload');
+      return;
+    }
+
+    if (!employee || !employee.id) {
+      alert('Employee data not found. Please refresh and try again.');
       return;
     }
 
     setUploading(true);
     setUploadProgress(0);
-    setUploadStatus('Uploading File.....');
+
+    const batchId = `batch_${Date.now()}`;
+    const totalFiles = selectedFiles.length;
+    let successCount = 0;
+    let failCount = 0;
 
     try {
-      if (!authUser) {
-        alert('You must be logged in to upload');
-        setUploading(false);
-        return;
+      for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        setUploadStatus(`Uploading ${i + 1} of ${totalFiles}: ${file.name}`);
+
+        const uploadResult = await uploadToVercelBlob(
+          file,
+          employee.id,
+          selectedDocType
+        );
+
+        if (!uploadResult.success) {
+          console.error(`Failed to upload ${file.name}:`, uploadResult.error);
+          failCount++;
+          continue;
+        }
+
+        await addDoc(collection(db, 'documents'), {
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+          department: employee.department || 'N/A',
+          documentType: selectedDocType,
+          batchId,
+          status: 'Pending Review',
+          fileUrl: uploadResult.url,
+          downloadUrl: uploadResult.downloadUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          storagePath: uploadResult.path,
+          storageProvider: 'vercel-blob',
+          uploadedAt: new Date().toISOString()
+        });
+
+        successCount++;
+        setUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
       }
 
-      if (!employee || !employee.id) {
-        alert('Employee data not found. Please refresh and try again.');
-        setUploading(false);
-        return;
+      // Admin notification (one per batch)
+      if (successCount > 0) {
+        await addDoc(collection(db, 'notifications'), {
+          type: 'compliance_upload',
+          employeeId: employee.id,
+          employeeName: employee.fullName,
+          department: employee.department || 'N/A',
+          documentType: selectedDocType,
+          fileCount: successCount,
+          message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded ${successCount} file(s) under ${selectedDocType} for compliance review`,
+          read: false,
+          forAdmin: true,
+          forEmployee: false,
+          createdAt: new Date().toISOString()
+        });
+
+        await addDoc(collection(db, 'notifications'), {
+          type: 'compliance_upload_confirmation',
+          employeeId: employee.id,
+          message: `Your ${successCount} file(s) under ${selectedDocType} have been uploaded and are pending review by HR`,
+          read: false,
+          forEmployee: true,
+          forAdmin: false,
+          createdAt: new Date().toISOString()
+        });
       }
 
-      const uploadResult = await uploadToVercelBlob(
-        selectedFile,
-        employee.id,
-        selectedDocType
+      setUploadStatus(
+        failCount === 0
+          ? `✅ All ${successCount} file(s) uploaded successfully! HR has been notified.`
+          : `⚠️ ${successCount} uploaded, ${failCount} failed.`
       );
 
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'Upload file failed');
-      }
-
-      setUploadProgress(50);
-      setUploadStatus('Saving compliance...');
-
-      await addDoc(collection(db, 'documents'), {
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: selectedDocType,
-        status: 'Pending Review',
-        fileUrl: uploadResult.url,
-        downloadUrl: uploadResult.downloadUrl,
-        fileName: selectedFile.name,
-        fileSize: selectedFile.size,
-        storagePath: uploadResult.path,
-        storageProvider: 'vercel-blob',
-        uploadedAt: new Date().toISOString()
-      });
-
-      setUploadProgress(75);
-      setUploadStatus('Creating notifications...');
-
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload',
-        employeeId: employee.id,
-        employeeName: employee.fullName,
-        department: employee.department || 'N/A',
-        documentType: selectedDocType,
-        message: `${employee.fullName} from ${employee.department || 'N/A'} uploaded ${selectedDocType} for compliance review`,
-        read: false,
-        forAdmin: true,
-        forEmployee: false,
-        createdAt: new Date().toISOString()
-      });
-
-      await addDoc(collection(db, 'notifications'), {
-        type: 'compliance_upload_confirmation',
-        employeeId: employee.id,
-        message: `Your ${selectedDocType} has been uploaded and is pending review by HR`,
-        read: false,
-        forEmployee: true,
-        forAdmin: false,
-        createdAt: new Date().toISOString()
-      });
-
-      setUploadProgress(100);
-      setUploadStatus('Document uploaded successfully! HR has been notified.');
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setSelectedDocType('');
       setShowUploadForm(false);
-      
-      fetchEmployeeData();
-      setUploading(false);
+
+      await fetchEmployeeData();
     } catch (error) {
-      console.error('Error uploading document:', error);
+      console.error('Error uploading documents:', error);
       setUploadStatus(`Upload failed: ${error.message}`);
-      setUploading(false);
       alert(`Upload failed: ${error.message}`);
+    } finally {
+      setUploading(false);
     }
   };
 
   const handleFileSelect = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadStatus('File is too large. Maximum size is 10MB.');
-      return;
-    }
+    const processedFiles = [];
 
-    let processedFile = file;
-
-    if (file.type.startsWith('image/')) {
-      try {
-        const options = {
-          maxSizeMB: 0.5,
-          maxWidthOrHeight: 1024,
-          useWebWorker: true,
-          fileType: 'image/jpeg'
-        };
-        processedFile = await imageCompression(file, options);
-        setUploadStatus(`Compressed from ${(file.size / 1024 / 1024).toFixed(2)}MB to ${(processedFile.size / 1024 / 1024).toFixed(2)}MB`);
-      } catch (error) {
-        console.warn('Compression failed, using original file:', error);
-        processedFile = file;
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) {
+        setUploadStatus(`"${file.name}" is too large (max 10MB). Skipped.`);
+        continue;
       }
+
+      let processedFile = file;
+
+      if (file.type.startsWith('image/')) {
+        try {
+          const options = {
+            maxSizeMB: 0.5,
+            maxWidthOrHeight: 1024,
+            useWebWorker: true,
+            fileType: 'image/jpeg',
+          };
+          processedFile = await imageCompression(file, options);
+        } catch (err) {
+          console.warn('Compression failed, using original:', err);
+          processedFile = file;
+        }
+      }
+
+      processedFiles.push(processedFile);
     }
 
-    setSelectedFile(processedFile);
+    setSelectedFiles(processedFiles);
     setUploadProgress(0);
+    setUploadStatus(`${processedFiles.length} file(s) ready to upload.`);
   };
 
   // ====== FETCH EMPLOYEE DATA ======
@@ -1679,7 +1232,7 @@ function EmployeePortal() {
       setPayrollSummary(summary);
 
     } catch (error) {
-      console.error('❌ Error fetching payroll:', error);
+      console.error('Error fetching payroll:', error);
     }
   };
 
@@ -2000,7 +1553,7 @@ function EmployeePortal() {
         status: 'Pending',
         department: employee.department,
         dateSubmitted: new Date().toISOString(),
-        creditsRestored: false // Add this flag
+        creditsRestored: false
       });
 
       await addDoc(collection(db, 'notifications'), {
@@ -2079,13 +1632,10 @@ function EmployeePortal() {
   // ====== RESTORE LEAVE CREDITS ON REJECTION ======
   const restoreLeaveCreditsOnRejection = async (leaveId, leaveData) => {
     try {
-      // Only restore if status is 'Rejected' and not already restored
       if (leaveData.status !== 'Rejected') return;
-      
-      // Check if already restored (add a flag to prevent double restoration)
       if (leaveData.creditsRestored === true) return;
 
-      console.log(`🔄 Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
+      console.log(`Restoring ${leaveData.type} leave credits for ${leaveData.days} days...`);
 
       const currentBalance = leaveData.type === 'Vacation' 
         ? leaveBalance.vacationLeave
@@ -2116,7 +1666,6 @@ function EmployeePortal() {
         });
       }
 
-      // Mark the leave request as credits restored to prevent double restoration
       await updateDoc(doc(db, 'leaveRequests', leaveId), {
         creditsRestored: true,
         creditsRestoredAt: new Date().toISOString()
@@ -2124,7 +1673,6 @@ function EmployeePortal() {
 
       setLeaveBalance(updatedBalance);
 
-      // Notify employee
       await addDoc(collection(db, 'notifications'), {
         employeeId: employee.id,
         employeeName: employee.fullName,
@@ -2140,7 +1688,7 @@ function EmployeePortal() {
         createdAt: new Date().toISOString()
       });
 
-      console.log(`✅ Successfully restored ${leaveData.days} ${leaveData.type} days`);
+      console.log(`Successfully restored ${leaveData.days} ${leaveData.type} days`);
 
     } catch (error) {
       console.error('Error restoring leave credits on rejection:', error);
@@ -2289,17 +1837,12 @@ function EmployeePortal() {
     onSnapshot(leaveQuery, (snapshot) => {
       const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Check for newly rejected leave requests
       requests.forEach(request => {
-        // If status is 'Rejected' and credits haven't been restored yet
         if (request.status === 'Rejected' && !request.creditsRestored) {
-          // Find the previous version of this request to check if it just became rejected
           const previousRequest = leaveRequests.find(r => r.id === request.id);
           if (previousRequest && previousRequest.status !== 'Rejected') {
-            // This request was just rejected - restore the credits
             restoreLeaveCreditsOnRejection(request.id, request);
           } else if (!previousRequest) {
-            // New request that is already rejected (edge case)
             restoreLeaveCreditsOnRejection(request.id, request);
           }
         }
@@ -2468,804 +2011,19 @@ function EmployeePortal() {
     setShowEditModal(true);
   };
 
-//   // ====== RENDER SCANNER MODAL ======
-//   const renderScannerModal = () => {
-//     if (!showScanner) return null;
-
-//     return (
-//       <div className="modal-overlay" onClick={() => !isProcessingScan && !uploading && setShowScanner(false)}>
-//         <div className="modal-form scanner-modal" onClick={(e) => e.stopPropagation()} style={{ 
-//           maxWidth: '750px', 
-//           maxHeight: '95vh',
-//           width: '95%',
-//           padding: '0',
-//           overflow: 'hidden',
-//           borderRadius: '16px'
-//         }}>
-//           <div className="modal-header" style={{ 
-//             padding: '16px 20px',
-//             borderBottom: '1px solid #eef2f7',
-//             display: 'flex',
-//             justifyContent: 'space-between',
-//             alignItems: 'center',
-//             flexWrap: 'wrap',
-//             gap: '10px',
-//             background: '#f8fafd'
-//           }}>
-//             <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '18px' }}>
-//               <span style={{ fontSize: '24px' }}>📄</span>
-//               Document Scanner
-//               <span style={{ 
-//                 fontSize: '11px', 
-//                 background: '#27ae60', 
-//                 color: 'white', 
-//                 padding: '2px 12px', 
-//                 borderRadius: '12px',
-//                 fontWeight: '400'
-//               }}>
-//                 Upload Image
-//               </span>
-//             </h3>
-//             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-//               {!capturedImage && !showScanPreview && !isProcessingScan && (
-//                 <button
-//                   onClick={() => setBatchMode(!batchMode)}
-//                   style={{
-//                     padding: '4px 12px',
-//                     background: batchMode ? '#27ae60' : '#e8f0fe',
-//                     border: batchMode ? '1px solid #27ae60' : '1px solid #4a6fa5',
-//                     borderRadius: '4px',
-//                     fontSize: '11px',
-//                     cursor: 'pointer',
-//                     color: batchMode ? 'white' : '#4a6fa5'
-//                   }}
-//                 >
-//                   {batchMode ? 'Batch ON' : 'Batch'}
-//                 </button>
-//               )}
-//               {batchMode && batchDocuments.length > 0 && (
-//                 <button
-//                   onClick={() => {
-//                     if (scannerDocType || batchDocuments.length === 0) {
-//                       setShowBatchUpload(true);
-//                     } else {
-//                       alert('Please select a document type first.');
-//                     }
-//                   }}
-//                   style={{
-//                     padding: '4px 12px',
-//                     background: '#27ae60',
-//                     border: 'none',
-//                     borderRadius: '4px',
-//                     fontSize: '11px',
-//                     cursor: 'pointer',
-//                     color: 'white'
-//                   }}
-//                 >
-//                   Upload ({batchDocuments.length})
-//                 </button>
-//               )}
-//               <button 
-//                 className="modal-close" 
-//                 onClick={() => {
-//                   setShowScanner(false);
-//                   setBatchMode(false);
-//                   setBatchDocuments([]);
-//                   setScannerUploadStatus('');
-//                 }}
-//                 style={{
-//                   background: 'transparent',
-//                   border: 'none',
-//                   fontSize: '20px',
-//                   cursor: 'pointer',
-//                   color: '#666',
-//                   padding: '4px 8px'
-//                 }}
-//               >
-//                 ✕
-//               </button>
-//             </div>
-//           </div>
-
-//           <div style={{ padding: '16px 20px 20px', maxHeight: '80vh', overflowY: 'auto' }}>
-//             {/* Upload Area */}
-//             {!capturedImage && !showScanPreview && (
-//               <div 
-//                 onDrop={handleFileDrop}
-//                 onDragOver={(e) => e.preventDefault()}
-//                 onClick={triggerFileInput}
-//                 style={{
-//                   border: '2px dashed #dde1e8',
-//                   borderRadius: '12px',
-//                   padding: '40px 20px',
-//                   textAlign: 'center',
-//                   background: '#fafbfc',
-//                   cursor: 'pointer',
-//                   transition: 'all 0.3s ease',
-//                   minHeight: '200px',
-//                   display: 'flex',
-//                   flexDirection: 'column',
-//                   alignItems: 'center',
-//                   justifyContent: 'center',
-//                   borderColor: '#dde1e8'
-//                 }}
-//                 onMouseEnter={(e) => {
-//                   e.currentTarget.style.borderColor = '#4a6fa5';
-//                   e.currentTarget.style.background = '#f0f4fe';
-//                 }}
-//                 onMouseLeave={(e) => {
-//                   e.currentTarget.style.borderColor = '#dde1e8';
-//                   e.currentTarget.style.background = '#fafbfc';
-//                 }}
-//               >
-//                 <input
-//                   ref={fileInputRef}
-//                   type="file"
-//                   accept="image/*"
-//                   onChange={handleImageUpload}
-//                   style={{ display: 'none' }}
-//                 />
-//                 <span style={{ fontSize: '48px', display: 'block', marginBottom: '12px' }}>🖼️</span>
-//                 <h4 style={{ margin: 0, color: '#333', fontSize: '16px' }}>Upload Document Image</h4>
-//                 <p style={{ margin: '8px 0 4px', color: '#888', fontSize: '14px' }}>
-//                   Click or drag and drop an image of your document
-//                 </p>
-//                 <p style={{ margin: 0, color: '#aaa', fontSize: '12px' }}>
-//                   Supports JPG, PNG, GIF, WebP (Max 20MB)
-//                 </p>
-//                 {batchMode && (
-//                   <div style={{
-//                     marginTop: '12px',
-//                     padding: '8px 16px',
-//                     background: '#d4edda',
-//                     borderRadius: '6px',
-//                     color: '#155724',
-//                     fontSize: '13px'
-//                   }}>
-//                     Batch Mode: {batchDocuments.length} document{batchDocuments.length !== 1 ? 's' : ''} scanned
-//                   </div>
-//                 )}
-//               </div>
-//             )}
-
-//             {/* Batch Documents Preview */}
-//             {batchMode && batchDocuments.length > 0 && !capturedImage && !showScanPreview && (
-//               <div style={{
-//                 marginTop: '12px',
-//                 display: 'grid',
-//                 gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))',
-//                 gap: '8px'
-//               }}>
-//                 {batchDocuments.map((doc, index) => (
-//                   <div key={doc.id} style={{
-//                     position: 'relative',
-//                     borderRadius: '6px',
-//                     overflow: 'hidden',
-//                     border: '1px solid #eef2f7',
-//                     background: 'white'
-//                   }}>
-//                     <img 
-//                       src={doc.preview} 
-//                       alt={`Doc ${index + 1}`}
-//                       style={{
-//                         width: '100%',
-//                         height: '80px',
-//                         objectFit: 'cover'
-//                       }}
-//                     />
-//                     <button
-//                       onClick={() => removeBatchDocument(doc.id)}
-//                       style={{
-//                         position: 'absolute',
-//                         top: '2px',
-//                         right: '2px',
-//                         background: 'rgba(231,76,60,0.9)',
-//                         color: 'white',
-//                         border: 'none',
-//                         borderRadius: '50%',
-//                         width: '20px',
-//                         height: '20px',
-//                         cursor: 'pointer',
-//                         fontSize: '10px',
-//                         display: 'flex',
-//                         alignItems: 'center',
-//                         justifyContent: 'center'
-//                       }}
-//                     >
-//                       ✕
-//                     </button>
-//                     <div style={{
-//                       fontSize: '8px',
-//                       padding: '2px 4px',
-//                       background: 'rgba(0,0,0,0.7)',
-//                       color: 'white',
-//                       position: 'absolute',
-//                       bottom: 0,
-//                       left: 0,
-//                       right: 0,
-//                       textAlign: 'center'
-//                     }}>
-//                       #{index + 1}
-//                     </div>
-//                   </div>
-//                 ))}
-//               </div>
-//             )}
-
-//             {/* Image Preview with Filters */}
-//             {capturedImage && !showScanPreview && (
-//               <div>
-//                 <div style={{
-//                   position: 'relative',
-//                   borderRadius: '12px',
-//                   overflow: 'hidden',
-//                   background: '#f5f5f5',
-//                   marginBottom: '16px',
-//                   maxHeight: '450px',
-//                   display: 'flex',
-//                   justifyContent: 'center',
-//                   alignItems: 'center'
-//                 }}>
-//                   <img 
-//                     src={capturedImage} 
-//                     alt="Document to scan"
-//                     style={{ 
-//                       width: '100%', 
-//                       height: 'auto', 
-//                       maxHeight: '450px',
-//                       objectFit: 'contain'
-//                     }}
-//                   />
-//                   {/* Document corner overlay */}
-//                   <div style={{
-//                     position: 'absolute',
-//                     top: '8px',
-//                     left: '8px',
-//                     right: '8px',
-//                     bottom: '8px',
-//                     border: '2px solid rgba(74,111,165,0.3)',
-//                     borderRadius: '8px',
-//                     pointerEvents: 'none'
-//                   }}>
-//                     <div style={{
-//                       position: 'absolute',
-//                       top: '-6px',
-//                       left: '-6px',
-//                       width: '20px',
-//                       height: '20px',
-//                       borderTop: '3px solid #4a6fa5',
-//                       borderLeft: '3px solid #4a6fa5',
-//                       borderRadius: '4px 0 0 0'
-//                     }} />
-//                     <div style={{
-//                       position: 'absolute',
-//                       top: '-6px',
-//                       right: '-6px',
-//                       width: '20px',
-//                       height: '20px',
-//                       borderTop: '3px solid #4a6fa5',
-//                       borderRight: '3px solid #4a6fa5',
-//                       borderRadius: '0 4px 0 0'
-//                     }} />
-//                     <div style={{
-//                       position: 'absolute',
-//                       bottom: '-6px',
-//                       left: '-6px',
-//                       width: '20px',
-//                       height: '20px',
-//                       borderBottom: '3px solid #4a6fa5',
-//                       borderLeft: '3px solid #4a6fa5',
-//                       borderRadius: '0 0 0 4px'
-//                     }} />
-//                     <div style={{
-//                       position: 'absolute',
-//                       bottom: '-6px',
-//                       right: '-6px',
-//                       width: '20px',
-//                       height: '20px',
-//                       borderBottom: '3px solid #4a6fa5',
-//                       borderRight: '3px solid #4a6fa5',
-//                       borderRadius: '0 0 4px 0'
-//                     }} />
-//                   </div>
-//                 </div>
-
-//                 {/* Filter Controls */}
-//                 <div style={{
-//                   display: 'flex',
-//                   gap: '6px',
-//                   flexWrap: 'wrap',
-//                   marginBottom: '12px',
-//                   alignItems: 'center'
-//                 }}>
-//                   <span style={{ fontSize: '12px', fontWeight: '500', color: '#666' }}>Filter:</span>
-//                   {['original', 'grayscale', 'blackwhite', 'enhanced', 'magic', 'document'].map((filter) => (
-//                     <button
-//                       key={filter}
-//                       onClick={() => {
-//                         setFilterMode(filter);
-//                         if (originalImage) {
-//                           applyFilterToImage(originalImage, filter, rotationAngle).then(result => {
-//                             setCapturedImage(result);
-//                           });
-//                         }
-//                       }}
-//                       style={{
-//                         padding: '3px 10px',
-//                         background: filterMode === filter ? '#4a6fa5' : '#f0f2f7',
-//                         color: filterMode === filter ? 'white' : '#333',
-//                         border: 'none',
-//                         borderRadius: '4px',
-//                         fontSize: '11px',
-//                         cursor: 'pointer',
-//                         textTransform: 'capitalize'
-//                       }}
-//                     >
-//                       {filter === 'blackwhite' ? 'B&W' : filter}
-//                     </button>
-//                   ))}
-
-//                   <button
-//                     onClick={rotateImage}
-//                     style={{
-//                       padding: '3px 10px',
-//                       background: '#91a4d3',
-//                       border: 'none',
-//                       borderRadius: '4px',
-//                       fontSize: '11px',
-//                       cursor: 'pointer',
-//                       display: 'flex',
-//                       alignItems: 'center',
-//                       gap: '4px'
-//                     }}
-//                   >
-//                     <Rotate90DegreesCcwIcon style={{ fontSize: 14 }} />
-//                     Rotate
-//                   </button>
-
-//                   <button
-//                     onClick={resetImage}
-//                     style={{
-//                       padding: '3px 10px',
-//                       background: '#acbeea',
-//                       border: 'none',
-//                       borderRadius: '4px',
-//                       fontSize: '11px',
-//                       cursor: 'pointer',
-//                       display: 'flex',
-//                       alignItems: 'center',
-//                       gap: '4px',
-//                       color: '#e74c3c'
-//                     }}
-//                   >
-//                     <RefreshIcon style={{ fontSize: 14 }} />
-//                     Reset
-//                   </button>
-
-//                   {isProcessingScan && (
-//                     <span style={{ 
-//                       marginLeft: 'auto',
-//                       fontSize: '12px',
-//                       color: '#4a6fa5'
-//                     }}>
-//                       Processing... {scanProgress}%
-//                     </span>
-//                   )}
-//                 </div>
-
-//                 {/* Progress Bar */}
-//                 {isProcessingScan && (
-//                   <div style={{
-//                     width: '100%',
-//                     height: '4px',
-//                     background: '#eef2f7',
-//                     borderRadius: '2px',
-//                     marginBottom: '16px',
-//                     overflow: 'hidden'
-//                   }}>
-//                     <div style={{
-//                       width: `${scanProgress}%`,
-//                       height: '100%',
-//                       background: '#4a6fa5',
-//                       borderRadius: '2px',
-//                       transition: 'width 0.3s ease'
-//                     }} />
-//                   </div>
-//                 )}
-
-//                 {/* Action Buttons */}
-//                 <div style={{
-//                   display: 'flex',
-//                   gap: '12px',
-//                   flexWrap: 'wrap',
-//                   justifyContent: 'center'
-//                 }}>
-//                   <button
-//                     onClick={clearCurrentImage}
-//                     style={{
-//                       padding: '10px 24px',
-//                       background: '#e74c3c',
-//                       color: 'white',
-//                       border: 'none',
-//                       borderRadius: '8px',
-//                       fontSize: '14px',
-//                       cursor: 'pointer',
-//                       display: 'flex',
-//                       alignItems: 'center',
-//                       gap: '8px'
-//                     }}
-//                   >
-//                     <CloseIcon style={{ fontSize: 18 }} />
-//                     Cancel
-//                   </button>
-//                   <button
-//                     onClick={processScannedImage}
-//                     disabled={isProcessingScan}
-//                     style={{
-//                       padding: '10px 32px',
-//                       background: isProcessingScan ? '#ccc' : '#27ae60',
-//                       color: 'white',
-//                       border: 'none',
-//                       borderRadius: '8px',
-//                       fontSize: '14px',
-//                       fontWeight: '600',
-//                       cursor: isProcessingScan ? 'not-allowed' : 'pointer',
-//                       display: 'flex',
-//                       alignItems: 'center',
-//                       gap: '8px'
-//                     }}
-//                   >
-//                     {isProcessingScan ? 'Processing...' : 'Scan Document'}
-//                   </button>
-//                 </div>
-//               </div>
-//             )}
-
-//             {/* Scan Preview / Upload */}
-//             {showScanPreview && capturedImage && (
-//               <div>
-//                 <div style={{
-//                   display: 'flex',
-//                   alignItems: 'center',
-//                   gap: '12px',
-//                   marginBottom: '16px',
-//                   background: '#d4edda',
-//                   padding: '10px 16px',
-//                   borderRadius: '8px',
-//                   color: '#155724'
-//                 }}>
-//                   <span>Document scanned successfully! Select document type and upload.</span>
-//                 </div>
-
-//                 <div style={{ 
-//                   display: 'grid', 
-//                   gridTemplateColumns: '1fr 1fr',
-//                   gap: '16px',
-//                   marginBottom: '16px'
-//                 }}>
-//                   <div>
-//                     <label style={{ 
-//                       display: 'block',
-//                       fontSize: '13px',
-//                       fontWeight: '500',
-//                       color: '#333',
-//                       marginBottom: '4px'
-//                     }}>
-//                       Document Type *
-//                     </label>
-//                     <select
-//                       value={scannerDocType}
-//                       onChange={(e) => setScannerDocType(e.target.value)}
-//                       style={{
-//                         width: '100%',
-//                         padding: '10px 14px',
-//                         border: '1px solid #dde1e8',
-//                         borderRadius: '8px',
-//                         fontSize: '14px',
-//                         background: 'white'
-//                       }}
-//                       required
-//                     >
-//                       <option value="">Select Document Type</option>
-//                       <option value="Accomplishment">Accomplishment Report</option>
-//                       <option value="Certificates">Certificates</option>
-//                       <option value="DTR">Daily Time Record (DTR)</option>
-//                       <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
-//                       <option value="Pass Slip">Pass Slip</option>
-//                       <option value="Personal Data Sheet">Personal Data Sheet</option>
-//                       <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-//                       <option value="Other">Other Document</option>
-//                     </select>
-//                   </div>
-//                   <div>
-//                     <label style={{ 
-//                       display: 'block',
-//                       fontSize: '13px',
-//                       fontWeight: '500',
-//                       color: '#333',
-//                       marginBottom: '4px'
-//                     }}>
-//                       Quality
-//                     </label>
-//                     <select
-//                       value={scanningQuality}
-//                       onChange={(e) => setScanningQuality(e.target.value)}
-//                       style={{
-//                         width: '100%',
-//                         padding: '10px 14px',
-//                         border: '1px solid #dde1e8',
-//                         borderRadius: '8px',
-//                         fontSize: '14px',
-//                         background: 'white'
-//                       }}
-//                     >
-//                       <option value="high">High Quality</option>
-//                       <option value="medium">Medium Quality</option>
-//                       <option value="low">Low Quality (Smaller File)</option>
-//                     </select>
-//                   </div>
-//                 </div>
-
-//                 <div style={{
-//                   display: 'flex',
-//                   gap: '12px',
-//                   flexWrap: 'wrap',
-//                   justifyContent: 'flex-end'
-//                 }}>
-//                   <button
-//                     onClick={() => {
-//                       setShowScanPreview(false);
-//                       setCapturedImage(originalImage || null);
-//                       setFilterMode('original');
-//                       setRotationAngle(0);
-//                       setScannedFile(null);
-//                       setScannerUploadStatus('');
-//                     }}
-//                     style={{
-//                       padding: '10px 20px',
-//                       background: '#f0f2f7',
-//                       color: '#333',
-//                       border: 'none',
-//                       borderRadius: '8px',
-//                       fontSize: '14px',
-//                       cursor: 'pointer'
-//                     }}
-//                   >
-//                     Rescan
-//                   </button>
-//                   <button
-//                     onClick={uploadScannedDocument}
-//                     disabled={!scannerDocType || uploading}
-//                     style={{
-//                       padding: '10px 32px',
-//                       background: (!scannerDocType || uploading) ? '#ccc' : '#4a6fa5',
-//                       color: 'white',
-//                       border: 'none',
-//                       borderRadius: '8px',
-//                       fontSize: '14px',
-//                       fontWeight: '600',
-//                       cursor: (!scannerDocType || uploading) ? 'not-allowed' : 'pointer',
-//                       display: 'flex',
-//                       alignItems: 'center',
-//                       gap: '8px'
-//                     }}
-//                   >
-//                     {uploading ? 'Uploading...' : 'Upload Document'}
-//                   </button>
-//                 </div>
-
-//                 {scannerUploadStatus && (
-//                   <p style={{
-//                     marginTop: '12px',
-//                     fontSize: '13px',
-//                     color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
-//                            scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
-//                     textAlign: 'center',
-//                     padding: '8px',
-//                     background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
-//                                scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
-//                     borderRadius: '6px'
-//                   }}>
-//                     {scannerUploadStatus}
-//                   </p>
-//                 )}
-//               </div>
-//             )}
-//           </div>
-//         </div>
-//       </div>
-//     );
-//   };
-
-//   // ====== RENDER BATCH UPLOAD MODAL ======
-// const renderBatchUploadModal = () => {
-//   if (!showBatchUpload) return null;
-
-//   return (
-//     <div className="modal-overlay" onClick={() => setShowBatchUpload(false)}>
-//       <div className="modal-form" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px', maxHeight: '80vh', borderRadius: '12px' }}>
-//         <div className="modal-header" style={{ padding: '16px 20px', borderBottom: '1px solid #eef2f7' }}>
-//           <h3 style={{ margin: 0 }}> Batch Upload - {batchDocuments.length} Documents</h3>
-//           <button className="modal-close" onClick={() => setShowBatchUpload(false)} style={{
-//             background: 'transparent',
-//             border: 'none',
-//             fontSize: '20px',
-//             cursor: 'pointer',
-//             color: '#666'
-//           }}>✕</button>
-//         </div>
-
-//         <div style={{ padding: '16px 20px', maxHeight: '400px', overflowY: 'auto' }}>
-//           <div style={{ marginBottom: '16px' }}>
-//             <label style={{ 
-//               display: 'block',
-//               fontSize: '13px',
-//               fontWeight: '500',
-//               color: '#333',
-//               marginBottom: '4px'
-//             }}>
-//               Document Type *
-//             </label>
-//             <select
-//               value={scannerDocType}
-//               onChange={(e) => setScannerDocType(e.target.value)}
-//               style={{
-//                 width: '100%',
-//                 padding: '10px 14px',
-//                 border: '1px solid #dde1e8',
-//                 borderRadius: '8px',
-//                 fontSize: '14px'
-//               }}
-//               required
-//             >
-//               <option value="">Select Document Type</option>
-//               <option value="Accomplishment">Accomplishment Report</option>
-//               <option value="Certificates">Certificates</option>
-//               <option value="DTR">Daily Time Record (DTR)</option>
-//               <option value="IPCR">Individual Performance Commitment and Review (IPCR)</option>
-//               <option value="Pass Slip">Pass Slip</option>
-//               <option value="Personal Data Sheet">Personal Data Sheet</option>
-//               <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
-//             </select>
-//           </div>
-
-//           <div style={{ 
-//             display: 'grid', 
-//             gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-//             gap: '12px',
-//             marginBottom: '16px'
-//           }}>
-//             {batchDocuments.map((doc) => (
-//               <div key={doc.id} style={{
-//                 position: 'relative',
-//                 background: '#f8fafd',
-//                 borderRadius: '8px',
-//                 overflow: 'hidden',
-//                 border: '1px solid #eef2f7'
-//               }}>
-//                 <img 
-//                   src={doc.preview} 
-//                   alt={doc.fileName}
-//                   style={{
-//                     width: '100%',
-//                     height: '120px',
-//                     objectFit: 'cover'
-//                   }}
-//                 />
-//                 <button
-//                   onClick={() => removeBatchDocument(doc.id)}
-//                   style={{
-//                     position: 'absolute',
-//                     top: '4px',
-//                     right: '4px',
-//                     background: 'rgba(231, 76, 60, 0.9)',
-//                     color: 'white',
-//                     border: 'none',
-//                     borderRadius: '50%',
-//                     width: '24px',
-//                     height: '24px',
-//                     cursor: 'pointer',
-//                     fontSize: '12px',
-//                     display: 'flex',
-//                     alignItems: 'center',
-//                     justifyContent: 'center'
-//                   }}
-//                 >
-//                   ✕
-//                 </button>
-//                 <div style={{
-//                   padding: '6px 8px',
-//                   fontSize: '10px',
-//                   color: '#666',
-//                   overflow: 'hidden',
-//                   textOverflow: 'ellipsis',
-//                   whiteSpace: 'nowrap'
-//                 }}>
-//                   {doc.fileName}
-//                 </div>
-//               </div>
-//             ))}
-//             {batchDocuments.length === 0 && (
-//               <div style={{ 
-//                 gridColumn: '1 / -1',
-//                 textAlign: 'center',
-//                 padding: '30px',
-//                 color: '#999'
-//               }}>
-//                 No documents scanned yet. Add documents using the scanner.
-//               </div>
-//             )}
-//           </div>
-//         </div>
-
-//         <div style={{
-//           display: 'flex',
-//           gap: '12px',
-//           justifyContent: 'flex-end',
-//           borderTop: '1px solid #eef2f7',
-//           padding: '16px 20px'
-//         }}>
-//           <button
-//             onClick={() => {
-//               setShowBatchUpload(false);
-//               setCapturedImage(null);
-//             }}
-//             style={{
-//               padding: '10px 20px',
-//               background: '#f0f2f7',
-//               color: '#333',
-//               border: 'none',
-//               borderRadius: '8px',
-//               fontSize: '14px',
-//               cursor: 'pointer'
-//             }}
-//           >
-//             Cancel
-//           </button>
-//           <button
-//             onClick={uploadBatchDocuments}
-//             disabled={!scannerDocType || uploading || batchDocuments.length === 0}
-//             style={{
-//               padding: '10px 32px',
-//               background: (!scannerDocType || uploading || batchDocuments.length === 0) ? '#ccc' : '#27ae60',
-//               color: 'white',
-//               border: 'none',
-//               borderRadius: '8px',
-//               fontSize: '14px',
-//               fontWeight: '600',
-//               cursor: (!scannerDocType || uploading || batchDocuments.length === 0) ? 'not-allowed' : 'pointer',
-//               display: 'flex',
-//               alignItems: 'center',
-//               gap: '8px'
-//             }}
-//           >
-//             {uploading ? 'Uploading...' : `Upload All (${batchDocuments.length})`}
-//           </button>
-//         </div>
-
-//         {scannerUploadStatus && (
-//           <p style={{
-//             margin: '0 20px 16px 20px',
-//             fontSize: '13px',
-//             color: scannerUploadStatus.includes('✅') ? '#27ae60' : 
-//                    scannerUploadStatus.includes('❌') ? '#e74c3c' : '#666',
-//             textAlign: 'center',
-//             padding: '8px',
-//             background: scannerUploadStatus.includes('✅') ? '#d4edda' : 
-//                        scannerUploadStatus.includes('❌') ? '#f8d7da' : '#f8f9fa',
-//             borderRadius: '6px'
-//           }}>
-//             {scannerUploadStatus}
-//           </p>
-//         )}
-//       </div>
-//     </div>
-//   );
-// };
 
   // ====== RENDER COMPLIANCE TAB ======
   const renderCompliance = () => {
     const formData = selectedForm ? complianceFiles.find(f => f.id === selectedForm) : null;
+
+    // Build groups for uploaded documents
+    const groupedDocuments = documents.reduce((acc, doc) => {
+      const key = doc.documentType || 'Uncategorized';
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(doc);
+      return acc;
+    }, {});
+    const groupKeys = Object.keys(groupedDocuments).sort((a, b) => a.localeCompare(b));
 
     return (
       <div className="employee-compliance-content" style={{ padding: '20px' }}>
@@ -3279,25 +2037,6 @@ function EmployeePortal() {
         }}>
           <h2 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold', color: '#1a2a4a' }}>My Compliance</h2>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {/* <button 
-              onClick={openScanner}
-              className="btn-add-modern"
-              style={{
-                padding: '8px 16px',
-                background: '#27ae60',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: '500',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}
-            >
-              Scan Document
-            </button> */}
             <button 
               onClick={() => setShowUploadForm(true)} 
               className="btn-add-modern"
@@ -3373,7 +2112,7 @@ function EmployeePortal() {
             Compliance Forms
           </h3>
           <p style={{ color: '#888', fontSize: '13px', marginBottom: '16px' }}>
-            Click a form to view and edit the PDF
+            Click a form to view PDF
           </p>
           
           <div style={{ 
@@ -3416,7 +2155,7 @@ function EmployeePortal() {
           </div>
         </div>
 
-        {/* Uploaded Documents */}
+        {/* ====== Uploaded Documents (Grouped by Document Type) ====== */}
         <div className="documents-list">
           <h3 style={{ 
             fontSize: '16px', 
@@ -3425,51 +2164,169 @@ function EmployeePortal() {
             marginBottom: '12px'
           }}>
             Uploaded Documents
+            <span style={{ fontSize: '13px', fontWeight: 'normal', color: '#888', marginLeft: 8 }}>
+              ({documents.length} file{documents.length !== 1 ? 's' : ''} in {groupKeys.length} group{groupKeys.length !== 1 ? 's' : ''})
+            </span>
           </h3>
-          {documents.map(doc => (
-            <div key={doc.id} className="doc-item-card" style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '12px 16px',
-              background: 'white',
-              borderRadius: '8px',
-              border: '1px solid #eef2f7',
-              marginBottom: '8px'
-            }}>
-              <div className="doc-item-info" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span className="doc-item-name" style={{ fontWeight: '500' }}>{doc.documentType}</span>
-                {doc.scanned && <span style={{ fontSize: '11px', color: '#27ae60' }}>📄 Scanned</span>}
-                {getDocStatusBadge(doc.status)}
-              </div>
-              <div className="doc-item-actions">
-                {doc.fileUrl && (
-                  <button
-                    onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
-                    className="btn-view-doc"
+
+          {documents.length === 0 && (
+            <p className="no-data" style={{ textAlign: 'center', color: '#999', padding: '20px' }}>
+              No documents found
+            </p>
+          )}
+
+          {groupKeys.map(groupKey => {
+            const files = groupedDocuments[groupKey];
+            const isExpanded = !!expandedGroups[groupKey];
+
+            // Determine aggregated group status
+            const statuses = files.map(f => f.status);
+            const allComplete = statuses.every(s => s === 'Complete');
+            const anyMissing = statuses.some(s => s === 'Missing');
+            const groupStatus = allComplete
+              ? 'Complete'
+              : anyMissing
+              ? 'Missing'
+              : 'Pending Review';
+
+            return (
+              <div
+                key={groupKey}
+                style={{
+                  background: 'white',
+                  borderRadius: '8px',
+                  border: '1px solid #eef2f7',
+                  marginBottom: '8px',
+                  overflow: 'hidden'
+                }}
+              >
+                {/* Group header (clickable) */}
+                <div
+                  onClick={() =>
+                    setExpandedGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))
+                  }
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    cursor: 'pointer',
+                    background: isExpanded ? '#f8fafd' : 'white',
+                    borderBottom: isExpanded ? '1px solid #eef2f7' : 'none',
+                    transition: 'background 0.2s ease'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <FolderIcon style={{ fontSize: 20, color: '#4a6fa5' }} />
+                    <span style={{ fontWeight: '600', fontSize: '14px' }}>{groupKey}</span>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        background: '#e8f0fe',
+                        color: '#4a6fa5',
+                        padding: '2px 10px',
+                        borderRadius: '12px',
+                        fontWeight: '600'
+                      }}
+                    >
+                      {files.length} file{files.length !== 1 ? 's' : ''}
+                    </span>
+                    {getDocStatusBadge(groupStatus)}
+                  </div>
+                  <span
                     style={{
-                      padding: '6px 14px',
-                      background: '#4a6fa5',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '13px'
+                      fontSize: '18px',
+                      color: '#888',
+                      transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s ease'
                     }}
                   >
-                    <VisibilityIcon style={{ fontSize: 16 }} />
-                    View
-                  </button>
+                    ▶
+                  </span>
+                </div>
+
+                {/* Expanded file list */}
+                {isExpanded && (
+                  <div style={{ padding: '4px 0' }}>
+                    {files
+                      .slice()
+                      .sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''))
+                      .map(doc => (
+                        <div
+                          key={doc.id}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '10px 16px 10px 44px',
+                            borderTop: '1px solid #f4f6fa',
+                            gap: '8px',
+                            flexWrap: 'wrap'
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              flexWrap: 'wrap',
+                              minWidth: 0,
+                              flex: 1
+                            }}
+                          >
+                            <DescriptionIcon style={{ fontSize: 16, color: '#8a9bb5', flexShrink: 0 }} />
+                            <span
+                              style={{
+                                fontSize: '13px',
+                                color: '#333',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '280px'
+                              }}
+                              title={doc.fileName}
+                            >
+                              {doc.fileName || 'Unnamed file'}
+                            </span>
+                            {doc.scanned && (
+                              <span style={{ fontSize: '11px', color: '#27ae60' }}>📄 Scanned</span>
+                            )}
+                            {getDocStatusBadge(doc.status)}
+                            <span style={{ fontSize: '11px', color: '#aaa' }}>
+                              {doc.uploadedAt
+                                ? new Date(doc.uploadedAt).toLocaleDateString()
+                                : ''}
+                            </span>
+                          </div>
+                          <div>
+                            {doc.fileUrl && (
+                              <button
+                                onClick={() => openFileViewer(doc.fileUrl, doc.fileName)}
+                                style={{
+                                  padding: '5px 12px',
+                                  background: '#4a6fa5',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '12px'
+                                }}
+                              >
+                                <VisibilityIcon style={{ fontSize: 14 }} />
+                                View
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
                 )}
               </div>
-            </div>
-          ))}
-          {documents.length === 0 && (
-            <p className="no-data" style={{ textAlign: 'center', color: '#999', padding: '20px' }}>No documents found</p>
-          )}
+            );
+          })}
         </div>
 
         {/* PDF Viewer Modal */}
@@ -3614,10 +2471,14 @@ function EmployeePortal() {
                     <option value="SALN">Statement of Assets, Liabilities, and Net Worth (SALN)</option>
                   </select>
                 </div>
+
                 <div className="form-group" style={{ marginBottom: '16px' }}>
-                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>Choose File</label>
+                  <label style={{ display: 'block', marginBottom: '4px', fontWeight: '500', fontSize: '14px' }}>
+                    Choose File(s) <span style={{ color: '#888', fontWeight: 'normal' }}>— you can select multiple</span>
+                  </label>
                   <input
                     type="file"
+                    multiple
                     onChange={handleFileSelect}
                     className="upload-input"
                     accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
@@ -3630,11 +2491,68 @@ function EmployeePortal() {
                     }}
                     required
                   />
-                  {selectedFile && (
-                    <span className="file-name" style={{ fontSize: '13px', color: '#666', marginTop: '4px', display: 'block' }}>
-                      {selectedFile.name} 
-                      ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
-                    </span>
+                  {selectedFiles.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: '8px',
+                        padding: '8px 12px',
+                        background: '#f8fafd',
+                        borderRadius: '8px',
+                        border: '1px solid #eef2f7',
+                        fontSize: '13px'
+                      }}
+                    >
+                      <div style={{ fontWeight: '600', marginBottom: '6px', color: '#4a6fa5' }}>
+                        {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected:
+                      </div>
+                      {selectedFiles.map((f, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            padding: '4px 0',
+                            borderTop: idx > 0 ? '1px dashed #e6ecf5' : 'none'
+                          }}
+                        >
+                          <span
+                            style={{
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '300px'
+                            }}
+                            title={f.name}
+                          >
+                            {f.name}
+                          </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#888', fontSize: '11px' }}>
+                              {(f.size / 1024 / 1024).toFixed(2)} MB
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedFiles(prev => prev.filter((_, i) => i !== idx))
+                              }
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: '#e74c3c',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                lineHeight: 1,
+                                padding: '0 4px'
+                              }}
+                              title="Remove"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
 
@@ -3642,19 +2560,21 @@ function EmployeePortal() {
                   <button 
                     onClick={handleDocumentUpload} 
                     className="btn-save" 
-                    disabled={uploading || !selectedFile || !selectedDocType}
+                    disabled={uploading || selectedFiles.length === 0 || !selectedDocType}
                     style={{
                       padding: '10px 32px',
-                      background: (!uploading && selectedFile && selectedDocType) ? '#4a6fa5' : '#ccc',
+                      background: (!uploading && selectedFiles.length > 0 && selectedDocType) ? '#4a6fa5' : '#ccc',
                       color: 'white',
                       border: 'none',
                       borderRadius: '8px',
                       fontSize: '14px',
                       fontWeight: '600',
-                      cursor: (!uploading && selectedFile && selectedDocType) ? 'pointer' : 'not-allowed'
+                      cursor: (!uploading && selectedFiles.length > 0 && selectedDocType) ? 'pointer' : 'not-allowed'
                     }}
                   >
-                    {uploading ? 'Uploading...' : 'Upload File'}
+                    {uploading
+                      ? `Uploading ${uploadProgress}%...`
+                      : `Upload ${selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''} File${selectedFiles.length !== 1 ? 's' : ''}`}
                   </button>
                   <button 
                     type="button" 
@@ -3674,7 +2594,7 @@ function EmployeePortal() {
                     Cancel
                   </button>
                 </div>
-                {uploadStatus && <p className="upload-status" style={{ marginTop: '12px', fontSize: '13px', color: uploadStatus.includes('success') ? '#27ae60' : '#e74c3c', textAlign: 'center' }}>{uploadStatus}</p>}
+                {uploadStatus && <p className="upload-status" style={{ marginTop: '12px', fontSize: '13px', color: uploadStatus.includes('success') || uploadStatus.includes('✅') ? '#27ae60' : uploadStatus.includes('⚠️') ? '#e67e22' : '#666', textAlign: 'center' }}>{uploadStatus}</p>}
                 {uploading && uploadProgress > 0 && (
                   <div className="progress-bar" style={{ marginTop: '10px' }}>
                     <div 
@@ -3923,295 +2843,289 @@ function EmployeePortal() {
   );
 
   // ====== RENDER ATTENDANCE ======
-const renderAttendance = () => (
-  <div className="employee-attendance-content">
-    <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
-      <h2 style={{ margin: 0 }}><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="stats-badge" style={{ padding: '6px 14px', background: '#678ed2', borderRadius: '6px', fontSize: '13px' }}>{new Date().toLocaleDateString()}</span>
-        <button 
-          onClick={downloadAttendancePDF}
-          disabled={attendanceRecords.length === 0}
-          style={{
-            padding: '8px 18px',
-            background: attendanceRecords.length === 0 ? '#ccc' : '#e74c3c',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '13px',
-            fontWeight: '500',
-            cursor: attendanceRecords.length === 0 ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            opacity: attendanceRecords.length === 0 ? 0.6 : 1
-          }}
-        >
-          <PictureAsPdfIcon style={{ fontSize: 18 }} />
-          Download PDF
-        </button>
-      </div>
-    </div>
-
-    <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
-      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-        <div className="stat-icon blue" style={{ fontSize: '24px' }}><EventNoteIcon /></div>
-        <div className="stat-info">
-          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Days</h3>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.totalDays}</p>
-        </div>
-      </div>
-      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-        <div className="stat-icon green" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
-        <div className="stat-info">
-          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Present</h3>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.presentDays}</p>
-        </div>
-      </div>
-      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-        <div className="stat-icon orange" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#f39c12' }} /></div>
-        <div className="stat-info">
-          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Late</h3>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.lateDays}</p>
-        </div>
-      </div>
-      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-        <div className="stat-icon purple" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#8e44ad' }} /></div>
-        <div className="stat-info">
-          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Under Time</h3>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.underTimeDays || 0}</p>
-        </div>
-      </div>
-      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-        <div className="stat-icon success" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
-        <div className="stat-info">
-          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Over Time</h3>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.overTimeDays || 0}</p>
-        </div>
-      </div>
-      <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
-        <div className="stat-icon red" style={{ fontSize: '24px' }}><CancelIcon style={{ color: '#e74c3c' }} /></div>
-        <div className="stat-info">
-          <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Absent</h3>
-          <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.absentDays || 0}</p>
-        </div>
-      </div>
-    </div>
-
-    <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
-        <AccessTimeIcon />
-        Today's Attendance
-      </h3>
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '15px',
-        padding: '10px 0'
-      }}>
-        <div>
-          <p style={{ margin: '5px 0' }}>
-            <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
-          </p>
-          {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
-          {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
-          <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
-            <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+  const renderAttendance = () => (
+    <div className="employee-attendance-content">
+      <div className="section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+        <h2 style={{ margin: 0 }}><AccessTimeIcon style={{ fontSize: 24, marginRight: 10, verticalAlign: 'middle' }} /> My Attendance</h2>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="stats-badge" style={{ padding: '6px 14px', background: '#678ed2', borderRadius: '6px', fontSize: '13px' }}>{new Date().toLocaleDateString()}</span>
           <button 
-            onClick={handleTimeIn} 
-            className="btn-time-in"
-            disabled={attendanceLoading}
+            onClick={downloadAttendancePDF}
+            disabled={attendanceRecords.length === 0}
             style={{
-              padding: '12px 30px',
-              background: '#4a6fa5',
+              padding: '8px 18px',
+              background: attendanceRecords.length === 0 ? '#ccc' : '#e74c3c',
               color: 'white',
               border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+              borderRadius: '6px',
+              fontSize: '13px',
+              fontWeight: '500',
+              cursor: attendanceRecords.length === 0 ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              opacity: attendanceLoading ? 0.7 : 1
+              gap: '6px',
+              opacity: attendanceRecords.length === 0 ? 0.6 : 1
             }}
           >
-            <LoginIcon style={{ fontSize: 20 }} />
-            {attendanceLoading ? 'Processing...' : 'Time In'}
-          </button>
-          <button 
-            onClick={handleTimeOut} 
-            className="btn-time-out"
-            disabled={attendanceLoading || !isTimedIn}
-            style={{
-              padding: '12px 30px',
-              background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '16px',
-              fontWeight: '600',
-              cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px'
-            }}
-          >
-            <Logout style={{ fontSize: 20 }} />
-            {attendanceLoading ? 'Processing...' : 'Time Out'}
+            <PictureAsPdfIcon style={{ fontSize: 18 }} />
+            Download PDF
           </button>
         </div>
       </div>
-      {isTimedIn && isTimedOut && (
-        <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
-          You have completed your attendance entry. You can time in again if needed.
+
+      <div className="stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon blue" style={{ fontSize: '24px' }}><EventNoteIcon /></div>
+          <div className="stat-info">
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Total Days</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.totalDays}</p>
+          </div>
         </div>
-      )}
-      {isTimedIn && !isTimedOut && (
-        <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
-          You are currently timed in. Click "Time Out" when leaving.
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon green" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
+          <div className="stat-info">
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Present</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.presentDays}</p>
+          </div>
         </div>
-      )}
-    </div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon orange" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#f39c12' }} /></div>
+          <div className="stat-info">
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Late</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.lateDays}</p>
+          </div>
+        </div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon purple" style={{ fontSize: '24px' }}><WarningIcon style={{ color: '#8e44ad' }} /></div>
+          <div className="stat-info">
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Under Time</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.underTimeDays || 0}</p>
+          </div>
+        </div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon success" style={{ fontSize: '24px' }}><CheckCircleIcon style={{ color: '#27ae60' }} /></div>
+          <div className="stat-info">
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Over Time</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.overTimeDays || 0}</p>
+          </div>
+        </div>
+        <div className="stat-card" style={{ background: 'white', borderRadius: '10px', padding: '14px', textAlign: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.05)' }}>
+          <div className="stat-icon red" style={{ fontSize: '24px' }}><CancelIcon style={{ color: '#e74c3c' }} /></div>
+          <div className="stat-info">
+            <h3 style={{ margin: '4px 0', fontSize: '13px', color: '#666' }}>Absent</h3>
+            <p style={{ margin: 0, fontSize: '20px', fontWeight: 'bold', color: '#333' }}>{attendanceSummary.absentDays || 0}</p>
+          </div>
+        </div>
+      </div>
 
-    <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-      <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
-        <TimelineIcon />
-        Attendance History
-      </h3>
-      <div className="table-container" style={{ overflowX: 'auto' }}>
-        <table className="attendance-table-modern" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-          <thead>
-            <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>#</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>Date</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM In</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM Out</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM Status</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM In</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM Out</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM Status</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>Daily Status</th>
-              <th style={{ padding: '10px 14px', textAlign: 'left' }}>Remarks</th>
-            </tr>
-          </thead>
-          <tbody>
-            {attendanceRecords.length > 0 ? (
-              (() => {
-                // Group records by date
-                const recordsByDate = {};
-                attendanceRecords.forEach(record => {
-                  if (!recordsByDate[record.date]) {
-                    recordsByDate[record.date] = [];
-                  }
-                  recordsByDate[record.date].push(record);
-                });
+      <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
+          <AccessTimeIcon />
+          Today's Attendance
+        </h3>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '15px',
+          padding: '10px 0'
+        }}>
+          <div>
+            <p style={{ margin: '5px 0' }}>
+              <strong>Status:</strong> {getAttendanceStatusBadge(attendanceStatus)}
+            </p>
+            {timeIn && <p style={{ margin: '5px 0' }}><strong>Time In:</strong> {timeIn}</p>}
+            {timeOut && <p style={{ margin: '5px 0' }}><strong>Time Out:</strong> {timeOut}</p>}
+            <p style={{ margin: '5px 0', fontSize: '13px', color: '#888' }}>
+              <strong>Office Hours:</strong> {officeStartTime} - {officeEndTime}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button 
+              onClick={handleTimeIn} 
+              className="btn-time-in"
+              disabled={attendanceLoading}
+              style={{
+                padding: '12px 30px',
+                background: '#4a6fa5',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: attendanceLoading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                opacity: attendanceLoading ? 0.7 : 1
+              }}
+            >
+              <LoginIcon style={{ fontSize: 20 }} />
+              {attendanceLoading ? 'Processing...' : 'Time In'}
+            </button>
+            <button 
+              onClick={handleTimeOut} 
+              className="btn-time-out"
+              disabled={attendanceLoading || !isTimedIn}
+              style={{
+                padding: '12px 30px',
+                background: (!isTimedIn || attendanceLoading) ? '#ccc' : '#e67e22',
+                color: 'white',
+                border: 'none',
+                borderRadius: '8px',
+                fontSize: '16px',
+                fontWeight: '600',
+                cursor: (!isTimedIn || attendanceLoading) ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px'
+              }}
+            >
+              <Logout style={{ fontSize: 20 }} />
+              {attendanceLoading ? 'Processing...' : 'Time Out'}
+            </button>
+          </div>
+        </div>
+        {isTimedIn && isTimedOut && (
+          <div style={{ marginTop: '10px', padding: '10px', background: '#d4edda', borderRadius: '8px', color: '#155724' }}>
+            You have completed your attendance entry. You can time in again if needed.
+          </div>
+        )}
+        {isTimedIn && !isTimedOut && (
+          <div style={{ marginTop: '10px', padding: '10px', background: '#fff3cd', borderRadius: '8px', color: '#856404' }}>
+            You are currently timed in. Click "Time Out" when leaving.
+          </div>
+        )}
+      </div>
 
-                // Sort dates (newest first)
-                const sortedDates = Object.keys(recordsByDate).sort((a, b) => b.localeCompare(a));
-
-                return sortedDates.slice(0, 50).map((date, index) => {
-                  const dayRecords = recordsByDate[date].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
-                  
-                  let amTimeIn = '—';
-                  let amTimeOut = '—';
-                  let amStatus = '—';
-                  let pmTimeIn = '—';
-                  let pmTimeOut = '—';
-                  let pmStatus = '—';
-                  let combinedStatus = 'Present';
-                  let remarks = '';
-
-                  dayRecords.forEach(record => {
-                    const entryNum = record.entryNumber || 1;
-                    const timeInVal = record.timeIn || '';
-                    const timeOutVal = record.timeOut || '';
-                    const status = record.status || 'Present';
-                    
-                    if (entryNum === 1 || entryNum === 0) {
-                      amTimeIn = timeInVal || '—';
-                      amTimeOut = timeOutVal || '—';
-                      amStatus = status;
-                    } else if (entryNum === 2) {
-                      pmTimeIn = timeInVal || '—';
-                      pmTimeOut = timeOutVal || '—';
-                      pmStatus = status;
+      <div className="form-card-modern" style={{ background: 'white', borderRadius: '12px', padding: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: 0, marginBottom: '10px' }}>
+          <TimelineIcon />
+          Attendance History
+        </h3>
+        <div className="table-container" style={{ overflowX: 'auto' }}>
+          <table className="attendance-table-modern" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+            <thead>
+              <tr style={{ background: '#f8fafd', borderBottom: '2px solid #eef2f7' }}>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>#</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Date</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM In</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM Out</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>AM Status</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM In</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM Out</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>PM Status</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Daily Status</th>
+                <th style={{ padding: '10px 14px', textAlign: 'left' }}>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendanceRecords.length > 0 ? (
+                (() => {
+                  const recordsByDate = {};
+                  attendanceRecords.forEach(record => {
+                    if (!recordsByDate[record.date]) {
+                      recordsByDate[record.date] = [];
                     }
-                    
-                    // Build remarks
-                    if (record.status === 'Under Time' && record.undertimeMinutes) {
-                      const remark = `Undertime: ${record.undertimeMinutes} mins`;
-                      remarks = remarks ? `${remarks}, ${remark}` : remark;
-                    } else if (record.status === 'Over Time' && record.overtimeMinutes) {
-                      const remark = `Overtime: ${record.overtimeMinutes} mins`;
-                      remarks = remarks ? `${remarks}, ${remark}` : remark;
-                    } else if (record.status === 'Late') {
-                      remarks = remarks ? `${remarks}, Late` : 'Late';
-                    } else if (record.status === 'On Time') {
-                      remarks = remarks ? `${remarks}, On time` : 'On time';
-                    }
+                    recordsByDate[record.date].push(record);
                   });
 
-                  // Determine combined status (PM takes precedence if exists)
-                  if (pmStatus && pmStatus !== '—' && pmStatus !== 'Present' && pmStatus !== 'On Time') {
-                    combinedStatus = pmStatus;
-                  } else if (amStatus && amStatus !== '—' && (amStatus === 'Late' || amStatus === 'Under Time')) {
-                    combinedStatus = amStatus;
-                  } else if (amStatus === 'Over Time' || pmStatus === 'Over Time') {
-                    combinedStatus = 'Over Time';
-                  } else if (amStatus === 'On Time' || pmStatus === 'On Time' || amStatus === 'Present' || pmStatus === 'Present') {
-                    combinedStatus = 'On Time';
-                  } else if (amStatus === '—' && pmStatus === '—') {
-                    combinedStatus = 'Absent';
-                  }
+                  const sortedDates = Object.keys(recordsByDate).sort((a, b) => b.localeCompare(a));
 
-                  // Clean up remarks
-                  if (remarks && remarks.startsWith(', ')) {
-                    remarks = remarks.substring(2);
-                  }
+                  return sortedDates.slice(0, 50).map((date, index) => {
+                    const dayRecords = recordsByDate[date].sort((a, b) => (a.entryNumber || 0) - (b.entryNumber || 0));
+                    
+                    let amTimeIn = '—';
+                    let amTimeOut = '—';
+                    let amStatus = '—';
+                    let pmTimeIn = '—';
+                    let pmTimeOut = '—';
+                    let pmStatus = '—';
+                    let combinedStatus = 'Present';
+                    let remarks = '';
 
-                  // Get status badge function
-                  const getStatusBadgeForTable = (status) => {
-                    if (status === '—' || status === 'Absent') {
-                      return <span className="status-badge secondary">{status}</span>;
+                    dayRecords.forEach(record => {
+                      const entryNum = record.entryNumber || 1;
+                      const timeInVal = record.timeIn || '';
+                      const timeOutVal = record.timeOut || '';
+                      const status = record.status || 'Present';
+                      
+                      if (entryNum === 1 || entryNum === 0) {
+                        amTimeIn = timeInVal || '—';
+                        amTimeOut = timeOutVal || '—';
+                        amStatus = status;
+                      } else if (entryNum === 2) {
+                        pmTimeIn = timeInVal || '—';
+                        pmTimeOut = timeOutVal || '—';
+                        pmStatus = status;
+                      }
+                      
+                      if (record.status === 'Under Time' && record.undertimeMinutes) {
+                        const remark = `Undertime: ${record.undertimeMinutes} mins`;
+                        remarks = remarks ? `${remarks}, ${remark}` : remark;
+                      } else if (record.status === 'Over Time' && record.overtimeMinutes) {
+                        const remark = `Overtime: ${record.overtimeMinutes} mins`;
+                        remarks = remarks ? `${remarks}, ${remark}` : remark;
+                      } else if (record.status === 'Late') {
+                        remarks = remarks ? `${remarks}, Late` : 'Late';
+                      } else if (record.status === 'On Time') {
+                        remarks = remarks ? `${remarks}, On time` : 'On time';
+                      }
+                    });
+
+                    if (pmStatus && pmStatus !== '—' && pmStatus !== 'Present' && pmStatus !== 'On Time') {
+                      combinedStatus = pmStatus;
+                    } else if (amStatus && amStatus !== '—' && (amStatus === 'Late' || amStatus === 'Under Time')) {
+                      combinedStatus = amStatus;
+                    } else if (amStatus === 'Over Time' || pmStatus === 'Over Time') {
+                      combinedStatus = 'Over Time';
+                    } else if (amStatus === 'On Time' || pmStatus === 'On Time' || amStatus === 'Present' || pmStatus === 'Present') {
+                      combinedStatus = 'On Time';
+                    } else if (amStatus === '—' && pmStatus === '—') {
+                      combinedStatus = 'Absent';
                     }
-                    return getAttendanceStatusBadge(status);
-                  };
 
-                  return (
-                    <tr key={date} style={{ borderBottom: '1px solid #f0f2f7' }}>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{index + 1}</td>
-                      <td style={{ padding: '10px 14px' }}>{date}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{amTimeIn}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{amTimeOut}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(amStatus)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{pmTimeIn}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{pmTimeOut}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(pmStatus)}</td>
-                      <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(combinedStatus)}</td>
-                      <td style={{ padding: '10px 14px', fontSize: '12px', color: '#666' }}>{remarks || '—'}</td>
-                    </tr>
-                  );
-                });
-              })()
-            ) : (
-              <tr>
-                <td colSpan="10" className="empty-state" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>
-                  No attendance records found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                    if (remarks && remarks.startsWith(', ')) {
+                      remarks = remarks.substring(2);
+                    }
+
+                    const getStatusBadgeForTable = (status) => {
+                      if (status === '—' || status === 'Absent') {
+                        return <span className="status-badge secondary">{status}</span>;
+                      }
+                      return getAttendanceStatusBadge(status);
+                    };
+
+                    return (
+                      <tr key={date} style={{ borderBottom: '1px solid #f0f2f7' }}>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{index + 1}</td>
+                        <td style={{ padding: '10px 14px' }}>{date}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{amTimeIn}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{amTimeOut}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(amStatus)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{pmTimeIn}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{pmTimeOut}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(pmStatus)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'center' }}>{getStatusBadgeForTable(combinedStatus)}</td>
+                        <td style={{ padding: '10px 14px', fontSize: '12px', color: '#666' }}>{remarks || '—'}</td>
+                      </tr>
+                    );
+                  });
+                })()
+              ) : (
+                <tr>
+                  <td colSpan="10" className="empty-state" style={{ textAlign: 'center', padding: '30px', color: '#999' }}>
+                    No attendance records found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
 
   // ====== RENDER LEAVE ======
   const renderLeave = () => (
@@ -5178,8 +4092,6 @@ const renderAttendance = () => (
   return (
     <div className="employee-portal" style={{ display: 'flex', minHeight: '100vh', background: '#f0f4fe' }}>
       {renderPreviewModal()}
-      {/* {renderScannerModal()}
-      {renderBatchUploadModal()} */}
 
       {showNotificationAlert && latestNotification && (
         <div className={`notification-alert ${latestNotification.status === 'Approved' ? 'approved' : 'rejected'}`} style={{
