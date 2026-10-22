@@ -9,7 +9,7 @@ import EmployeeRecords from './components/EmployeeRecords';
 import Attendance from './components/Attendance';
 import LeaveManagement from './components/LeaveManagement';
 import ComplianceMonitoring from './components/ComplianceMonitoring';
-import Payroll from './components/Payroll';
+// import Payroll from './components/Payroll';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import Interventions from './components/Interventions';
 import UserManagement from './components/UserManagement';
@@ -93,7 +93,7 @@ function AppContent() {
           <Route path="/compliance" element={<PrivateRoute><ComplianceMonitoring /></PrivateRoute>} />
           <Route path="/compliance-monitoring" element={<PrivateRoute><ComplianceMonitoring /></PrivateRoute>} />
           
-          <Route path="/payroll" element={<PrivateRoute><Payroll /></PrivateRoute>} />
+          {/* <Route path="/payroll" element={<PrivateRoute><Payroll /></PrivateRoute>} /> */}
           <Route path="/analytics" element={<PrivateRoute><AnalyticsDashboard /></PrivateRoute>} />
           <Route path="/interventions" element={<PrivateRoute><Interventions /></PrivateRoute>} />
           <Route path="/users" element={<PrivateRoute><UserManagement /></PrivateRoute>} />

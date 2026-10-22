@@ -24,7 +24,6 @@ import PersonOutlineOutlinedIcon from '@mui/icons-material/PersonOutlineOutlined
 import EditIcon from '@mui/icons-material/Edit';
 import PhoneIcon from '@mui/icons-material/Phone';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 
 function UserManagement({ refreshTrigger }) {
   const [users, setUsers] = useState([]);
@@ -38,8 +37,7 @@ function UserManagement({ refreshTrigger }) {
     position: '',
     role: 'Employee',
     phone: '',
-    dateHired: '',
-    salary: ''
+    dateHired: ''
   });
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -109,7 +107,6 @@ function UserManagement({ refreshTrigger }) {
   const createPayrollRecord = async (userId, userName, department, salary) => {
     try {
       const currentDate = new Date();
-      const month = currentDate.toLocaleString('default', { month: 'long' });
       const year = currentDate.getFullYear();
       
       const deductions = calculateDeductions(parseFloat(salary));
@@ -162,7 +159,7 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
-  // ====== NEW: Sync employee collection ======
+  // ====== Sync employee collection ======
   const syncEmployeeCollection = async (userId, userData) => {
     try {
       // First, try to find existing employee by email
@@ -176,7 +173,6 @@ function UserManagement({ refreshTrigger }) {
         position: userData.position || '',
         phone: userData.phone || '',
         dateHired: userData.dateHired || '',
-        salary: userData.salary || '',
         status: 'Active',
         updatedAt: new Date().toISOString()
       };
@@ -213,13 +209,12 @@ function UserManagement({ refreshTrigger }) {
       position: user.position || '',
       role: user.role || 'Employee',
       phone: user.phone || '',
-      dateHired: user.dateHired || '',
-      salary: user.salary || ''
+      dateHired: user.dateHired || ''
     });
     setShowForm(true);
   };
 
-  // ====== UPDATED: addUser with employee sync ======
+  // ====== addUser with employee sync ======
   const addUser = async () => {
     if (!formData.name || !formData.email || !formData.department || !formData.role) {
       alert('Please fill all required fields');
@@ -239,7 +234,6 @@ function UserManagement({ refreshTrigger }) {
         position: formData.position || '',
         phone: formData.phone || '',
         dateHired: formData.dateHired || '',
-        salary: formData.salary || '',
         uid: userCredential.user.uid,
         createdAt: new Date().toISOString()
       };
@@ -249,19 +243,10 @@ function UserManagement({ refreshTrigger }) {
       // ====== SYNC TO EMPLOYEES COLLECTION ======
       await syncEmployeeCollection(docRef.id, userData);
       
-      if (formData.salary && formData.salary > 0) {
-        await createPayrollRecord(
-          docRef.id,
-          formData.name,
-          formData.department,
-          formData.salary
-        );
-      }
-      
       await fetchUsers();
       resetForm();
       setShowForm(false);
-      alert('User added successfully with payroll record!');
+      alert('User added successfully!');
     } catch (error) {
       console.error('Error adding user:', error);
       alert('Failed to add user: ' + error.message);
@@ -270,7 +255,7 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
-  // ====== UPDATED: updateUser with employee sync ======
+  // ====== updateUser with employee sync ======
   const updateUser = async () => {
     if (!formData.name || !formData.email || !formData.department || !formData.role) {
       alert('Please fill all required fields');
@@ -287,8 +272,7 @@ function UserManagement({ refreshTrigger }) {
         department: formData.department,
         position: formData.position || '',
         phone: formData.phone || '',
-        dateHired: formData.dateHired || '',
-        salary: formData.salary || ''
+        dateHired: formData.dateHired || ''
       };
       
       await updateDoc(userRef, updateData);
@@ -296,20 +280,11 @@ function UserManagement({ refreshTrigger }) {
       // ====== SYNC TO EMPLOYEES COLLECTION ======
       await syncEmployeeCollection(editingId, updateData);
       
-      if (formData.salary && formData.salary > 0) {
-        await createPayrollRecord(
-          editingId,
-          formData.name,
-          formData.department,
-          formData.salary
-        );
-      }
-      
       await fetchUsers();
       resetForm();
       setShowForm(false);
       setEditingId(null);
-      alert('User and payroll record updated successfully!');
+      alert('User updated successfully!');
     } catch (error) {
       console.error('Error updating user:', error);
       alert('Failed to update user: ' + error.message);
@@ -318,7 +293,7 @@ function UserManagement({ refreshTrigger }) {
     }
   };
 
-  // ====== UPDATED: deleteUser with employee sync ======
+  // ====== deleteUser with employee sync ======
   const deleteUser = async (id, name) => {
     if (window.confirm(`Are you sure you want to delete user "${name}"? This will also remove their payroll records.`)) {
       try {
@@ -355,8 +330,7 @@ function UserManagement({ refreshTrigger }) {
       position: '', 
       role: 'Employee',
       phone: '',
-      dateHired: '',
-      salary: ''
+      dateHired: ''
     });
     setEditingId(null);
   };
@@ -411,16 +385,6 @@ function UserManagement({ refreshTrigger }) {
   const totalAdmin = getRoleCount('HR Admin');
   const totalMGDH = getRoleCount('MGDH');
   const totalEmployees = getRoleCount('Employee');
-
-  const formatSalary = (salary) => {
-    if (!salary) return '—';
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(salary);
-  };
 
   return (
     <div className="user-management">
@@ -532,7 +496,6 @@ function UserManagement({ refreshTrigger }) {
               <th>Department</th>
               <th>Position</th>
               <th>Role</th>
-              <th>Salary</th>
               <th>Created At</th>
               <th>Actions</th>
             </tr>
@@ -556,7 +519,6 @@ function UserManagement({ refreshTrigger }) {
                 <td>{user.department || '—'}</td>
                 <td>{user.position || '—'}</td>
                 <td>{getRoleBadge(user.role)}</td>
-                <td className="salary-cell">{formatSalary(user.salary)}</td>
                 <td>{user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}</td>
                 <td>
                   <button 
@@ -605,7 +567,7 @@ function UserManagement({ refreshTrigger }) {
             ))}
             {filteredUsers.length === 0 && (
               <tr>
-                <td colSpan="9" className="empty-state">
+                <td colSpan="8" className="empty-state">
                   <FolderIcon style={{ fontSize: 48, color: '#b0c4de', display: 'block', margin: '0 auto 10px' }} />
                   <p>No users found</p>
                   <span>Try adjusting your search or filters</span>
@@ -708,22 +670,6 @@ function UserManagement({ refreshTrigger }) {
                     value={formData.dateHired} 
                     onChange={(e) => setFormData({...formData, dateHired: e.target.value})}
                   />
-                </div>
-                
-                <div className="form-group">
-                  <label>
-                    <AttachMoneyIcon style={{ fontSize: 16, marginRight: 4, verticalAlign: 'middle' }} />
-                    Salary
-                  </label>
-                  <input 
-                    type="number" 
-                    placeholder="Enter salary amount" 
-                    value={formData.salary} 
-                    onChange={(e) => setFormData({...formData, salary: e.target.value})}
-                  />
-                  {/* <small style={{ color: '#8a9bb5', fontSize: 11 }}>
-                    Auto-creates payroll record with deductions 
-                  </small> */}
                 </div>
               </div>
               

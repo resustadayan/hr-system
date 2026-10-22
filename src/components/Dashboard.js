@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getEmployees, getLeaveRequests, db, auth } from "../firebase";
 import { collection, getDocs, query, where, addDoc } from "firebase/firestore";
 import MGDHDashboard from "../other file for dashboard/MGDHPDashboard";
-import Payroll from "./Payroll";
+import PendingApprovals from "./PendingApprovals";
 
 // Material-UI Icons
 import PeopleIcon from '@mui/icons-material/People';
@@ -26,7 +26,6 @@ function Dashboard() {
   const [userRole, setUserRole] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [payrollRefreshTrigger, setPayrollRefreshTrigger] = useState(0);
   const [stats, setStats] = useState({
     totalEmployees: 0,
     presentToday: 0,
@@ -235,12 +234,6 @@ function Dashboard() {
     }
   };
 
-  // Handle payroll processed callback
-  const handlePayrollProcessed = () => {
-    setPayrollRefreshTrigger(prev => prev + 1);
-    fetchDashboard();
-  };
-
   // If user is MGDH, render the MGDH Dashboard
   if (userRole === 'MGDH') {
     return <MGDHDashboard />;
@@ -265,7 +258,7 @@ function Dashboard() {
   const handleAddEmployee = () => navigate('/employees');
   const handleRecordAttendance = () => navigate('/attendance');
   const handleProcessLeave = () => navigate('/leave');
-  const handlePayroll = () => setActiveTab('payroll');
+  const handlePendingApprovals = () => setActiveTab('pending-approvals');
 
   return (
     <div className="dashboard">
@@ -328,9 +321,9 @@ function Dashboard() {
                   <CalendarTodayIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
                   Process Leave
                 </button>
-                <button className="action-btn purple" onClick={handlePayroll}>
-                  <AttachMoneyIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
-                  Payroll
+                <button className="action-btn purple" onClick={handlePendingApprovals}>
+                  <HourglassEmptyIcon style={{ fontSize: 18, marginRight: 6, verticalAlign: 'middle' }} />
+                  Pending Approvals
                 </button>
               </div>
             </div>
@@ -403,12 +396,9 @@ function Dashboard() {
         </>
       )}
 
-      {/* Payroll Tab Content */}
-      {activeTab === 'payroll' && (
-        <Payroll 
-          refreshTrigger={payrollRefreshTrigger}
-          onPayrollProcessed={handlePayrollProcessed}
-        />
+      {/* Pending Approvals Tab Content */}
+      {activeTab === 'pending-approvals' && (
+        <PendingApprovals />
       )}
     </div>
   );

@@ -74,8 +74,9 @@ function Navbar() {
     { path: '/leave', label: 'Leave Requests', icon: EventNoteIcon },
     { path: '/compliance', label: 'Compliance', icon: AssignmentTurnedInIcon },
     { path: '/analytics', label: 'Analytics', icon: BarChartIcon },
-    { path: '/payroll', label: 'Payroll', icon: AttachMoneyIcon },
-    // 👇 NEW: Pending Approvals with live badge
+    // { path: '/payroll', label: 'Payroll', icon: AttachMoneyIcon },
+    
+    // NEW: Pending Approvals with live badge
     {
       path: '/pending-approvals',
       label: 'Pending Approvals',
@@ -114,7 +115,7 @@ function Navbar() {
                 <Icon style={{ fontSize: 20 }} />
                 <span>{item.label}</span>
 
-                {/* 👇 Live badge for pending approvals */}
+                {/* Live badge for pending approvals */}
                 {item.badge > 0 && (
                   <span
                     style={{
@@ -153,7 +154,7 @@ function Navbar() {
           <div className="mobile-navbar-left">
             <img src={logo} alt="LGU Logo" className="mobile-logo" />
             <span className="mobile-title">HR System</span>
-            {/* 👇 Mobile badge on the hamburger button */}
+            {/* Mobile badge on the hamburger button */}
             {pendingCount > 0 && (
               <span
                 style={{
@@ -200,7 +201,7 @@ function Navbar() {
                 <Icon style={{ fontSize: 20 }} />
                 <span>{item.label}</span>
 
-                {/* 👇 Badge on mobile menu */}
+                {/* Badge on mobile menu */}
                 {item.badge > 0 && (
                   <span
                     style={{

@@ -21,6 +21,9 @@ function Login() {
   const [contact, setContact] = useState('');
   const [department, setDepartment] = useState('');
   const [position, setPosition] = useState('');
+  // 👇 NEW: Added role state
+  const [role, setRole] = useState('Employee');
+  
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,7 +47,7 @@ function Login() {
 
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        const role = userData.role || 'Employee';
+        const userRole = userData.role || 'Employee';
         const name = userData.name || 'User';
         const status = userData.status || 'Active';
 
@@ -64,12 +67,12 @@ function Login() {
 
         // ✅ Active user — let them in
         localStorage.setItem('isAuthenticated', 'true');
-        localStorage.setItem('userRole', role);
+        localStorage.setItem('userRole', userRole);
         localStorage.setItem('userName', name);
         localStorage.setItem('userEmail', user.email);
         localStorage.setItem('userId', user.uid);
 
-        switch (role) {
+        switch (userRole) {
           case 'HR Admin':
             navigate('/dashboard');
             break;
@@ -143,7 +146,7 @@ function Login() {
     setLoading(true);
 
     // ---- Validation ----
-    if (!fullName || !email || !password || !confirmPassword || !contact || !department || !position) {
+    if (!fullName || !email || !password || !confirmPassword || !contact || !department || !position || !role) {
       setError('Please fill all required fields');
       setLoading(false);
       return;
@@ -162,8 +165,6 @@ function Login() {
     const capturedEmail = email;
 
     // 🛑 CRITICAL: tell AuthContext to IGNORE any onAuthStateChanged fires
-    // until we're done writing Firestore docs. Without this, AuthContext
-    // signs the user out mid-write and the UI hangs forever.
     if (window.__setHrRegistering) {
       window.__setHrRegistering(true);
     }
@@ -181,7 +182,7 @@ function Login() {
         setDoc(doc(db, 'users', user.uid), {
           name: fullName,
           email: email,
-          role: 'Employee',
+          role: role, // 👈 Using the selected role
           contact: contact,
           department: department,
           position: position,
@@ -196,6 +197,7 @@ function Login() {
           department: department,
           position: position,
           contact: contact,
+          role: role, // 👈 Also storing in employees just in case
           employmentStatus: 'Pending Approval',
           status: 'Pending Approval',
           dateHired: today,
@@ -217,7 +219,8 @@ function Login() {
           employeeEmail: email,
           department: department,
           position: position,
-          message: `${fullName} (${department}) registered and is awaiting approval.`,
+          role: role, // 👈 Passing role to the notification so Admin sees what they applied for
+          message: `${fullName} (${department}) registered as ${role} and is awaiting approval.`,
           read: false,
           forAdmin: true,
           forEmployee: false,
@@ -257,16 +260,17 @@ function Login() {
       setContact('');
       setDepartment('');
       setPosition('');
+      setRole('Employee'); // Reset to default
 
       // Auto-return to login after 6 seconds
       setTimeout(() => {
         setIsRegistered(false);
         setIsLogin(true);
         setSuccess('');
-        setEmail(capturedEmail); // convenience prefill
+        setEmail(capturedEmail);
       }, 6000);
 
-      // ---- 5. Unlock the form (user sees success screen NOW) ----
+      // ---- 5. Unlock the form ----
       setLoading(false);
 
       // ---- 6. Background: sign out + clear local state ----
@@ -276,13 +280,11 @@ function Login() {
         })
         .catch((err) => console.warn('Sign out warning:', err))
         .finally(() => {
-          // ✅ Now it's safe to un-flag AuthContext
           if (window.__setHrRegistering) {
             window.__setHrRegistering(false);
           }
         });
 
-      // Clear localStorage immediately
       localStorage.removeItem('isAuthenticated');
       localStorage.removeItem('userRole');
       localStorage.removeItem('userName');
@@ -292,7 +294,6 @@ function Login() {
     } catch (err) {
       console.error('Registration error:', err);
 
-      // ✅ ALWAYS un-flag on error, or the app stays frozen
       if (window.__setHrRegistering) {
         window.__setHrRegistering(false);
       }
@@ -337,8 +338,8 @@ function Login() {
               <img src={logoRight} alt="Pagbilao Logo" className="login-logo" />
             </div>
             <div className="login-title">
-              <h1>{isLogin ? 'Welcome Back!' : 'Create Employee Account'}</h1>
-              <p>{isLogin ? 'Sign in to your HR account' : 'Register as a new employee'}</p>
+              <h1>{isLogin ? 'Welcome Back!' : 'Create Account'}</h1>
+              <p>{isLogin ? 'Sign in to your HR account' : 'Register as a new user'}</p>
             </div>
           </div>
 
@@ -426,6 +427,30 @@ function Login() {
                     onChange={(e) => setPosition(e.target.value)}
                     required
                   />
+                </div>
+
+                {/* 👇 NEW: Role Selection Dropdown */}
+                <div className="input-group">
+                  <label>System Role *</label>
+                  <select
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      border: '1px solid #dde1e8',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      outline: 'none',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <option value="Employee">Employee</option>
+                    <option value="MGDH">MGDH</option>
+                    <option value="HR Admin">HR Admin</option>
+                  </select>
                 </div>
               </>
             )}
@@ -543,6 +568,7 @@ function Login() {
                   setContact('');
                   setDepartment('');
                   setPosition('');
+                  setRole('Employee'); // Reset on toggle
                   setConfirmPassword('');
                   setIsRegistered(false);
                 }}
