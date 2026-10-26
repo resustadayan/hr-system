@@ -7,7 +7,7 @@ const ADMIN_TEMPLATE = process.env.REACT_APP_EMAILJS_TEMPLATE_ADMIN;
 const APPROVED_TEMPLATE = process.env.REACT_APP_EMAILJS_TEMPLATE_APPROVED;
 
 // Replace with your real admin email
-export const ADMIN_EMAIL = ['dianneresusta@gmail.com', 'lgu.hrmo@gmail.com'];
+export const ADMIN_EMAIL = ['dianneresusta@gmail.com', 'leiannmabilin1018@gmail.com', 'lgu.hrmo@gmail.com'];
 
 // ============================================
 // DEBUG: log config on load (helps diagnose)
