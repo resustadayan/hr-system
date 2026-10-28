@@ -34,9 +34,10 @@ function ForgotPassword() {
     }
 
     try {
+      // ✅ FIXED: Removed handleCodeInApp. This is for web apps, not mobile.
+      // The 'url' tells Firebase where to redirect the user after they click the email link.
       await sendPasswordResetEmail(auth, email, {
         url: window.location.origin + '/reset-password',
-        handleCodeInApp: true,
       });
 
       setSuccess('Password reset link sent! Please check your email.');
@@ -55,8 +56,12 @@ function ForgotPassword() {
         case 'auth/too-many-requests':
           setError('Too many requests. Please try again later.');
           break;
+        case 'auth/unauthorized-continue-uri':
+          setError('Error: Domain not authorized in Firebase settings.');
+          break;
         default:
-          setError('Failed to send reset email. Please try again.');
+          // ✅ Added err.code here so you can see exactly what is failing if it happens again
+          setError(`Failed to send reset email. (${err.code})`);
       }
     } finally {
       setLoading(false);
